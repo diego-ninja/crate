@@ -8,6 +8,7 @@ def create_core_schema(cur) -> None:
             type TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             progress TEXT DEFAULT '',
+            dedup_key TEXT,
             params_json JSONB DEFAULT '{}',
             result_json JSONB,
             error TEXT,
@@ -29,6 +30,12 @@ def create_core_schema(cur) -> None:
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_tasks_dispatch
         ON tasks (pool, priority, created_at) WHERE status = 'pending'
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_tasks_active_dedup
+        ON tasks (type, dedup_key, created_at)
+        WHERE dedup_key IS NOT NULL
+          AND status IN ('pending', 'running', 'delegated', 'completing')
     """)
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_tasks_parent

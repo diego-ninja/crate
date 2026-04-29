@@ -30,7 +30,8 @@ from crate.db.queries.telegram import (
     list_recent_albums,
     list_recently_played,
 )
-from crate.db.repositories.tasks import create_task, update_task
+from crate.db.repositories.tasks import create_task_dedup, find_active_task_by_type_params, update_task
+from crate.acquisition_tasks import build_tidal_download_params, tidal_download_dedup_key
 
 log = logging.getLogger(__name__)
 
@@ -285,7 +286,11 @@ def _cmd_download(chat_id: str, args: str):
         send_message("\u26a0\ufe0f Usage: /download &lt;tidal-url&gt;", chat_id=chat_id)
         return
 
-    task_id = create_task("tidal_download", {"url": url, "quality": "max"})
+    task_params = build_tidal_download_params(url=url, quality="max")
+    dedup_key = tidal_download_dedup_key(task_params)
+    task_id = create_task_dedup("tidal_download", task_params, dedup_key=dedup_key)
+    if not task_id:
+        task_id = find_active_task_by_type_params("tidal_download", task_params, dedup_key=dedup_key) or "duplicate"
     send_message(f"\U0001f4e5 Download queued\n<code>{task_id[:8]}</code>\n{url}", chat_id=chat_id)
 
 

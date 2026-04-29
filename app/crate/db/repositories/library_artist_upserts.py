@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -12,17 +12,30 @@ from crate.db.tx import optional_scope
 from crate.slugs import build_artist_slug
 
 
-def upsert_artist(data: dict, *, session: Session | None = None) -> None:
+def upsert_artist(data: dict, *, session: Session | None = None) -> str:
     with optional_scope(session) as s:
         now = datetime.now(timezone.utc)
-        existing = s.execute(select(LibraryArtist.slug, LibraryArtist.storage_id).where(LibraryArtist.name == data["name"]).limit(1)).first()
-        slug = existing[0] if existing and existing[0] else allocate_unique_slug(s, LibraryArtist, build_artist_slug(data["name"]))
-        storage_id = existing[1] if existing and existing[1] else coerce_uuid(data.get("storage_id"))
+        requested_name = str(data["name"]).strip()
+        folder_name = str(data.get("folder_name") or requested_name).strip()
+        requested_storage_id = coerce_uuid(data.get("storage_id"))
+        storage_match = LibraryArtist.storage_id == requested_storage_id if requested_storage_id is not None else false()
+        existing = s.execute(
+            select(LibraryArtist.name, LibraryArtist.slug, LibraryArtist.storage_id).where(
+                or_(
+                    func.lower(LibraryArtist.name) == func.lower(requested_name),
+                    LibraryArtist.folder_name == folder_name,
+                    storage_match,
+                )
+            ).limit(1)
+        ).first()
+        canonical_name = existing[0] if existing and existing[0] else requested_name
+        slug = existing[1] if existing and existing[1] else allocate_unique_slug(s, LibraryArtist, build_artist_slug(canonical_name))
+        storage_id = existing[2] if existing and existing[2] else requested_storage_id
         insert_stmt = pg_insert(LibraryArtist).values(
-            name=data["name"],
+            name=canonical_name,
             storage_id=storage_id,
             slug=slug,
-            folder_name=data.get("folder_name") or data["name"],
+            folder_name=folder_name,
             album_count=data.get("album_count", 0),
             track_count=data.get("track_count", 0),
             total_size=data.get("total_size", 0),
@@ -50,6 +63,7 @@ def upsert_artist(data: dict, *, session: Session | None = None) -> None:
                 },
             )
         )
+        return canonical_name
 
 
 __all__ = ["upsert_artist"]

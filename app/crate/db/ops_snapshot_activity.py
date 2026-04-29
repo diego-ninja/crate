@@ -8,7 +8,12 @@ from crate.db.cache_settings import get_setting
 from crate.db.cache_store import get_cache
 from crate.db.import_queue_read_models import count_import_queue_items
 from crate.db.ops_runtime import get_ops_runtime_state
-from crate.db.ops_runtime_views import DEFAULT_MAX_WORKERS, get_worker_live_state
+from crate.db.ops_runtime_views import (
+    DEFAULT_DB_HEAVY_GATE,
+    DEFAULT_MAX_WORKERS,
+    DEFAULT_QUEUE_BREAKDOWN,
+    get_worker_live_state,
+)
 from crate.db.queries.management import count_recent_active_users, count_recent_streams
 from crate.db.queries.shows import get_upcoming_shows
 from crate.db.queries.tasks import get_latest_scan, get_task_activity_snapshot, list_tasks
@@ -70,6 +75,8 @@ def build_live_activity_payload() -> dict[str, Any]:
             "max": max_workers,
             "active": int(activity["running_count"]),
         },
+        "queue_breakdown": activity.get("queue_breakdown") or DEFAULT_QUEUE_BREAKDOWN,
+        "db_heavy_gate": activity.get("db_heavy_gate") or DEFAULT_DB_HEAVY_GATE,
         "systems": {
             "postgres": True,
             "watcher": True,

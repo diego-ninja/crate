@@ -70,6 +70,23 @@ interface Task {
   updated_at: string;
 }
 
+interface WorkerPoolBreakdown {
+  fast: number;
+  default: number;
+  heavy: number;
+}
+
+interface WorkerQueueBreakdown {
+  running: WorkerPoolBreakdown;
+  pending: WorkerPoolBreakdown;
+}
+
+interface DbHeavyGate {
+  active: number;
+  pending: number;
+  blocking: boolean;
+}
+
 interface TasksSnapshotData {
   live: {
     engine?: string;
@@ -95,6 +112,8 @@ interface TasksSnapshotData {
     }>;
     recent_tasks: Array<{ id: string; type: string; status: string; updated_at?: string | null }>;
     worker_slots: { max: number; active: number };
+    queue_breakdown: WorkerQueueBreakdown;
+    db_heavy_gate: DbHeavyGate;
     systems: { postgres: boolean; watcher: boolean };
   };
   history: Task[];
@@ -147,6 +166,24 @@ function getStatusMeta(status: string) {
     cardClass: "border-white/8 bg-black/15",
   };
 }
+
+const POOL_META: Record<keyof WorkerPoolBreakdown, { label: string; tone: string; accent: string }> = {
+  fast: {
+    label: "Fast",
+    tone: "border-emerald-500/20 bg-emerald-500/[0.05]",
+    accent: "text-emerald-200",
+  },
+  default: {
+    label: "Default",
+    tone: "border-cyan-400/20 bg-cyan-400/[0.05]",
+    accent: "text-cyan-100",
+  },
+  heavy: {
+    label: "Heavy",
+    tone: "border-amber-500/20 bg-amber-500/[0.05]",
+    accent: "text-amber-100",
+  },
+};
 
 function getTaskLabel(task: Task): string {
   const base = task.label || taskLabel(task.type);
@@ -321,6 +358,8 @@ function WorkerControlPanel({
   running,
   pending,
   slotLimit,
+  queueBreakdown,
+  dbHeavyGate,
   activeTasks,
   refreshTasks,
 }: {
@@ -328,6 +367,8 @@ function WorkerControlPanel({
   running: number;
   pending: number;
   slotLimit: number;
+  queueBreakdown: WorkerQueueBreakdown;
+  dbHeavyGate: DbHeavyGate;
   activeTasks: { id: string; type: string; pool?: string | null }[];
   refreshTasks: (fresh?: boolean) => Promise<void>;
 }) {
@@ -386,6 +427,14 @@ function WorkerControlPanel({
     }
   }
 
+  const poolKeys: Array<keyof WorkerPoolBreakdown> = ["fast", "default", "heavy"];
+  const hasQueuedDbHeavy = dbHeavyGate.pending > 0;
+  const gateMessage = dbHeavyGate.blocking
+    ? `DB-heavy work is serialized right now: ${dbHeavyGate.active} running, ${dbHeavyGate.pending} waiting. Free Dramatiq slots will stay idle until the gate clears.`
+    : hasQueuedDbHeavy
+      ? `${dbHeavyGate.pending} DB-heavy task${dbHeavyGate.pending === 1 ? "" : "s"} queued. They will run one at a time once a DB-heavy slot is free.`
+      : "No DB-heavy serialization pressure right now.";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -439,6 +488,44 @@ function WorkerControlPanel({
             </div>
           );
         })}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+        <div className="grid gap-2 md:grid-cols-3">
+          {poolKeys.map((pool) => {
+            const meta = POOL_META[pool];
+            const runningForPool = queueBreakdown.running[pool] ?? 0;
+            const pendingForPool = queueBreakdown.pending[pool] ?? 0;
+            return (
+              <div key={pool} className={cn("rounded-md border px-3 py-3", meta.tone)}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn("text-sm font-medium", meta.accent)}>{meta.label}</span>
+                  <CratePill className="border-white/10 bg-black/20 text-white/70">{runningForPool} active</CratePill>
+                </div>
+                <div className="mt-2 text-xs text-white/45">
+                  {pendingForPool} queued
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          className={cn(
+            "rounded-md border px-4 py-3 text-sm",
+            dbHeavyGate.blocking
+              ? "border-amber-500/20 bg-amber-500/[0.06] text-amber-50"
+              : hasQueuedDbHeavy
+                ? "border-white/10 bg-black/15 text-white/80"
+                : "border-white/8 bg-black/15 text-white/65",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Zap size={14} className={dbHeavyGate.blocking ? "text-amber-200" : "text-white/45"} />
+            <span className="font-medium">DB-heavy gate</span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-white/75">{gateMessage}</p>
+        </div>
       </div>
 
       {showLogs ? (
@@ -920,10 +1007,12 @@ export function Tasks() {
       >
         <WorkerControlPanel
           engine={live?.engine || "dramatiq"}
-          running={activeTasks.filter((task) => task.status === "running").length}
-          pending={activeTasks.filter((task) => task.status === "pending").length}
+          running={live?.running_tasks.length ?? 0}
+          pending={live?.pending_tasks.length ?? 0}
           slotLimit={live?.worker_slots.max ?? 3}
-          activeTasks={activeTasks.filter((task) => task.status === "running").map((task) => ({ id: task.id, type: task.type, pool: task.pool }))}
+          queueBreakdown={live?.queue_breakdown ?? { running: { fast: 0, default: 0, heavy: 0 }, pending: { fast: 0, default: 0, heavy: 0 } }}
+          dbHeavyGate={live?.db_heavy_gate ?? { active: 0, pending: 0, blocking: false }}
+          activeTasks={(live?.running_tasks ?? []).map((task) => ({ id: task.id, type: task.type, pool: task.pool }))}
           refreshTasks={fetchSnapshot}
         />
       </OpsPanel>

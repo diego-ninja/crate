@@ -10,6 +10,11 @@ def test_build_live_activity_payload_prefers_worker_runtime_state(monkeypatch):
         "pending_tasks": [{"id": "p1", "type": "library_sync", "status": "pending", "pool": "heavy", "progress": {}, "created_at": None, "started_at": None, "updated_at": None}],
         "recent_tasks": [{"id": "r1", "type": "scan", "status": "running", "updated_at": None}],
         "worker_slots": {"max": 6, "active": 2},
+        "queue_breakdown": {
+            "running": {"fast": 0, "default": 1, "heavy": 1},
+            "pending": {"fast": 0, "default": 0, "heavy": 1},
+        },
+        "db_heavy_gate": {"active": 1, "pending": 1, "blocking": True},
         "scan": {"running": True, "progress": {"phase": "scan"}},
         "systems": {"postgres": True, "watcher": True},
     }
@@ -26,6 +31,8 @@ def test_build_live_activity_payload_prefers_worker_runtime_state(monkeypatch):
     assert live["engine"] == "dramatiq"
     assert len(live["running_tasks"]) == 1
     assert len(live["pending_tasks"]) == 1
+    assert live["queue_breakdown"] == runtime_state["queue_breakdown"]
+    assert live["db_heavy_gate"] == runtime_state["db_heavy_gate"]
     assert recent["tasks"] == [
         {
             "id": "r1",

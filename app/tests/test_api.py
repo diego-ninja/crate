@@ -890,6 +890,11 @@ class TestTasksAPI:
                 "pending_tasks": [],
                 "recent_tasks": [],
                 "worker_slots": {"max": 3, "active": 0},
+                "queue_breakdown": {
+                    "running": {"fast": 0, "default": 0, "heavy": 0},
+                    "pending": {"fast": 0, "default": 0, "heavy": 0},
+                },
+                "db_heavy_gate": {"active": 0, "pending": 0, "blocking": False},
                 "systems": {"postgres": True, "watcher": True},
             },
             "history": [],
@@ -900,6 +905,7 @@ class TestTasksAPI:
 
         assert resp.status_code == 200
         assert resp.json()["snapshot"]["scope"] == "ops:tasks"
+        assert resp.json()["live"]["db_heavy_gate"]["blocking"] is False
 
     def test_get_task_detail(self, test_app):
         mock_task = {

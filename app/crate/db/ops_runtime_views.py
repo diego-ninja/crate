@@ -6,6 +6,11 @@ from crate.db.cache_settings import get_setting
 from crate.db.ops_runtime import get_ops_runtime_state
 
 DEFAULT_MAX_WORKERS = 3
+DEFAULT_QUEUE_BREAKDOWN = {
+    "running": {"fast": 0, "default": 0, "heavy": 0},
+    "pending": {"fast": 0, "default": 0, "heavy": 0},
+}
+DEFAULT_DB_HEAVY_GATE = {"active": 0, "pending": 0, "blocking": False}
 
 
 def get_worker_live_state(*, max_age_seconds: int = 30) -> dict | None:
@@ -25,9 +30,16 @@ def get_worker_live_state(*, max_age_seconds: int = 30) -> dict | None:
             "max": int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS),
             "active": len(running_tasks),
         },
+        "queue_breakdown": cached.get("queue_breakdown") or DEFAULT_QUEUE_BREAKDOWN,
+        "db_heavy_gate": cached.get("db_heavy_gate") or DEFAULT_DB_HEAVY_GATE,
         "scan": cached.get("scan") or {"running": False, "progress": {}},
         "systems": cached.get("systems") or {"postgres": True, "watcher": True},
     }
 
 
-__all__ = ["DEFAULT_MAX_WORKERS", "get_worker_live_state"]
+__all__ = [
+    "DEFAULT_DB_HEAVY_GATE",
+    "DEFAULT_MAX_WORKERS",
+    "DEFAULT_QUEUE_BREAKDOWN",
+    "get_worker_live_state",
+]

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Request, HTTPException
-from urllib.parse import urlparse
 
 from crate.api.auth import _require_auth, _require_admin
 from crate.api._deps import artist_name_from_id
@@ -28,7 +27,7 @@ from crate.api.schemas.tidal import (
     WishlistResponse,
 )
 from crate.db.repositories.library import get_album_quality_map, get_library_albums
-from crate.db.repositories.tasks import create_task, create_task_dedup
+from crate.db.repositories.tasks import create_task_dedup, find_active_task_by_type_params
 from crate.db.tidal import (
     add_tidal_download,
     delete_tidal_download,
@@ -38,6 +37,7 @@ from crate.db.tidal import (
     set_monitored_artist,
     update_tidal_download,
 )
+from crate.acquisition_tasks import build_tidal_download_params, infer_tidal_entity_type, tidal_download_dedup_key
 from crate import tidal
 
 router = APIRouter(prefix="/api/tidal", tags=["tidal"])
@@ -65,16 +65,6 @@ _TIDAL_SSE_RESPONSES = merge_responses(
     },
 )
 
-
-def _infer_tidal_content_type(url: str) -> str:
-    path = urlparse(url).path.lower()
-    if "/artist/" in path:
-        return "artist"
-    if "/track/" in path:
-        return "track"
-    if "/playlist/" in path:
-        return "playlist"
-    return "album"
 
 # ── Auth ─────────────────────────────────────────────────────────
 
@@ -199,13 +189,15 @@ def tidal_download_missing(request: Request, artist: str, body: TidalDownloadMis
         title = album.title
         if not url:
             continue
-        task_id = create_task_dedup("tidal_download", {
-            "url": url,
-            "artist": artist,
-            "album": title,
-            "quality": body.quality,
-            "cover_url": album.cover_url,
-        })
+        task_params = build_tidal_download_params(
+            url=url,
+            quality=body.quality,
+            content_type=album.content_type if hasattr(album, "content_type") else None,
+            artist=artist,
+            album=title,
+            cover_url=album.cover_url,
+        )
+        task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
         if task_id:
             queued += 1
 
@@ -357,7 +349,7 @@ def tidal_download(request: Request, body: DownloadRequest):
     # Extract tidal_id from URL
     clean_url = body.url.strip()
     tidal_id = clean_url.rstrip("/").split("/")[-1]
-    content_type = _infer_tidal_content_type(clean_url)
+    content_type = infer_tidal_entity_type(clean_url)
 
     display_title = body.title or clean_url
     artist_hint = ""
@@ -380,17 +372,22 @@ def tidal_download(request: Request, body: DownloadRequest):
         source=body.source,
     )
 
-    task_params = {
-        "url": clean_url,
-        "quality": body.quality,
-        "download_id": dl_id,
-        "content_type": content_type,
-        "artist": artist_hint,
-        "album": album_hint,
-    }
-    if body.upgrade_album_id:
-        task_params["upgrade_album_id"] = body.upgrade_album_id
-    task_id = create_task("tidal_download", task_params)
+    task_params = build_tidal_download_params(
+        url=clean_url,
+        quality=body.quality,
+        download_id=dl_id,
+        content_type=content_type,
+        artist=artist_hint,
+        album=album_hint,
+        upgrade_album_id=body.upgrade_album_id,
+    )
+    task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
+    if not task_id:
+        task_id = find_active_task_by_type_params(
+            "tidal_download",
+            task_params,
+            dedup_key=tidal_download_dedup_key(task_params),
+        )
     update_tidal_download(dl_id, task_id=task_id)
     return {"task_id": task_id, "download_id": dl_id}
 
@@ -428,14 +425,22 @@ def tidal_download_batch(request: Request, body: BatchDownloadRequest):
             source=source,
             metadata=item.metadata,
         )
-        task_id = create_task("tidal_download", {
-            "url": url,
-            "quality": quality,
-            "download_id": dl_id,
-            "content_type": item.content_type or _infer_tidal_content_type(url),
-            "artist": item.artist or "",
-            "album": title,
-        })
+        task_params = build_tidal_download_params(
+            url=url,
+            quality=quality,
+            download_id=dl_id,
+            content_type=item.content_type or infer_tidal_entity_type(url),
+            artist=item.artist or "",
+            album=title,
+            cover_url=item.cover_url or "",
+        )
+        task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
+        if not task_id:
+            task_id = find_active_task_by_type_params(
+                "tidal_download",
+                task_params,
+                dedup_key=tidal_download_dedup_key(task_params),
+            )
         update_tidal_download(dl_id, task_id=task_id)
         queued.append({"download_id": dl_id, "task_id": task_id, "title": item.title})
 
@@ -496,11 +501,22 @@ def update_queue_item(request: Request, dl_id: int, body: QueueUpdateRequest):
             downloads = get_tidal_downloads()
             dl = next((d for d in downloads if d["id"] == dl_id), None)
             if dl:
-                task_id = create_task("tidal_download", {
-                    "url": dl["tidal_url"],
-                    "quality": dl["quality"],
-                    "download_id": dl_id,
-                })
+                task_params = build_tidal_download_params(
+                    url=dl["tidal_url"],
+                    quality=dl["quality"],
+                    download_id=dl_id,
+                    content_type=dl.get("content_type"),
+                    artist=dl.get("artist") or "",
+                    album=dl.get("title") or "",
+                    cover_url=dl.get("cover_url") or "",
+                )
+                task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
+                if not task_id:
+                    task_id = find_active_task_by_type_params(
+                        "tidal_download",
+                        task_params,
+                        dedup_key=tidal_download_dedup_key(task_params),
+                    )
                 kwargs["task_id"] = task_id
     if body.priority is not None:
         kwargs["priority"] = body.priority

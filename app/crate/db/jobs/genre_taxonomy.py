@@ -18,12 +18,30 @@ def assign_genre_alias_in_session(session, alias_value: str, canonical_slug: str
     if not alias_name or not alias_slug or not canonical_slug:
         return False
 
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"genre-alias:{alias_name}"},
+    )
+
     node_row = session.execute(
         text("SELECT id FROM genre_taxonomy_nodes WHERE slug = :slug"),
         {"slug": canonical_slug},
     ).mappings().first()
     if not node_row:
         return False
+
+    existing = session.execute(
+        text(
+            """
+            SELECT alias_slug, genre_id
+            FROM genre_taxonomy_aliases
+            WHERE alias_name = :alias_name
+            """
+        ),
+        {"alias_name": alias_name},
+    ).mappings().first()
+    if existing and existing["alias_slug"] == alias_slug and int(existing["genre_id"]) == int(node_row["id"]):
+        return True
 
     session.execute(
         text("DELETE FROM genre_taxonomy_aliases WHERE alias_name = :alias_name AND alias_slug != :alias_slug"),
@@ -47,6 +65,93 @@ def assign_genre_alias_in_session(session, alias_value: str, canonical_slug: str
 def assign_genre_alias_value(alias_value: str, canonical_slug: str) -> bool:
     with transaction_scope() as session:
         return assign_genre_alias_in_session(session, alias_value, canonical_slug)
+
+
+def merge_duplicate_library_genres_in_session(session) -> list[dict]:
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext('library-genres-merge'))")
+    )
+    duplicate_rows = session.execute(
+        text(
+            """
+            SELECT
+                lower(trim(name)) AS genre_key,
+                MIN(id)::INTEGER AS keep_id,
+                ARRAY_AGG(id ORDER BY id) AS ids,
+                ARRAY_AGG(slug ORDER BY id) AS slugs,
+                ARRAY_AGG(name ORDER BY id) AS names
+            FROM genres
+            GROUP BY lower(trim(name))
+            HAVING COUNT(*) > 1
+            ORDER BY lower(trim(name))
+            """
+        )
+    ).mappings().all()
+
+    merged: list[dict] = []
+    for row in duplicate_rows:
+        ids = [int(item) for item in (row.get("ids") or [])]
+        keep_id = int(row["keep_id"])
+        drop_ids = [genre_id for genre_id in ids if genre_id != keep_id]
+        if not drop_ids:
+            continue
+
+        session.execute(
+            text(
+                """
+                INSERT INTO artist_genres (artist_name, genre_id, weight, source)
+                SELECT artist_name, :keep_id, MAX(weight), MIN(source)
+                FROM artist_genres
+                WHERE genre_id = ANY(:drop_ids)
+                GROUP BY artist_name
+                ON CONFLICT (artist_name, genre_id) DO UPDATE
+                SET weight = GREATEST(artist_genres.weight, EXCLUDED.weight)
+                """
+            ),
+            {"keep_id": keep_id, "drop_ids": drop_ids},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO album_genres (album_id, genre_id, weight, source)
+                SELECT album_id, :keep_id, MAX(weight), MIN(source)
+                FROM album_genres
+                WHERE genre_id = ANY(:drop_ids)
+                GROUP BY album_id
+                ON CONFLICT (album_id, genre_id) DO UPDATE
+                SET weight = GREATEST(album_genres.weight, EXCLUDED.weight)
+                """
+            ),
+            {"keep_id": keep_id, "drop_ids": drop_ids},
+        )
+        session.execute(
+            text("DELETE FROM artist_genres WHERE genre_id = ANY(:drop_ids)"),
+            {"drop_ids": drop_ids},
+        )
+        session.execute(
+            text("DELETE FROM album_genres WHERE genre_id = ANY(:drop_ids)"),
+            {"drop_ids": drop_ids},
+        )
+        session.execute(
+            text("DELETE FROM genres WHERE id = ANY(:drop_ids)"),
+            {"drop_ids": drop_ids},
+        )
+        merged.append(
+            {
+                "genre_key": str(row["genre_key"]),
+                "keep_id": keep_id,
+                "drop_ids": drop_ids,
+                "names": list(row.get("names") or []),
+                "slugs": list(row.get("slugs") or []),
+            }
+        )
+
+    return merged
+
+
+def merge_duplicate_library_genres() -> list[dict]:
+    with transaction_scope() as session:
+        return merge_duplicate_library_genres_in_session(session)
 
 
 def seed_genre_taxonomy_definitions(session, definitions) -> None:

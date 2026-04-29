@@ -422,6 +422,7 @@ function GeneralSection({ settings }: { settings: SettingsData }) {
   const { data: opsSnapshot } = useOpsSnapshot();
   const worker = opsSnapshot?.live;
   const pendingTasks = opsSnapshot?.stats.pending_tasks ?? 0;
+  const dbHeavyGate = worker?.db_heavy_gate;
   const about = settings.about;
 
   return (
@@ -473,8 +474,18 @@ function GeneralSection({ settings }: { settings: SettingsData }) {
                     {pendingTasks} pending
                   </Badge>
                 )}
+                {dbHeavyGate && (dbHeavyGate.active > 0 || dbHeavyGate.pending > 0) && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    DB-heavy {dbHeavyGate.active}/{dbHeavyGate.pending}
+                  </Badge>
+                )}
               </div>
             </FieldRow>
+            {dbHeavyGate && (dbHeavyGate.active > 0 || dbHeavyGate.pending > 0) && (
+              <div className="rounded-md border border-white/6 bg-black/15 px-3 py-2 text-xs text-muted-foreground">
+                DB-heavy tasks are serialized. Free worker slots can still appear idle while a heavy task is queued behind another heavy task.
+              </div>
+            )}
             {worker && worker.running_tasks.length > 0 && (
               <div className="space-y-2 pt-1">
                 {worker.running_tasks.map((t) => (

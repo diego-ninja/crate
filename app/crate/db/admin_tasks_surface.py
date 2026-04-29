@@ -53,6 +53,8 @@ def build_tasks_surface_payload(limit: int = 100) -> dict[str, Any]:
             "pending_tasks": worker_live["pending_tasks"],
             "recent_tasks": worker_live["recent_tasks"],
             "worker_slots": worker_live["worker_slots"],
+            "queue_breakdown": worker_live.get("queue_breakdown"),
+            "db_heavy_gate": worker_live.get("db_heavy_gate"),
             "systems": worker_live["systems"],
         }
     else:
@@ -77,6 +79,8 @@ def build_tasks_surface_payload(limit: int = 100) -> dict[str, Any]:
                 "max": DEFAULT_MAX_WORKERS,
                 "active": int(activity["running_count"]),
             },
+            "queue_breakdown": activity["queue_breakdown"],
+            "db_heavy_gate": activity["db_heavy_gate"],
             "systems": {"postgres": True, "watcher": True},
         }
 

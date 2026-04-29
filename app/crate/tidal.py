@@ -573,10 +573,11 @@ def download(url: str, quality: str = "max", task_id: str = "",
         return {"success": False, "error": str(e), "path": str(processing_dir)}
 
 
-def move_to_library(processing_path: str, library_path: str) -> list[str]:
+def move_to_library_detailed(processing_path: str, library_path: str) -> list[dict[str, object]]:
     """Move downloaded files from processing dir to library.
 
-    Returns list of artist directories that were modified.
+    Returns one record per imported album-like target:
+    ``{"artist": str, "album": str, "path": str, "moved": int}``.
 
     Implementation notes:
 
@@ -592,7 +593,7 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
     """
     src = Path(processing_path)
     dst = Path(library_path)
-    modified_artists: set[str] = set()
+    imported_targets: dict[tuple[str, str, str], dict[str, object]] = {}
 
     if not src.exists():
         return []
@@ -607,8 +608,14 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
                 artist_name, album_name = infer_album_identity(album_item, fallback_artist=item.name)
                 _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 try:
-                    move_album_tree(album_item, target_album_dir, managed_track_names=managed_track_names)
-                    modified_artists.add(artist_name)
+                    moved = move_album_tree(album_item, target_album_dir, managed_track_names=managed_track_names)
+                    key = (artist_name, album_name, str(target_album_dir))
+                    imported_targets[key] = {
+                        "artist": artist_name,
+                        "album": album_name,
+                        "path": str(target_album_dir),
+                        "moved": int(moved),
+                    }
                 except Exception:
                     log.warning(
                         "move_to_library: failed to import %s for %s / %s",
@@ -630,7 +637,13 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
                     if dest_file.exists():
                         dest_file.unlink()
                     shutil.move(str(album_item), str(dest_file))
-                    modified_artists.add(artist_name)
+                    key = (artist_name, album_name, str(target_album_dir))
+                    imported_targets[key] = {
+                        "artist": artist_name,
+                        "album": album_name,
+                        "path": str(target_album_dir),
+                        "moved": int(imported_targets.get(key, {}).get("moved", 0)) + 1,
+                    }
                 except Exception:
                     log.warning(
                         "move_to_library: failed to move file %s -> %s",
@@ -647,4 +660,9 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
     # we couldn't move, and those will be cleaned on retry / manually).
     shutil.rmtree(str(src), ignore_errors=True)
 
-    return list(modified_artists)
+    return list(imported_targets.values())
+
+
+def move_to_library(processing_path: str, library_path: str) -> list[str]:
+    """Backward-compatible artist summary wrapper for callers that only need artists."""
+    return sorted({str(item.get("artist", "")) for item in move_to_library_detailed(processing_path, library_path) if item.get("artist")})

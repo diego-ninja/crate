@@ -88,7 +88,7 @@ def test_tidal_download_inner_falls_back_to_normal_for_unrecoverable_lossless_tr
         def __init__(self, _config):
             pass
 
-        def sync_artist(self, _path):
+        def sync_album(self, _album_dir, _artist_name):
             return None
 
     monkeypatch.setattr("crate.m4a_fix._probe_audio_codec", lambda _path: "aac")
@@ -96,21 +96,22 @@ def test_tidal_download_inner_falls_back_to_normal_for_unrecoverable_lossless_tr
     monkeypatch.setattr("crate.tidal.ensure_auth", lambda: True)
     monkeypatch.setattr("crate.tidal.get_album_track_count", lambda _album_id: 10)
     monkeypatch.setattr("crate.tidal.get_album_tracks", lambda _album_id: [{"id": str(i)} for i in range(10)])
-    monkeypatch.setattr("crate.tidal.move_to_library", lambda _path, _lib: ["Terror"])
+    monkeypatch.setattr(
+        "crate.tidal.move_to_library_detailed",
+        lambda _path, _lib: [{"artist": "Terror", "album": "Still Suffer", "path": str(tmp_path / "library" / "Terror" / "Still Suffer"), "moved": 10}],
+    )
     monkeypatch.setattr("crate.library_sync.LibrarySync", _DummySync)
     monkeypatch.setattr("crate.worker_handlers.acquisition.emit_task_event", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.emit_progress", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.emit_item_event", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.set_cache", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.delete_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr("crate.worker_handlers.acquisition.append_domain_event", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.update_tidal_download", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition._resolve_tidal_preferred_artist_name", lambda *args, **kwargs: "Terror")
     monkeypatch.setattr("crate.worker_handlers.acquisition._align_tidal_staged_artist_dirs", lambda *args, **kwargs: ["Terror"])
-    monkeypatch.setattr("crate.worker_handlers.acquisition.resolve_artist_dir", lambda *args, **kwargs: None)
-    monkeypatch.setattr("crate.worker_handlers.acquisition.get_library_artist", lambda *args, **kwargs: None)
-    monkeypatch.setattr("crate.worker_handlers.acquisition.get_library_album", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.acquisition.start_scan", lambda: None)
-    monkeypatch.setattr("crate.content.queue_process_new_content_if_needed", lambda *args, **kwargs: None)
+    (tmp_path / "library" / "Terror" / "Still Suffer").mkdir(parents=True, exist_ok=True)
 
     result = _tidal_download_inner(
         "task-1",

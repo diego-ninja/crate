@@ -31,10 +31,16 @@ from crate.api.schemas.acquisition import (
     SoulseekSearchStartResponse,
 )
 from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
+from crate.acquisition_tasks import (
+    build_soulseek_download_params,
+    build_tidal_download_params,
+    soulseek_download_dedup_key,
+    tidal_download_dedup_key,
+)
 from crate.db.cache_settings import get_setting
 from crate.db.repositories.library import get_release_by_id
 from crate.db.releases import get_new_releases, mark_release_dismissed, mark_release_downloading
-from crate.db.repositories.tasks import create_task
+from crate.db.repositories.tasks import create_task, create_task_dedup, find_active_task_by_type_params
 from crate.db.tidal import get_tidal_downloads
 
 log = logging.getLogger(__name__)
@@ -313,12 +319,21 @@ def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
         tidal_id = body.tidal_id
         if not tidal_id:
             raise HTTPException(status_code=400, detail="tidal_id required")
-        task_id = create_task("tidal_download", {
-            "tidal_id": tidal_id,
-            "artist": artist,
-            "album": album,
-            "type": body.tidal_type,
-        })
+        task_params = build_tidal_download_params(
+            url=f"https://tidal.com/{body.tidal_type or 'album'}/{tidal_id}",
+            quality="max",
+            content_type=body.tidal_type or "album",
+            artist=artist,
+            album=album,
+        )
+        task_params["tidal_id"] = tidal_id
+        task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
+        if not task_id:
+            task_id = find_active_task_by_type_params(
+                "tidal_download",
+                task_params,
+                dedup_key=tidal_download_dedup_key(task_params),
+            )
         return {"task_id": task_id, "source": "tidal"}
 
     elif source == "soulseek":
@@ -335,15 +350,25 @@ def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
         upgrade_id = body.upgrade_album_id
 
         def _slsk_params(**extra) -> dict:
-            p = {"username": username or "unknown", "artist": artist, "album": album, **extra}
-            if upgrade_id:
-                p["upgrade_album_id"] = upgrade_id
-            return p
+            return build_soulseek_download_params(
+                username=username or "unknown",
+                artist=artist,
+                album=album,
+                files=list(extra.get("files") or []),
+                file_count=int(extra.get("file_count") or 0),
+                find_alternate=bool(extra.get("find_alternate")),
+                upgrade_album_id=upgrade_id,
+            )
 
         if find_alternate or not username:
-            task_id = create_task("soulseek_download", _slsk_params(
-                files=file_names, file_count=len(files), find_alternate=True,
-            ))
+            task_params = _slsk_params(files=file_names, file_count=len(files), find_alternate=True)
+            task_id = create_task_dedup("soulseek_download", task_params, dedup_key=soulseek_download_dedup_key(task_params))
+            if not task_id:
+                task_id = find_active_task_by_type_params(
+                    "soulseek_download",
+                    task_params,
+                    dedup_key=soulseek_download_dedup_key(task_params),
+                )
             return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
         # Try original peer
@@ -351,15 +376,25 @@ def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
         enqueued = result.get("enqueued", [])
 
         if enqueued:
-            task_id = create_task("soulseek_download", _slsk_params(
-                username=username, files=[f.get("filename", "") for f in enqueued], file_count=len(enqueued),
-            ))
+            task_params = _slsk_params(files=[f.get("filename", "") for f in enqueued], file_count=len(enqueued))
+            task_id = create_task_dedup("soulseek_download", task_params, dedup_key=soulseek_download_dedup_key(task_params))
+            if not task_id:
+                task_id = find_active_task_by_type_params(
+                    "soulseek_download",
+                    task_params,
+                    dedup_key=soulseek_download_dedup_key(task_params),
+                )
             return {"task_id": task_id, "source": "soulseek", "enqueued": len(enqueued)}
 
         # Peer rejected — go straight to alternate search
-        task_id = create_task("soulseek_download", _slsk_params(
-            files=file_names, file_count=len(files), find_alternate=True,
-        ))
+        task_params = _slsk_params(files=file_names, file_count=len(files), find_alternate=True)
+        task_id = create_task_dedup("soulseek_download", task_params, dedup_key=soulseek_download_dedup_key(task_params))
+        if not task_id:
+            task_id = find_active_task_by_type_params(
+                "soulseek_download",
+                task_params,
+                dedup_key=soulseek_download_dedup_key(task_params),
+            )
         return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
     raise HTTPException(status_code=400, detail="source must be 'tidal' or 'soulseek'")
@@ -498,13 +533,20 @@ def api_download_release(request: Request, release_id: int):
     if not release or not release.get("tidal_url"):
         raise HTTPException(status_code=404, detail="Release not found or no Tidal URL")
     mark_release_downloading(release_id)
-    task_id = create_task("tidal_download", {
-        "url": release["tidal_url"],
-        "artist": release["artist_name"],
-        "album": release["album_title"],
-        "quality": get_setting("tidal_quality", "max"),
-        "new_release_id": release_id,
-    })
+    task_params = build_tidal_download_params(
+        url=release["tidal_url"],
+        quality=get_setting("tidal_quality", "max"),
+        artist=release["artist_name"],
+        album=release["album_title"],
+        new_release_id=release_id,
+    )
+    task_id = create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
+    if not task_id:
+        task_id = find_active_task_by_type_params(
+            "tidal_download",
+            task_params,
+            dedup_key=tidal_download_dedup_key(task_params),
+        )
     return {"task_id": task_id}
 
 

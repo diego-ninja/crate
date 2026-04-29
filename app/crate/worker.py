@@ -16,9 +16,6 @@ from crate.worker_handlers.migration import MIGRATION_TASK_HANDLERS
 
 log = logging.getLogger(__name__)
 
-# DB_HEAVY_TASKS moved to db/tasks.py for claim_next_task logic
-DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids", "migrate_storage_v2"}
-
 
 def _is_cancelled(task_id: str) -> bool:
     try:
@@ -233,6 +230,15 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                     "worker_slots": {
                         "max": max_workers,
                         "active": int(activity["running_count"]),
+                    },
+                    "queue_breakdown": activity.get("queue_breakdown") or {
+                        "running": {"fast": 0, "default": 0, "heavy": 0},
+                        "pending": {"fast": 0, "default": 0, "heavy": 0},
+                    },
+                    "db_heavy_gate": activity.get("db_heavy_gate") or {
+                        "active": 0,
+                        "pending": 0,
+                        "blocking": False,
                     },
                     "scan": {
                         "running": scan_running is not None,

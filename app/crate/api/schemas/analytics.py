@@ -102,6 +102,23 @@ class WorkerSlotsResponse(BaseModel):
     active: int
 
 
+class WorkerPoolBreakdownResponse(BaseModel):
+    fast: int = 0
+    default: int = 0
+    heavy: int = 0
+
+
+class WorkerQueueBreakdownResponse(BaseModel):
+    running: WorkerPoolBreakdownResponse = Field(default_factory=WorkerPoolBreakdownResponse)
+    pending: WorkerPoolBreakdownResponse = Field(default_factory=WorkerPoolBreakdownResponse)
+
+
+class DbHeavyGateResponse(BaseModel):
+    active: int = 0
+    pending: int = 0
+    blocking: bool = False
+
+
 class ActivitySystemsResponse(BaseModel):
     postgres: bool
     watcher: bool
@@ -113,6 +130,8 @@ class ActivityLiveResponse(BaseModel):
     pending_tasks: list[RunningTaskResponse] = Field(default_factory=list)
     recent_tasks: list[RecentTaskSummaryResponse] = Field(default_factory=list)
     worker_slots: WorkerSlotsResponse
+    queue_breakdown: WorkerQueueBreakdownResponse = Field(default_factory=WorkerQueueBreakdownResponse)
+    db_heavy_gate: DbHeavyGateResponse = Field(default_factory=DbHeavyGateResponse)
     systems: ActivitySystemsResponse
 
 

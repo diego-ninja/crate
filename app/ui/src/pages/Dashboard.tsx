@@ -88,6 +88,7 @@ export function Dashboard() {
   const recentTasks = live?.recent_tasks ?? [];
   const systems = live?.systems;
   const workerSlots = live?.worker_slots;
+  const dbHeavyGate = live?.db_heavy_gate;
   const totalHealthIssues = Object.values(healthCounts).reduce((sum, count) => sum + count, 0);
   const sseModeClass = (mode: string) => {
     switch (mode) {
@@ -126,6 +127,14 @@ export function Dashboard() {
               <CrateChip icon={Cpu}>
                 Worker {workerSlots ? `${workerSlots.active}/${workerSlots.max} slots` : "not reporting"}
               </CrateChip>
+              {dbHeavyGate && (dbHeavyGate.active > 0 || dbHeavyGate.pending > 0) ? (
+                <CrateChip
+                  icon={Activity}
+                  className={dbHeavyGate.blocking ? "border-amber-500/25 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/[0.05] text-white/70"}
+                >
+                  DB-heavy {dbHeavyGate.active} active / {dbHeavyGate.pending} queued
+                </CrateChip>
+              ) : null}
               <CrateChip icon={Stethoscope} className={totalHealthIssues > 0 ? "border-amber-500/25 bg-amber-500/10 text-amber-200" : "border-green-500/25 bg-green-500/10 text-green-300"}>
                 {totalHealthIssues > 0 ? `${totalHealthIssues} open issues` : "Health clean"}
               </CrateChip>
@@ -269,6 +278,12 @@ export function Dashboard() {
                   {workerSlots ? `${workerSlots.active}/${workerSlots.max} slots` : "-"}
                 </span>
               </div>
+              {dbHeavyGate && (dbHeavyGate.active > 0 || dbHeavyGate.pending > 0) ? (
+                <div className="rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-xs text-white/70">
+                  DB-heavy gate: {dbHeavyGate.active} active, {dbHeavyGate.pending} queued
+                  {dbHeavyGate.blocking ? " — queued heavy work is waiting on the current heavy task to finish." : ""}
+                </div>
+              ) : null}
               <div className="flex items-center justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <Eye size={14} className="text-muted-foreground" />

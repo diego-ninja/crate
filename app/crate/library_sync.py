@@ -2,12 +2,14 @@ import json
 import logging
 import subprocess
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 import mutagen
 
 from crate.audio import read_tags
+from crate.db.engine import get_engine
 from crate.db.repositories.library import (
     delete_album,
     delete_artist,
@@ -30,6 +32,7 @@ from crate.db.jobs.sync import (
 )
 from crate.storage_layout import looks_like_storage_id
 from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
+from crate.db.tx import transaction_scope
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +65,38 @@ def _ffprobe_duration_bitrate(filepath: Path) -> tuple[float, int]:
         return duration, bitrate
     except Exception:
         return 0.0, 0
+
+
+@contextmanager
+def _artist_sync_lock(artist_name: str):
+    """Serialize filesystem→DB sync per canonical artist across workers.
+
+    Tidal imports can trigger multiple ``sync_artist()`` calls for the same
+    artist at once. Without a cross-process lock, overlapping scans race on
+    ``existing_paths - synced_paths`` and can delete albums the other sync just
+    imported. A session-level advisory lock is a good fit here: it is scoped to
+    the connection lifetime and does not require us to keep a transaction open
+    while reading tags or walking the filesystem.
+    """
+    lock_key = f"library-sync:{artist_name.strip().lower()}"
+    raw = get_engine().raw_connection()
+    try:
+        with raw.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_lock(hashtext(%s))", (lock_key,))
+        yield
+    finally:
+        try:
+            with raw.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (lock_key,))
+        finally:
+            raw.close()
+
+
+def _album_artist_root(album_dir: Path) -> Path:
+    parent = album_dir.parent
+    if parent.name.isdigit() and len(parent.name) == 4 and parent.parent.exists():
+        return parent.parent
+    return parent
 
 
 class LibrarySync:
@@ -190,6 +225,10 @@ class LibrarySync:
         return latest_mtime
 
     def sync_artist_dirs(self, artist_name: str, artist_dirs: list[Path]) -> int:
+        with _artist_sync_lock(artist_name):
+            return self._sync_artist_dirs_unlocked(artist_name, artist_dirs)
+
+    def _sync_artist_dirs_unlocked(self, artist_name: str, artist_dirs: list[Path]) -> int:
         """Sync one or more folders that all belong to the same canonical artist."""
         primary_dir = artist_dirs[0]
         primary_folder = primary_dir.name
@@ -199,7 +238,7 @@ class LibrarySync:
         if existing:
             artist_name = existing["name"]
         else:
-            upsert_artist({
+            artist_name = upsert_artist({
                 "name": artist_name,
                 "storage_id": _storage_id_from_name(primary_folder),
                 "folder_name": primary_folder,
@@ -259,7 +298,12 @@ class LibrarySync:
                         total_tracks += existing_album.get("track_count", 0)
                         continue
 
-                result = self.sync_album(album_dir, artist_name, audio_files=audio_files, tree_mtime=tree_mtime)
+                result = self._sync_album_unlocked(
+                    album_dir,
+                    artist_name,
+                    audio_files=audio_files,
+                    tree_mtime=tree_mtime,
+                )
                 total_tracks += result["track_count"]
 
             except Exception:
@@ -310,13 +354,23 @@ class LibrarySync:
         audio_files: list[Path] | None = None,
         tree_mtime: float | None = None,
     ) -> dict:
-        # Ensure artist exists (FK constraint) and use exact DB name for FK references
-        existing = get_library_artist(artist_name)
-        if existing:
-            artist_name = existing["name"]  # Use exact DB name (case may differ)
-        else:
-            upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
-                           "total_size": 0, "formats": [], "dir_mtime": album_dir.parent.stat().st_mtime})
+        with _artist_sync_lock(artist_name):
+            return self._sync_album_unlocked(
+                album_dir,
+                artist_name,
+                audio_files=audio_files,
+                tree_mtime=tree_mtime,
+            )
+
+    def _sync_album_unlocked(
+        self,
+        album_dir: Path,
+        artist_name: str,
+        *,
+        audio_files: list[Path] | None = None,
+        tree_mtime: float | None = None,
+    ) -> dict:
+        artist_root = _album_artist_root(album_dir)
 
         if audio_files is None or tree_mtime is None:
             audio_files, scanned_mtime = self._scan_album_tree(album_dir)
@@ -459,30 +513,46 @@ class LibrarySync:
 
         formats_list = sorted(formats.keys())
 
-        # Upsert album
-        album_id = upsert_album({
-            "artist": artist_name,
-            "name": album_name,
-            "storage_id": album_storage_id,
-            "path": str(album_dir),
-            "track_count": len(track_data_list),
-            "total_size": total_size,
-            "total_duration": total_duration,
-            "formats": formats_list,
-            "year": year,
-            "genre": genre,
-            "has_cover": has_cover,
-            "musicbrainz_albumid": mb_albumid,
-            "tag_album": tag_album,
-            "dir_mtime": tree_mtime,
-        })
+        with transaction_scope() as session:
+            artist_name = upsert_artist(
+                {
+                    "name": artist_name,
+                    "storage_id": _storage_id_from_name(artist_root.name),
+                    "folder_name": artist_root.name,
+                    "album_count": 0,
+                    "track_count": 0,
+                    "total_size": 0,
+                    "formats": [],
+                    "dir_mtime": artist_root.stat().st_mtime,
+                },
+                session=session,
+            )
 
-        # Upsert tracks
-        synced_paths = set()
-        for td in track_data_list:
-            td["album_id"] = album_id
-            upsert_track(td)
-            synced_paths.add(td["path"])
+            album_id = upsert_album(
+                {
+                    "artist": artist_name,
+                    "name": album_name,
+                    "storage_id": album_storage_id,
+                    "path": str(album_dir),
+                    "track_count": len(track_data_list),
+                    "total_size": total_size,
+                    "total_duration": total_duration,
+                    "formats": formats_list,
+                    "year": year,
+                    "genre": genre,
+                    "has_cover": has_cover,
+                    "musicbrainz_albumid": mb_albumid,
+                    "tag_album": tag_album,
+                    "dir_mtime": tree_mtime,
+                },
+                session=session,
+            )
+
+            synced_paths = set()
+            for td in track_data_list:
+                td["album_id"] = album_id
+                upsert_track(td, session=session)
+                synced_paths.add(td["path"])
 
         # Remove deleted tracks
         for old_path in set(existing_tracks_by_path.keys()) - synced_paths:

@@ -8,7 +8,15 @@ from crate.db.tx import register_after_commit
 
 log = logging.getLogger(__name__)
 
-DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
+DB_HEAVY_TASKS = {
+    "library_sync",
+    "library_pipeline",
+    "wipe_library",
+    "rebuild_library",
+    "repair",
+    "enrich_mbids",
+    "migrate_storage_v2",
+}
 TASKS_SURFACE_AFTER_COMMIT_KEY = "_tasks_surface_signal_registered"
 
 

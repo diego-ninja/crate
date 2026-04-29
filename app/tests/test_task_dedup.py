@@ -1,10 +1,10 @@
 """Tests for atomic task dedup (create_task_dedup).
 
-These tests require PostgreSQL because dedup relies on SQL atomicity
-(INSERT ... WHERE NOT EXISTS with params_json::text cast).
+These tests require PostgreSQL because dedup relies on SQL atomicity and
+transaction-scoped advisory locks.
 """
 
-import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -42,6 +42,30 @@ class TestCreateTaskDedup:
         # Try to create another one with same params
         second = pg_db.create_task_dedup("process_new_content", params)
         assert second is None
+
+    @pytest.mark.parametrize("status", ["delegated", "completing"])
+    def test_returns_none_for_duplicate_delegated_or_completing(self, pg_db, status):
+        params = {"artist": "Terror", "force": True}
+        task_id = pg_db.create_task_dedup("process_new_content", params)
+        assert task_id is not None
+
+        pg_db.update_task(task_id, status=status)
+
+        second = pg_db.create_task_dedup("process_new_content", params)
+        assert second is None
+
+    def test_concurrent_duplicates_only_create_one_task(self, pg_db):
+        params = {"artist": "Terror", "force": True}
+
+        def _create():
+            return pg_db.create_task_dedup("process_new_content", params)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: _create(), range(8)))
+
+        created = [task_id for task_id in results if task_id is not None]
+        assert len(created) == 1
+        assert len(pg_db.list_tasks(task_type="process_new_content")) == 1
 
     def test_allows_different_types(self, pg_db):
         """Different task types with same params should both be created."""
@@ -97,4 +121,19 @@ class TestCreateTaskDedup:
         assert first is not None
 
         second = pg_db.create_task_dedup("health_check")
+        assert second is None
+
+    def test_explicit_dedup_key_suppresses_duplicates_even_when_params_differ(self, pg_db):
+        first = pg_db.create_task_dedup(
+            "tidal_download",
+            {"url": "https://tidal.com/album/123", "download_id": 1},
+            dedup_key="tidal:album:https://tidal.com/album/123:max:terror:one-with-the-underdogs",
+        )
+        assert first is not None
+
+        second = pg_db.create_task_dedup(
+            "tidal_download",
+            {"url": "https://tidal.com/album/123", "download_id": 2},
+            dedup_key="tidal:album:https://tidal.com/album/123:max:terror:one-with-the-underdogs",
+        )
         assert second is None

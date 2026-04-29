@@ -11,6 +11,7 @@ from crate.db.repositories.tasks_maintenance import (
 from crate.db.repositories.tasks_mutations import (
     create_task,
     create_task_dedup,
+    find_active_task_by_type_params,
     heartbeat_task,
     save_scan_result,
     update_task,
@@ -23,6 +24,7 @@ __all__ = [
     "cleanup_zombie_tasks",
     "create_task",
     "create_task_dedup",
+    "find_active_task_by_type_params",
     "delete_old_finished_tasks",
     "delete_tasks_by_status",
     "heartbeat_task",

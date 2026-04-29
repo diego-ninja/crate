@@ -314,6 +314,109 @@ class TestRepairJobs:
 
 
 class TestGenreTaxonomyCleanup:
+    def test_assign_genre_alias_is_noop_when_alias_already_points_to_same_canonical(self, pg_db):
+        from crate.db.jobs.genre_taxonomy import assign_genre_alias_in_session
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_genre_taxonomy_node("rock", name="rock")
+        with transaction_scope() as session:
+            assert assign_genre_alias_in_session(session, "rock en español", "rock") is True
+        with transaction_scope() as session:
+            assert assign_genre_alias_in_session(session, "rock en español", "rock") is True
+            count = session.execute(
+                text(
+                    """
+                    SELECT COUNT(*)::INTEGER AS cnt
+                    FROM genre_taxonomy_aliases
+                    WHERE alias_name = 'rock en español'
+                    """
+                )
+            ).mappings().first()["cnt"]
+        assert count == 1
+
+    def test_merge_duplicate_library_genres_merges_references_and_deletes_duplicates(self, pg_db):
+        from crate.db.jobs.genre_taxonomy import merge_duplicate_library_genres_in_session
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Alternative Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Alternative Artist",
+                "name": "Alternative Album",
+                "path": "/music/Alternative Artist/Alternative Album",
+            }
+        )
+
+        with transaction_scope() as session:
+            session.execute(
+                text("INSERT INTO genres (id, name, slug) VALUES (1001, 'Alternative', 'Alternative')")
+            )
+            session.execute(
+                text("INSERT INTO genres (id, name, slug) VALUES (1002, 'alternative', 'alternative')")
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO artist_genres (artist_name, genre_id, weight, source)
+                    VALUES
+                        ('Alternative Artist', 1001, 0.7, 'tags'),
+                        ('Alternative Artist', 1002, 0.9, 'tags')
+                    """
+                )
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO album_genres (album_id, genre_id, weight, source)
+                    VALUES
+                        (:album_id, 1001, 0.6, 'tags'),
+                        (:album_id, 1002, 0.8, 'tags')
+                    """
+                ),
+                {"album_id": album_id},
+            )
+            merged = merge_duplicate_library_genres_in_session(session)
+
+        assert merged == [
+            {
+                "genre_key": "alternative",
+                "keep_id": 1001,
+                "drop_ids": [1002],
+                "names": ["Alternative", "alternative"],
+                "slugs": ["Alternative", "alternative"],
+            }
+        ]
+
+        with transaction_scope() as session:
+            genre_rows = session.execute(
+                text("SELECT id, name, slug FROM genres WHERE id IN (1001, 1002) ORDER BY id")
+            ).mappings().all()
+            artist_rows = session.execute(
+                text(
+                    """
+                    SELECT artist_name, genre_id, weight
+                    FROM artist_genres
+                    WHERE artist_name = 'Alternative Artist'
+                    ORDER BY genre_id
+                    """
+                )
+            ).mappings().all()
+            album_rows = session.execute(
+                text(
+                    """
+                    SELECT album_id, genre_id, weight
+                    FROM album_genres
+                    WHERE album_id = :album_id
+                    ORDER BY genre_id
+                    """
+                ),
+                {"album_id": album_id},
+            ).mappings().all()
+
+        assert genre_rows == [{"id": 1001, "name": "Alternative", "slug": "Alternative"}]
+        assert artist_rows == [{"artist_name": "Alternative Artist", "genre_id": 1001, "weight": 0.9}]
+        assert album_rows == [{"album_id": album_id, "genre_id": 1001, "weight": 0.8}]
+
     def test_cleanup_invalid_genre_taxonomy_nodes_dry_run_and_delete(self, pg_db):
         from crate.db.tx import transaction_scope
 
@@ -1036,10 +1139,11 @@ class TestHomeCaching:
     def test_get_task_activity_snapshot(self, pg_db):
         from crate.db.queries.tasks import get_task_activity_snapshot
 
-        running_id = pg_db.create_task("scan")
-        delegated_id = pg_db.create_task("library_sync")
-        pending_id = pg_db.create_task("repair")
-        completed_id = pg_db.create_task("enrich")
+        running_id = pg_db.create_task("scan", pool="fast")
+        delegated_id = pg_db.create_task("library_sync", pool="heavy")
+        pending_id = pg_db.create_task("repair", pool="default")
+        heavy_pending_id = pg_db.create_task("migrate_storage_v2", pool="heavy")
+        completed_id = pg_db.create_task("enrich", pool="default")
 
         pg_db.update_task(running_id, status="running")
         pg_db.update_task(delegated_id, status="delegated")
@@ -1048,10 +1152,21 @@ class TestHomeCaching:
         snapshot = get_task_activity_snapshot(running_limit=10, pending_limit=10, recent_limit=10)
 
         assert snapshot["running_count"] == 2
-        assert snapshot["pending_count"] == 1
+        assert snapshot["pending_count"] == 2
         assert {task["id"] for task in snapshot["running_tasks"]} == {running_id, delegated_id}
-        assert [task["id"] for task in snapshot["pending_tasks"]] == [pending_id]
-        assert {task["id"] for task in snapshot["recent_tasks"]} >= {running_id, delegated_id, pending_id, completed_id}
+        assert {task["id"] for task in snapshot["pending_tasks"]} == {pending_id, heavy_pending_id}
+        assert snapshot["queue_breakdown"] == {
+            "running": {"fast": 1, "default": 0, "heavy": 1},
+            "pending": {"fast": 0, "default": 1, "heavy": 1},
+        }
+        assert snapshot["db_heavy_gate"] == {"active": 0, "pending": 2, "blocking": False}
+        assert {task["id"] for task in snapshot["recent_tasks"]} >= {
+            running_id,
+            delegated_id,
+            pending_id,
+            heavy_pending_id,
+            completed_id,
+        }
 
     def test_claim_next_task(self, pg_db):
         t1 = pg_db.create_task("scan")
@@ -1167,6 +1282,38 @@ class TestLibraryCRUD:
         artist = pg_db.get_library_artist("Artist A")
         assert artist["album_count"] == 2
         assert artist["track_count"] == 15
+
+    def test_upsert_artist_reuses_canonical_name_for_same_storage_identity(self, pg_db):
+        storage_id = "d7b2189f-8d0c-4909-87fe-fd465daa2aac"
+        canonical = pg_db.upsert_artist(
+            {
+                "name": "Terror",
+                "storage_id": storage_id,
+                "folder_name": storage_id,
+                "album_count": 0,
+                "track_count": 0,
+                "total_size": 0,
+                "formats": [],
+            }
+        )
+        assert canonical == "Terror"
+
+        reused = pg_db.upsert_artist(
+            {
+                "name": "terror",
+                "storage_id": storage_id,
+                "folder_name": storage_id,
+                "album_count": 0,
+                "track_count": 0,
+                "total_size": 0,
+                "formats": [],
+            }
+        )
+        assert reused == "Terror"
+
+        artists, _total = pg_db.get_library_artists(per_page=100)
+        terror_rows = [artist for artist in artists if artist["name"].lower() == "terror"]
+        assert len(terror_rows) == 1
 
     def test_upsert_album(self, pg_db):
         pg_db.upsert_artist({"name": "Artist B"})

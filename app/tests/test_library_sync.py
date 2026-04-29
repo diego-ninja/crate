@@ -2,6 +2,9 @@
 
 import os
 import tempfile
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
@@ -220,12 +223,48 @@ class TestSyncAlbum:
             with patch("crate.library_sync.get_library_artist", return_value={"name": "Artist"}), \
                  patch("crate.library_sync.get_library_albums", return_value=[stale_album]), \
                  patch("crate.library_sync.upsert_artist"), \
-                 patch.object(LibrarySync, "sync_album", return_value={"track_count": 3}) as mock_sync_album:
+                 patch.object(LibrarySync, "_sync_album_unlocked", return_value={"track_count": 3}) as mock_sync_album:
                 sync = LibrarySync(config)
                 count = sync.sync_artist(artist_dir)
 
                 assert count == 3
                 mock_sync_album.assert_called_once()
+
+    def test_sync_artist_dirs_serializes_same_artist(self, pg_db):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib = Path(tmpdir)
+            artist_dir = lib / "Terror"
+            artist_dir.mkdir(parents=True)
+            config = {
+                "library_path": str(lib),
+                "audio_extensions": [".flac"],
+            }
+
+            from crate.library_sync import LibrarySync
+
+            sync = LibrarySync(config)
+            overlap = {"active": 0, "max_active": 0}
+            overlap_lock = threading.Lock()
+
+            def _fake_unlocked(self, artist_name: str, artist_dirs: list[Path]) -> int:
+                with overlap_lock:
+                    overlap["active"] += 1
+                    overlap["max_active"] = max(overlap["max_active"], overlap["active"])
+                time.sleep(0.15)
+                with overlap_lock:
+                    overlap["active"] -= 1
+                return 0
+
+            with patch.object(LibrarySync, "_sync_artist_dirs_unlocked", _fake_unlocked):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [
+                        executor.submit(sync.sync_artist_dirs, "Terror", [artist_dir]),
+                        executor.submit(sync.sync_artist_dirs, "Terror", [artist_dir]),
+                    ]
+                    for future in futures:
+                        assert future.result() == 0
+
+            assert overlap["max_active"] == 1
 
 
 class TestRemoveStale:

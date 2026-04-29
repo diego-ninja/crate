@@ -4,12 +4,15 @@ import shutil
 import time
 import uuid
 import zipfile
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from crate.acquisition_tasks import build_tidal_download_params, tidal_download_dedup_key
 from crate.audio import get_audio_files, read_tags
 from crate.db.cache_settings import get_setting
 from crate.db.cache_store import delete_cache, set_cache
+from crate.db.domain_events import append_domain_event
 from crate.db.events import emit_task_event
 from crate.db.jobs.acquisition import update_artist_latest_release_date
 from crate.db.repositories.library import (
@@ -32,6 +35,37 @@ from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
+
+
+def _emit_acquisition_domain_event(
+    event_type: str,
+    *,
+    task_id: str,
+    source: str,
+    entity_type: str,
+    artist: str = "",
+    album: str = "",
+    path: str = "",
+    moved: int = 0,
+    payload: dict | None = None,
+) -> None:
+    body = {
+        "task_id": task_id,
+        "source": source,
+        "entity_type": entity_type,
+        "artist": artist,
+        "album": album,
+        "path": path,
+        "moved": moved,
+    }
+    if payload:
+        body.update(payload)
+    append_domain_event(
+        event_type,
+        body,
+        scope="library.acquisition",
+        subject_key=artist or album or task_id,
+    )
 
 
 def _sanitize_import_name(name: str) -> str:
@@ -223,10 +257,45 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
                 seen_track_ids.add(track_id)
 
 
+def _emit_acquisition_completed_for_albums(
+    *,
+    task_id: str,
+    source: str,
+    entity_type: str,
+    moved_albums: list[dict],
+) -> None:
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for moved_album in moved_albums:
+        artist = str(moved_album.get("artist") or "").strip()
+        if not artist:
+            continue
+        grouped[artist].append(
+            {
+                "album": str(moved_album.get("album") or ""),
+                "path": str(moved_album.get("path") or ""),
+                "moved": int(moved_album.get("moved") or 0),
+            }
+        )
+
+    for artist, albums in grouped.items():
+        primary = albums[0] if albums else {"album": "", "path": "", "moved": 0}
+        _emit_acquisition_domain_event(
+            "library.acquisition.completed",
+            task_id=task_id,
+            source=source,
+            entity_type=entity_type,
+            artist=artist,
+            album=primary.get("album", "") if len(albums) == 1 else "",
+            path=primary.get("path", "") if len(albums) == 1 else "",
+            moved=sum(int(item.get("moved") or 0) for item in albums),
+            payload={"albums": albums, "album_count": len(albums)},
+        )
+
+
 def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
     from crate.library_sync import LibrarySync
     from crate.m4a_fix import repair_tidal_artifacts
-    from crate.tidal import download, get_album_track_count, get_album_tracks, inspect_download_tree, move_to_library
+    from crate.tidal import download, get_album_track_count, get_album_tracks, inspect_download_tree, move_to_library_detailed
 
     from crate.tidal import ensure_auth
     if not ensure_auth():
@@ -242,8 +311,17 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
     artist_name = params.get("artist", "")
     album_name = params.get("album", "")
+    entity_type = params.get("entity_type") or params.get("content_type") or "album"
     desc = f"{artist_name} - {album_name}" if artist_name else url
     emit_task_event(task_id, "info", {"message": f"Downloading from Tidal: {desc}"})
+    _emit_acquisition_domain_event(
+        "library.acquisition.started",
+        task_id=task_id,
+        source="tidal",
+        entity_type=str(entity_type),
+        artist=artist_name,
+        album=album_name,
+    )
 
     p = TaskProgress(phase="downloading", phase_count=3, item=entity_label(artist=artist_name, album=album_name))
     emit_progress(task_id, p, force=True)
@@ -349,7 +427,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         repair = result.get("repair_summary", {})
 
     # Validate track count for album downloads and retry if partial
-    content_type = params.get("content_type", "album")
+    content_type = str(params.get("entity_type") or params.get("content_type") or "album")
     if content_type == "album" and result.get("success"):
         album_id = url.rstrip("/").split("/")[-1]
         expected = get_album_track_count(album_id)
@@ -448,7 +526,8 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         set_cache(f"processing:{staged.lower()}", True, ttl=3600)
 
     try:
-        modified_artists = move_to_library(result["path"], str(lib))
+        moved_albums = move_to_library_detailed(result["path"], str(lib))
+        modified_artists = sorted({str(item.get("artist") or "") for item in moved_albums if item.get("artist")})
         # move_to_library may have canonicalized names slightly differently;
         # make sure every emitted artist has a processing mark too.
         for current_artist in modified_artists:
@@ -458,7 +537,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             delete_cache(f"processing:{staged.lower()}")
         raise
 
-    if not modified_artists:
+    if not moved_albums:
         if download_id:
             update_tidal_download(download_id, status="failed", error="No files moved")
         return {"error": "No files were moved", "phase": "move"}
@@ -469,62 +548,58 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         # Download Tidal cover for specific album if provided
         cover_url = params.get("cover_url", "")
         current_album = params.get("album", "")
-        if cover_url and current_album and modified_artists:
-            for current_artist in modified_artists:
-                artist_row = get_library_artist(current_artist)
-                found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
-                if not found_artist_dir:
+        if cover_url and moved_albums:
+            for moved_album in moved_albums:
+                current_artist = str(moved_album.get("artist") or "")
+                candidate_album = str(moved_album.get("album") or "")
+                if current_album and candidate_album != current_album:
                     continue
-                # Search all subdirs for the album (V2: subdirs are UUIDs)
-                album_row = get_library_album(current_artist, current_album)
-                if album_row and album_row.get("path"):
-                    album_dir = Path(album_row["path"])
-                else:
-                    album_dir = found_artist_dir / current_album
-                if album_dir.is_dir():
-                    cover_path = album_dir / "cover.jpg"
-                    if not cover_path.exists():
-                        try:
-                            import requests
-                            resp = requests.get(cover_url, timeout=15)
-                            if resp.status_code == 200 and len(resp.content) > 1000:
-                                cover_path.write_bytes(resp.content)
-                                log.info("Downloaded Tidal cover for %s/%s", current_artist, current_album)
-                        except Exception:
-                            log.debug("Failed to download Tidal cover", exc_info=True)
+                album_dir = Path(str(moved_album.get("path") or ""))
+                if not album_dir.is_dir():
+                    continue
+                cover_path = album_dir / "cover.jpg"
+                if not cover_path.exists():
+                    try:
+                        import requests
+                        resp = requests.get(cover_url, timeout=15)
+                        if resp.status_code == 200 and len(resp.content) > 1000:
+                            cover_path.write_bytes(resp.content)
+                            log.info("Downloaded Tidal cover for %s/%s", current_artist, candidate_album)
+                    except Exception:
+                        log.debug("Failed to download Tidal cover", exc_info=True)
 
         emit_task_event(
             task_id,
             "info",
-            {"message": f"Syncing {', '.join(modified_artists)} to library"},
+            {"message": f"Syncing {len(moved_albums)} imported album(s) to library"},
         )
         p.phase = "syncing"
         p.phase_index = 2
         p.done = 0
-        p.total = len(modified_artists)
+        p.total = len(moved_albums)
         emit_progress(task_id, p, force=True)
         sync = LibrarySync(config)
-        for current_artist in modified_artists:
-            artist_row = get_library_artist(current_artist)
-            found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
-            if found_artist_dir and found_artist_dir.is_dir():
-                try:
-                    sync.sync_artist(found_artist_dir)
-                except Exception:
-                    # Sync failures here must not trigger a Dramatiq retry —
-                    # the files are already on disk, re-downloading 5 GB
-                    # would be pointless. The next process_new_content pass
-                    # (queued below) will pick them up.
-                    log.warning("Sync failed for %s", current_artist, exc_info=True)
-
-        from crate.content import queue_process_new_content_if_needed
-        for current_artist in modified_artists:
+        for index, moved_album in enumerate(moved_albums, start=1):
+            current_artist = str(moved_album.get("artist") or "")
+            current_album_name = str(moved_album.get("album") or "")
+            album_dir = Path(str(moved_album.get("path") or ""))
             try:
-                queue_process_new_content_if_needed(
-                    current_artist, library_path=config.get("library_path"), force=True
-                )
+                if album_dir.is_dir():
+                    p.done = index
+                    p.item = entity_label(artist=current_artist, album=current_album_name)
+                    emit_progress(task_id, p)
+                    sync.sync_album(album_dir, current_artist)
             except Exception:
-                log.debug("Failed to queue process_new_content for Tidal artist %s", current_artist, exc_info=True)
+                # Sync failures here must not trigger a Dramatiq retry —
+                # the files are already on disk, re-downloading large
+                # albums would be pointless. A later artist-level
+                # process task can recover after the acquisition settles.
+                log.warning(
+                    "Sync failed for %s / %s",
+                    current_artist,
+                    current_album_name,
+                    exc_info=True,
+                )
     finally:
         # Let the watcher react to any remaining file changes from the
         # queued process_new_content as normal.
@@ -562,6 +637,13 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
                 emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
         except Exception:
             log.warning("Failed to clean up quarantined album %s", upgrade_album_id, exc_info=True)
+
+    _emit_acquisition_completed_for_albums(
+        task_id=task_id,
+        source="tidal",
+        entity_type=str(entity_type),
+        moved_albums=moved_albums,
+    )
 
     return {
         "success": True,
@@ -692,16 +774,14 @@ def _register_new_release(
 
     if auto_download and tidal_data["tidal_url"] and not is_future:
         mark_release_downloading(release_id)
-        create_task(
-            "tidal_download",
-            {
-                "url": tidal_data["tidal_url"],
-                "artist": artist_name,
-                "album": title,
-                "quality": get_setting("tidal_quality", "max"),
-                "new_release_id": release_id,
-            },
+        task_params = build_tidal_download_params(
+            url=tidal_data["tidal_url"],
+            quality=get_setting("tidal_quality", "max"),
+            artist=artist_name,
+            album=title,
+            new_release_id=release_id,
         )
+        create_task_dedup("tidal_download", task_params, dedup_key=tidal_download_dedup_key(task_params))
 
     return 1, False
 
@@ -871,12 +951,83 @@ def _infer_soulseek_artist_name(artist: str, original_files: list[str]) -> str:
     return artist
 
 
+def _normalize_soulseek_path(value: str) -> str:
+    return value.replace("\\", "/").strip("/").casefold()
+
+
+def _select_soulseek_task_downloads(
+    downloads: list[dict],
+    *,
+    username: str,
+    expected_files: list[str] | None = None,
+) -> list[dict]:
+    expected = {_normalize_soulseek_path(path) for path in (expected_files or []) if path}
+    selected: list[dict] = []
+    for download in downloads:
+        if username and download.get("username") != username:
+            continue
+        if expected:
+            full_path = _normalize_soulseek_path(str(download.get("fullPath") or ""))
+            if full_path not in expected:
+                continue
+        selected.append(download)
+    return selected
+
+
+def _select_soulseek_alternate_completions(downloads: list[dict], original_files: list[str]) -> list[dict]:
+    expected_names = {
+        Path(path.replace("\\", "/")).name.casefold()
+        for path in original_files
+        if path
+    }
+    if not expected_names:
+        return [download for download in downloads if _soulseek_download_completed(download)]
+    return [
+        download
+        for download in downloads
+        if _soulseek_download_completed(download)
+        and str(download.get("filename") or "").casefold() in expected_names
+    ]
+
+
+def _locate_soulseek_download_file(download_root: Path, download: dict) -> Path | None:
+    full_path = str(download.get("fullPath") or "")
+    filename = Path(full_path.replace("\\", "/")).name or str(download.get("filename") or "")
+    if not filename:
+        return None
+
+    full_suffix = _normalize_soulseek_path(full_path)
+    dir_suffix = _normalize_soulseek_path(str(download.get("directory") or ""))
+    filename_norm = filename.casefold()
+
+    best_match: Path | None = None
+    best_score: tuple[int, int] | None = None
+    for candidate in download_root.rglob(filename):
+        if not candidate.is_file():
+            continue
+        rel_norm = _normalize_soulseek_path(str(candidate.relative_to(download_root)))
+        score: tuple[int, int] | None = None
+        if full_suffix and rel_norm.endswith(full_suffix):
+            score = (3, -len(rel_norm))
+        elif dir_suffix and rel_norm.endswith(f"{dir_suffix}/{filename_norm}"):
+            score = (2, -len(rel_norm))
+        elif candidate.name.casefold() == filename_norm:
+            score = (1, -len(rel_norm))
+        if score is None:
+            continue
+        if best_score is None or score > best_score:
+            best_match = candidate
+            best_score = score
+    return best_match
+
+
 def _poll_soulseek_download_completion(
     task_id: str,
     artist: str,
     username: str,
     file_count: int,
     config: dict,
+    expected_files: list[str] | None = None,
 ) -> list[dict] | dict:
     from crate import soulseek
 
@@ -896,7 +1047,11 @@ def _poll_soulseek_download_completion(
         time.sleep(5)
         elapsed += 5
         downloads = soulseek.get_downloads()
-        user_downloads = [download for download in downloads if download.get("username") == username]
+        user_downloads = _select_soulseek_task_downloads(
+            downloads,
+            username=username,
+            expected_files=expected_files,
+        )
         if not user_downloads:
             break
 
@@ -959,7 +1114,7 @@ def _poll_soulseek_download_completion(
             )
             _search_alternate_peers(task_id, artist, username, failed, config)
             all_downloads = soulseek.get_downloads()
-            return [download for download in all_downloads if _soulseek_download_completed(download)]
+            return _select_soulseek_alternate_completions(all_downloads, expected_files or [])
 
     return completed_files
 
@@ -969,7 +1124,7 @@ def _move_soulseek_completed_files(
     artist: str,
     album: str,
     completed_files: list[dict],
-) -> int:
+) -> dict[str, object]:
     import re
 
     lib = Path(config["library_path"])
@@ -985,19 +1140,12 @@ def _move_soulseek_completed_files(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if not slsk_download_dir.is_dir():
-        return 0
+        return {"artist": artist, "album": clean_album, "path": str(target_dir), "moved": 0}
 
     for download in completed_files:
         full_path = download.get("fullPath", "")
-        local_name = full_path.replace("\\", "/").split("/")[-1] if full_path else download.get(
-            "filename", ""
-        )
-
-        found = None
-        for file_path in slsk_download_dir.rglob(local_name):
-            if file_path.is_file():
-                found = file_path
-                break
+        local_name = full_path.replace("\\", "/").split("/")[-1] if full_path else download.get("filename", "")
+        found = _locate_soulseek_download_file(slsk_download_dir, download)
 
         if found:
             dest = (
@@ -1012,7 +1160,7 @@ def _move_soulseek_completed_files(
             except Exception as exc:
                 log.warning("Failed to move %s: %s", found.name, exc)
 
-    return moved
+    return {"artist": artist, "album": clean_album, "path": str(target_dir), "moved": moved}
 
 
 def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
@@ -1036,6 +1184,14 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         "info",
         {"message": f"Downloading from {username}: {artist} - {album} ({file_count} files)"},
     )
+    _emit_acquisition_domain_event(
+        "library.acquisition.started",
+        task_id=task_id,
+        source="soulseek",
+        entity_type=str(params.get("entity_type") or "album"),
+        artist=artist,
+        album=album,
+    )
 
     if find_alternate:
         emit_task_event(
@@ -1053,11 +1209,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         _search_alternate_peers(task_id, artist, username, fake_failed, config)
 
         all_downloads = soulseek.get_downloads()
-        completed_files = [
-            download
-            for download in all_downloads
-            if _soulseek_download_completed(download)
-        ]
+        completed_files = _select_soulseek_alternate_completions(all_downloads, original_files)
 
     if not find_alternate:
         poll_result = _poll_soulseek_download_completion(
@@ -1066,6 +1218,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
             username,
             file_count,
             config,
+            expected_files=original_files,
         )
         if isinstance(poll_result, dict):
             return poll_result
@@ -1075,29 +1228,13 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     moved = 0
 
     if not all_complete:
-        if completed_files and artist:
-            moved = _move_soulseek_completed_files(config, artist, album, completed_files)
-            emit_task_event(
-                task_id,
-                "info",
-                {
-                    "message": f"Album incomplete: moved {moved}/{file_count} completed files to library."
-                },
-            )
-        else:
-            emit_task_event(
-                task_id,
-                "info",
-                {
-                    "message": f"Album incomplete: {len(completed_files)}/{file_count} files. Not moving to library."
-                },
-            )
-        if artist and moved > 0:
-            from crate.content import queue_process_new_content_if_needed
-            if queue_process_new_content_if_needed(
-                artist, library_path=config.get("library_path"), force=True
-            ):
-                emit_task_event(task_id, "info", {"message": f"Processing partial content for {artist}"})
+        emit_task_event(
+            task_id,
+            "info",
+            {
+                "message": f"Album incomplete: {len(completed_files)}/{file_count} files. Not moving to library yet."
+            },
+        )
         # Incomplete download — restore quarantined album
         if upgrade_album_id:
             try:
@@ -1115,7 +1252,8 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         }
 
     if completed_files and artist:
-        moved = _move_soulseek_completed_files(config, artist, album, completed_files)
+        moved_info = _move_soulseek_completed_files(config, artist, album, completed_files)
+        moved = int(moved_info.get("moved") or 0)
 
         import re
 
@@ -1136,11 +1274,15 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         )
 
     if artist and moved > 0:
-        from crate.content import queue_process_new_content_if_needed
-        if queue_process_new_content_if_needed(
-            artist, library_path=config.get("library_path"), force=True
-        ):
-            emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
+        from crate.library_sync import LibrarySync
+
+        try:
+            sync = LibrarySync(config)
+            album_dir = Path(str(moved_info.get("path") or ""))
+            if album_dir.is_dir():
+                sync.sync_album(album_dir, artist)
+        except Exception:
+            log.warning("Sync failed for Soulseek import %s / %s", artist, album, exc_info=True)
 
     # Clean up quarantined album after successful upgrade
     if upgrade_album_id and moved > 0:
@@ -1156,6 +1298,14 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
             unquarantine_album(int(upgrade_album_id))
         except Exception:
             log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
+
+    if artist and moved > 0:
+        _emit_acquisition_completed_for_albums(
+            task_id=task_id,
+            source="soulseek",
+            entity_type=str(params.get("entity_type") or "album"),
+            moved_albums=[moved_info],
+        )
 
     return {
         "artist": artist,

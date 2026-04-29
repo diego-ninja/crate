@@ -7,6 +7,8 @@ import logging
 from crate.db.domain_events import list_domain_events, mark_domain_events_processed
 from crate.db.home import get_cached_home_discovery
 from crate.db.ops_snapshot import get_cached_ops_snapshot
+from crate.db.queries.tasks import has_inflight_acquisition_for_artist
+from crate.content import queue_process_new_content_if_needed
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +41,18 @@ def _refreshes_ops_from_invalidation(scope: str) -> bool:
     return scope in _OPS_INVALIDATION_SCOPES or scope.startswith(("artist:", "album:", "playlist:"))
 
 
+def _queue_post_acquisition_processing(payload: dict) -> bool:
+    artist_name = str(payload.get("artist") or "").strip()
+    if not artist_name:
+        return True
+
+    if has_inflight_acquisition_for_artist(artist_name):
+        return False
+
+    queue_process_new_content_if_needed(artist_name, force=True)
+    return True
+
+
 def process_domain_events(*, limit: int = 100) -> dict[str, int]:
     """Consume a small batch of domain events and warm affected snapshots."""
     events = list_domain_events(limit=max(1, min(limit, 1000)), unprocessed_only=True)
@@ -50,13 +64,21 @@ def process_domain_events(*, limit: int = 100) -> dict[str, int]:
     event_ids: list = []
 
     for event in events:
-        event_ids.append(event["id"])
         event_type = event.get("event_type")
         scope = event.get("scope") or ""
         payload = event.get("payload_json") or {}
 
         if event_type in _OPS_EVENT_TYPES or scope.startswith("pipeline:") or scope == "ops":
             refresh_ops = True
+
+        if event_type == "library.acquisition.completed":
+            try:
+                if not _queue_post_acquisition_processing(payload):
+                    continue
+            except Exception:
+                log.debug("Failed to queue post-acquisition processing", exc_info=True)
+
+        event_ids.append(event["id"])
 
         if scope == "home:discovery":
             try:
@@ -89,7 +111,8 @@ def process_domain_events(*, limit: int = 100) -> dict[str, int]:
         get_cached_home_discovery(user_id, fresh=True)
         home_refreshes += 1
 
-    mark_domain_events_processed(event_ids)
+    if event_ids:
+        mark_domain_events_processed(event_ids)
     log.debug(
         "Processed %d domain events (ops=%d, home=%d)",
         len(event_ids),
