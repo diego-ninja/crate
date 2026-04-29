@@ -1315,6 +1315,46 @@ class TestLibraryCRUD:
         terror_rows = [artist for artist in artists if artist["name"].lower() == "terror"]
         assert len(terror_rows) == 1
 
+    def test_upsert_artist_updates_existing_row_by_storage_identity_without_duplicate_insert(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        storage_id = "d7b2189f-8d0c-4909-87fe-fd465daa2aac"
+        canonical = pg_db.upsert_artist(
+            {
+                "name": "Terror",
+                "storage_id": storage_id,
+                "folder_name": storage_id,
+                "album_count": 0,
+                "track_count": 0,
+                "total_size": 0,
+                "formats": [],
+            }
+        )
+        assert canonical == "Terror"
+
+        with transaction_scope() as session:
+            reused = pg_db.upsert_artist(
+                {
+                    "name": "Terror ",
+                    "storage_id": storage_id,
+                    "folder_name": storage_id,
+                    "album_count": 2,
+                    "track_count": 22,
+                    "total_size": 2048,
+                    "formats": ["flac"],
+                },
+                session=session,
+            )
+            assert reused == "Terror"
+
+        artist = pg_db.get_library_artist("Terror")
+        assert artist is not None
+        assert artist["track_count"] == 22
+        assert artist["storage_id"] == storage_id
+        artists, _total = pg_db.get_library_artists(per_page=100)
+        terror_rows = [row for row in artists if row["storage_id"] == storage_id]
+        assert len(terror_rows) == 1
+
     def test_upsert_album(self, pg_db):
         pg_db.upsert_artist({"name": "Artist B"})
         album_id = pg_db.upsert_album({
