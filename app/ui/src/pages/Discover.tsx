@@ -34,6 +34,7 @@ interface MissingAlbum {
 interface ArtistCompleteness {
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   has_photo: boolean;
   listeners: number;
@@ -83,14 +84,21 @@ function completionTone(pct: number) {
 
 function OpportunityCard({ artist }: { artist: ArtistCompleteness }) {
   const navigate = useNavigate();
-  const href = artist.artist_id != null ? artistPagePath({ artistId: artist.artist_id, artistSlug: artist.artist_slug, artistName: artist.artist }) : undefined;
+  const href = (artist.artist_id != null || artist.artist_slug || artist.artist)
+    ? artistPagePath({ artistId: artist.artist_id, artistSlug: artist.artist_slug, artistName: artist.artist })
+    : undefined;
 
   return (
     <div className="rounded-md border border-white/8 bg-black/20 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
       <div className="flex items-start gap-3">
         <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/8 bg-white/[0.04]">
           <img
-            src={artistPhotoApiUrl({ artistId: artist.artist_id, artistSlug: artist.artist_slug, artistName: artist.artist })}
+            src={artistPhotoApiUrl({
+              artistId: artist.artist_id,
+              artistEntityUid: artist.artist_entity_uid,
+              artistSlug: artist.artist_slug,
+              artistName: artist.artist,
+            })}
             alt={artist.artist}
             className="h-full w-full object-cover"
             onError={(event) => {

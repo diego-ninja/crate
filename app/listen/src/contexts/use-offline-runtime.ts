@@ -30,6 +30,8 @@ import {
   deriveOfflineProfileKey,
   ensureOfflineStorageBudget,
   getOfflineItemKey,
+  getOfflineTrackAssetKey,
+  getOfflineTrackManifestPaths,
   hasCachedTrackAsset,
   hydrateOfflineProfileState,
   isOfflineBusy,
@@ -52,17 +54,33 @@ const EMPTY_SUMMARY: OfflineSummary = {
 
 function aggregateTrackState(
   items: OfflineItemRecord[],
-  storageId?: string | null,
+  entityUid?: string | null,
 ): OfflineItemState {
-  if (!storageId) return "idle";
-  const matches = items.filter((item) => item.tracks.some((track) => track.storage_id === storageId));
+  const assetKey = getOfflineTrackAssetKey({ entityUid });
+  if (!assetKey) return "idle";
+  const matches = items.filter((item) =>
+    item.tracks.some((track) => getOfflineTrackAssetKey(track) === assetKey),
+  );
   if (!matches.length) return "idle";
-  if (matches.some((item) => item.readyStorageIds?.includes(storageId) || item.state === "ready")) return "ready";
+  if (matches.some((item) => item.readyAssetKeys?.includes(assetKey) || item.state === "ready")) return "ready";
   if (matches.some((item) => item.state === "downloading")) return "downloading";
   if (matches.some((item) => item.state === "syncing")) return "syncing";
   if (matches.some((item) => item.state === "queued")) return "queued";
   if (matches.some((item) => item.state === "error")) return "error";
   return "idle";
+}
+
+function findTrackOfflineItem(
+  items: Record<string, OfflineItemRecord>,
+  entityUid?: string | null,
+): OfflineItemRecord | null {
+  const assetKey = getOfflineTrackAssetKey({ entityUid });
+  if (!assetKey) return null;
+  return Object.values(items).find(
+    (item) =>
+      item.kind === "track" &&
+      (item.entityId === assetKey || item.tracks.some((track) => getOfflineTrackAssetKey(track) === assetKey)),
+  ) || null;
 }
 
 export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
@@ -135,7 +153,7 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
       lastSyncedAt: existing?.lastSyncedAt || null,
       totalBytes: existing?.totalBytes || 0,
       errorMessage: null,
-      readyStorageIds: existing?.readyStorageIds || [],
+      readyAssetKeys: existing?.readyAssetKeys || [],
       tracks: existing?.tracks || [],
     };
     commitSnapshot({
@@ -167,12 +185,13 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     let failureCount = 0;
     let failureMessage: string | null = null;
     const manifestTracks = manifest.tracks || [];
-    const readyStorageIds: string[] = [];
+    const readyAssetKeys: string[] = [];
     for (const track of manifestTracks) {
-      if (!track.storage_id) continue;
-      if (await hasCachedTrackAsset(profileKey, track.storage_id)) {
+      const assetKey = getOfflineTrackAssetKey(track);
+      if (!assetKey) continue;
+      if (await hasCachedTrackAsset(profileKey, track)) {
         readyCount += 1;
-        readyStorageIds.push(track.storage_id);
+        readyAssetKeys.push(assetKey);
       }
     }
     await ensureOfflineStorageBudget(profileKey, manifestTracks);
@@ -190,7 +209,7 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
       updatedAt: manifest.updated_at ?? null,
       totalBytes: manifest.total_bytes ?? 0,
       tracks: manifestTracks,
-      readyStorageIds,
+      readyAssetKeys,
       errorMessage: manifestTracks.length ? null : "Item has no playable tracks",
     };
     commitSnapshot({
@@ -201,12 +220,13 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     });
 
     for (const track of manifestTracks) {
-      if (!track.storage_id) {
+      const assetKey = getOfflineTrackAssetKey(track);
+      if (!assetKey) {
         failureCount += 1;
-        failureMessage = "One or more tracks are missing storage IDs";
+        failureMessage = "One or more tracks are missing entity identifiers";
         continue;
       }
-      if (midItem.readyStorageIds?.includes(track.storage_id)) {
+      if (midItem.readyAssetKeys?.includes(assetKey)) {
         continue;
       }
       try {
@@ -231,8 +251,8 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
       midItem = {
         ...midItem,
         readyTrackCount: readyCount,
-        readyStorageIds: Array.from(
-          new Set([...(midItem.readyStorageIds || []), track.storage_id]),
+        readyAssetKeys: Array.from(
+          new Set([...(midItem.readyAssetKeys || []), assetKey]),
         ),
       };
       commitSnapshot({
@@ -252,7 +272,7 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
       errorMessage: readyCount === manifestTracks.length && failureCount === 0
         ? null
         : failureMessage || "Some tracks failed to cache",
-      readyStorageIds: midItem.readyStorageIds || [],
+      readyAssetKeys: midItem.readyAssetKeys || [],
     };
 
     const nextSnapshot: OfflineSnapshot = {
@@ -263,15 +283,22 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     };
     commitSnapshot(nextSnapshot);
 
-    const oldStorageIds = new Set((existing?.tracks || []).map((track) => track.storage_id));
+    const oldAssetKeys = new Set(
+      (existing?.tracks || [])
+        .map((track) => getOfflineTrackAssetKey(track))
+        .filter((value): value is string => Boolean(value)),
+    );
     for (const track of manifestTracks) {
-      oldStorageIds.delete(track.storage_id);
+      const assetKey = getOfflineTrackAssetKey(track);
+      if (assetKey) {
+        oldAssetKeys.delete(assetKey);
+      }
     }
-    if (oldStorageIds.size) {
+    if (oldAssetKeys.size) {
       const usage = buildAssetUsage(nextSnapshot);
-      for (const storageId of oldStorageIds) {
-        if ((usage.get(storageId) || 0) === 0) {
-          await deleteCachedTrackAsset(profileKey, storageId);
+      for (const assetKey of oldAssetKeys) {
+        if ((usage.get(assetKey) || 0) === 0) {
+          await deleteCachedTrackAsset(profileKey, assetKey);
         }
       }
     }
@@ -289,8 +316,9 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     commitSnapshot(nextSnapshot);
     const usage = buildAssetUsage(nextSnapshot);
     for (const track of existing.tracks) {
-      if ((usage.get(track.storage_id) || 0) === 0) {
-        await deleteCachedTrackAsset(profileKey, track.storage_id);
+      const assetKey = getOfflineTrackAssetKey(track);
+      if (assetKey && (usage.get(assetKey) || 0) === 0) {
+        await deleteCachedTrackAsset(profileKey, track);
       }
     }
   }, [commitSnapshot, profileKey, supported]);
@@ -303,7 +331,23 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     try {
       for (const item of items) {
         if (item.kind === "track") {
-          await syncManifestIntoItem("track", item.entityId, `/api/offline/tracks/by-storage/${encodeURIComponent(item.entityId)}/manifest`);
+          const firstTrack = item.tracks[0];
+          const trackRef = getOfflineTrackAssetKey(firstTrack) || item.entityId;
+          const manifestPaths = getOfflineTrackManifestPaths(firstTrack ?? item.entityId);
+          let synced = false;
+          let lastError: unknown = null;
+          for (const manifestPath of manifestPaths) {
+            try {
+              await syncManifestIntoItem("track", trackRef, manifestPath);
+              synced = true;
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (!synced) {
+            throw (lastError instanceof Error ? lastError : new Error("Failed to fetch offline track manifest"));
+          }
         } else if (item.kind === "album") {
           await syncManifestIntoItem("album", item.entityId, `/api/offline/albums/${item.entityId}/manifest`);
         } else if (item.kind === "playlist") {
@@ -354,15 +398,31 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
   }, [enqueue, profileKey, supported, syncAll]);
 
   const toggleTrackOffline = useCallback((input: OfflineTrackInput) => enqueue(async () => {
-    const storageId = input.storageId?.trim();
-    if (!storageId) {
-      throw new Error("Track offline requires storage_id");
+    const entityUid = input.entityUid?.trim();
+    const assetKey = getOfflineTrackAssetKey({ entityUid });
+    if (!assetKey) {
+      throw new Error("Track offline requires entity_uid");
     }
-    if (snapshotRef.current.items[getOfflineItemKey("track", storageId)]) {
-      await removeOfflineItem("track", storageId);
+    const existing = findTrackOfflineItem(snapshotRef.current.items, entityUid);
+    if (existing) {
+      await removeOfflineItem("track", existing.entityId);
       return "removed" as const;
     }
-    await syncManifestIntoItem("track", storageId, `/api/offline/tracks/by-storage/${encodeURIComponent(storageId)}/manifest`);
+    const manifestPaths = getOfflineTrackManifestPaths({ entityUid });
+    let synced = false;
+    let lastError: unknown = null;
+    for (const manifestPath of manifestPaths) {
+      try {
+        await syncManifestIntoItem("track", assetKey, manifestPath);
+        synced = true;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!synced) {
+      throw (lastError instanceof Error ? lastError : new Error("Failed to fetch offline track manifest"));
+    }
     return "enabled" as const;
   }), [enqueue, removeOfflineItem, syncManifestIntoItem]);
 
@@ -411,12 +471,12 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     supported,
     syncing,
     summary,
-    getTrackState: (storageId) => aggregateTrackState(items, storageId),
+    getTrackState: (entityUid) => aggregateTrackState(items, entityUid),
     getAlbumState: (albumId) => snapshot.items[getOfflineItemKey("album", albumId ?? "")]?.state ?? "idle",
     getPlaylistState: (playlistId) => snapshot.items[getOfflineItemKey("playlist", playlistId ?? "")]?.state ?? "idle",
     getAlbumRecord: (albumId) => snapshot.items[getOfflineItemKey("album", albumId ?? "")] ?? null,
     getPlaylistRecord: (playlistId) => snapshot.items[getOfflineItemKey("playlist", playlistId ?? "")] ?? null,
-    isTrackOffline: (storageId) => aggregateTrackState(items, storageId) === "ready",
+    isTrackOffline: (entityUid) => aggregateTrackState(items, entityUid) === "ready",
     isAlbumOffline: (albumId) => snapshot.items[getOfflineItemKey("album", albumId ?? "")]?.state === "ready",
     isPlaylistOffline: (playlistId) => snapshot.items[getOfflineItemKey("playlist", playlistId ?? "")]?.state === "ready",
     toggleTrackOffline,

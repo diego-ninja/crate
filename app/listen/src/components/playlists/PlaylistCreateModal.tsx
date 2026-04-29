@@ -7,9 +7,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { PlaylistArtwork } from "@/components/playlists/PlaylistArtwork";
 import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@crate/ui/primitives/AppModal";
 import { api } from "@/lib/api";
+import { toPlayableTrack } from "@/lib/playable-track";
 import { formatDuration } from "@/lib/utils";
 
 export interface PlaylistComposerTrack {
+  entityUid?: string;
   title: string;
   artist: string;
   album?: string;
@@ -22,6 +24,7 @@ export interface PlaylistComposerTrack {
 
 interface SearchTrackResult {
   id: number;
+  entity_uid?: string;
   title: string;
   artist: string;
   album: string;
@@ -51,6 +54,7 @@ interface PlaylistCreateModalProps {
 }
 
 function getTrackKey(track: PlaylistComposerTrack): string {
+  if (track.entityUid) return `entity:${track.entityUid}`;
   if (track.libraryTrackId != null) return `id:${track.libraryTrackId}`;
   if (track.path) return `path:${track.path}`;
   return `${track.artist}:${track.album}:${track.title}`;
@@ -402,14 +406,7 @@ export function PlaylistCreateModal({
                         type="button"
                         className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
                         onClick={() =>
-                          addTrack({
-                            title: track.title,
-                            artist: track.artist,
-                            album: track.album,
-                            duration: track.duration,
-                            path: track.path,
-                            libraryTrackId: track.id,
-                          })
+                          addTrack(toPlayableTrack(track))
                         }
                       >
                         <div className="min-w-0">

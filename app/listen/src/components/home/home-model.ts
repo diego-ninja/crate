@@ -2,9 +2,11 @@ import type { PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwor
 
 export interface SavedAlbum {
   id: number;
+  album_entity_uid?: string;
   slug?: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   name: string;
   year?: string;
@@ -17,10 +19,12 @@ export interface LibraryAddition {
   type: "album" | "playlist" | "system_playlist";
   added_at: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   album_name?: string;
   album_artist?: string;
   album_artist_id?: number;
+  album_artist_entity_uid?: string;
   album_artist_slug?: string;
   album_year?: string;
   playlist_id?: number;
@@ -61,6 +65,7 @@ export interface CuratedPlaylist {
 
 export interface GlobalArtist {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   name: string;
   albums?: number;
@@ -118,14 +123,16 @@ export interface HomeUpcomingResponse {
 
 export interface ReplayTrack {
   track_id: number | null;
-  track_storage_id?: string | null;
+  track_entity_uid?: string | null;
   track_path: string | null;
   title: string;
   artist: string;
   artist_id?: number | null;
+  artist_entity_uid?: string | null;
   artist_slug?: string | null;
   album: string;
   album_id?: number | null;
+  album_entity_uid?: string | null;
   album_slug?: string | null;
   play_count: number;
   complete_play_count: number;
@@ -144,14 +151,16 @@ export interface ReplayMix {
 export interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;
-  track_storage_id?: string;
+  track_entity_uid?: string;
   track_path: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration: number;
 }
@@ -189,6 +198,7 @@ export interface HomeRecentPlaylistItem {
 export interface HomeRecentArtistItem {
   type: "artist";
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist_name: string;
   subtitle?: string;
@@ -198,10 +208,12 @@ export interface HomeRecentArtistItem {
 export interface HomeRecentAlbumItem {
   type: "album";
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   album_name: string;
   artist_name: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   subtitle?: string;
   played_at?: string;
@@ -226,14 +238,17 @@ export interface HomeGeneratedPlaylistSummary {
 export interface HomeArtworkArtist {
   artist_name: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
 }
 
 export interface HomeSuggestedAlbum {
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   artist_name: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album_name: string;
   year?: string;
@@ -243,14 +258,16 @@ export interface HomeSuggestedAlbum {
 
 export interface HomeRecommendedTrack {
   track_id?: number | null;
-  track_storage_id?: string | null;
+  track_entity_uid?: string | null;
   track_path?: string | null;
   title: string;
   artist: string;
   artist_id?: number | null;
+  artist_entity_uid?: string | null;
   artist_slug?: string | null;
   album?: string | null;
   album_id?: number | null;
+  album_entity_uid?: string | null;
   album_slug?: string | null;
   duration?: number | null;
   format?: string | null;
@@ -266,14 +283,17 @@ export interface HomeRadioStation {
   play_count: number;
   artist_name: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album_name?: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
 }
 
 export interface HomeFavoriteArtist {
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist_name: string;
   play_count: number;

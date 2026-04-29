@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
-from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.common import IdentityFieldsMixin, TaskEnqueueResponse
 from crate.api.schemas.curation import CuratedPlaylistSummaryResponse
 from crate.api.schemas.media import MoodPresetResponse
 from crate.api.schemas.utility import ArtistEnrichmentResponse
@@ -63,6 +63,7 @@ class ArtistBrowseItemResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     name: str
     albums: int
@@ -94,6 +95,7 @@ class ArtistCheckLibraryResponse(RootModel[dict[str, bool]]):
 
 class ArtistAlbumSummaryResponse(BaseModel):
     id: int
+    entity_uid: str | None = None
     slug: str | None = None
     name: str
     display_name: str
@@ -112,6 +114,7 @@ class ArtistAlbumSummaryResponse(BaseModel):
 
 class ArtistDetailResponse(BaseModel):
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     name: str
     updated_at: datetime | str | None = None
@@ -131,12 +134,15 @@ class ArtistDetailResponse(BaseModel):
 class ArtistTopTrackResponse(BaseModel):
     id: str
     track_id: int
+    track_entity_uid: str | None = None
     title: str
     artist: str
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
     duration: float | int
     track: int | str
@@ -266,9 +272,9 @@ class ArtistTrackTitleResponse(BaseModel):
     path: str
 
 
-class ArtistSetlistTrackResponse(BaseModel):
+class ArtistSetlistTrackResponse(IdentityFieldsMixin):
     library_track_id: int
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     title: str
     artist: str
     artist_id: int | None = None
@@ -315,9 +321,9 @@ class AlbumTrackTagsResponse(BaseModel):
     musicbrainz_trackid: str | None = None
 
 
-class AlbumTrackResponse(BaseModel):
+class AlbumTrackResponse(IdentityFieldsMixin):
     id: int
-    storage_id: str | None = None
+    entity_uid: str | None = None
     filename: str
     format: str = ""
     size_mb: float | int
@@ -335,8 +341,10 @@ class AlbumTrackResponse(BaseModel):
 
 class AlbumDetailResponse(BaseModel):
     id: int
+    entity_uid: str | None = None
     slug: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     artist: str
     name: str

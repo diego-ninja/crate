@@ -513,7 +513,7 @@ export function Dashboard() {
               {recentAlbums.map((album, i) => (
                 <button
                   key={`${album.artist}-${album.name}-${i}`}
-                  onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
+                  onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }))}
                   className="group w-[148px] flex-shrink-0 text-left"
                 >
                   <div className="relative mb-3 h-[148px] w-[148px] overflow-hidden rounded-md border border-white/10 bg-secondary/70 shadow-[0_20px_44px_rgba(0,0,0,0.22)]">

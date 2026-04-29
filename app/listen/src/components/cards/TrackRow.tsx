@@ -8,7 +8,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
-import { resolvePlayableTrackId, toPlayableTrack } from "@/lib/playable-track";
+import { hasPlayableTrackReference, resolvePlayableTrackId, toPlayableTrack } from "@/lib/playable-track";
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
@@ -17,13 +17,15 @@ import { albumCoverApiUrl, artistPagePath, albumPagePath } from "@/lib/library-r
 
 export interface TrackRowData {
   id?: string | number;
-  storage_id?: string;
+  entity_uid?: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album?: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration?: number;
   path?: string;
@@ -75,17 +77,25 @@ export const TrackRow = memo(function TrackRow({
   const { currentTrack, play, playAll, pause, resume } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
   const { getTrackState } = useOffline();
+  const hasTrackRef = hasPlayableTrackReference(track);
 
   const liked = isLiked(
     track.library_track_id ?? (typeof track.id === "number" ? track.id : null),
-    track.storage_id,
+    track.entity_uid,
     track.path,
   );
-  const offlineState = getTrackState(track.storage_id);
+  const offlineState = getTrackState(track.entity_uid);
   const offlineLabel = getOfflineStateLabel(offlineState);
   const cover = albumCover || (track.album_id != null
     ? albumCoverApiUrl(
-        { albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album },
+        {
+          albumId: track.album_id,
+          albumEntityUid: track.album_entity_uid,
+          artistEntityUid: track.artist_entity_uid,
+          albumSlug: track.album_slug,
+          artistName: track.artist,
+          albumName: track.album,
+        },
         { size: 128 },
       )
     : undefined);
@@ -244,11 +254,11 @@ export const TrackRow = memo(function TrackRow({
         onClick={async (e) => {
           e.stopPropagation();
           const path = track.path || "";
-          const trackStorageId = track.storage_id ?? null;
+          const trackEntityUid = track.entity_uid ?? null;
           const libraryTrackId = track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined);
-          if (!path && !trackStorageId && libraryTrackId == null) return;
+          if (!hasTrackRef) return;
           try {
-            await toggleTrackLike(libraryTrackId ?? null, trackStorageId, path);
+            await toggleTrackLike(libraryTrackId ?? null, trackEntityUid, path);
           } catch {
             // Keep row interaction non-blocking; caller surfaces persistence elsewhere.
           }

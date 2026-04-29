@@ -18,7 +18,7 @@ from crate.api.schemas.analytics import (
 from crate.missing import find_missing_albums
 from crate.quality import quality_report
 from crate.audio import read_tags, get_audio_files
-from crate.api._deps import artist_name_from_id, library_path, extensions, safe_path
+from crate.api._deps import artist_name_from_entity_uid, artist_name_from_id, library_path, extensions, safe_path
 from crate.db.import_queue_read_models import count_import_queue_items
 from crate.db.repositories.library import get_library_artist, get_library_track_count
 from crate.db.ops_snapshot import get_cached_ops_snapshot
@@ -143,9 +143,11 @@ def api_timeline(request: Request):
         if year and year.isdigit():
             years.setdefault(year, []).append({
                 "id": r["id"],
+                "entity_uid": r.get("entity_uid"),
                 "slug": r["slug"],
                 "artist": r["artist"],
                 "artist_id": r["artist_id"],
+                "artist_entity_uid": r.get("artist_entity_uid"),
                 "artist_slug": r["artist_slug"],
                 "album": r["name"],
                 "tracks": r["track_count"],
@@ -194,6 +196,19 @@ def api_missing_albums_by_id(request: Request, artist_id: int):
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/missing",
+    response_model=MissingAlbumsResponse,
+    responses=_ANALYTICS_RESPONSES,
+    summary="Get missing-album analysis for an artist by entity UID",
+)
+def api_missing_albums_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return api_missing_albums(request, artist_name)
+
+
+@router.get(
     "/api/missing-search",
     response_model=MissingAlbumsResponse,
     responses=_ANALYTICS_RESPONSES,
@@ -231,6 +246,19 @@ def api_artist_stats(request: Request, name: str):
 )
 def api_artist_stats_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return api_artist_stats(request, artist_name)
+
+
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/stats",
+    response_model=ArtistStatsResponse,
+    responses=_ANALYTICS_RESPONSES,
+    summary="Get analytics for a single artist by entity UID",
+)
+def api_artist_stats_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return api_artist_stats(request, artist_name)

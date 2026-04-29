@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import IdentityFieldsMixin, OkResponse
 
 
 class LoginRequest(BaseModel):
@@ -118,9 +118,9 @@ class AuthSessionResponse(BaseModel):
     revoked_at: datetime | None = None
 
 
-class AdminUserCurrentTrackResponse(BaseModel):
+class AdminUserCurrentTrackResponse(IdentityFieldsMixin):
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     title: str | None = None
     artist: str | None = None
     artist_id: int | None = None

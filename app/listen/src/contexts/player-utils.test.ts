@@ -99,15 +99,26 @@ describe("getStoredQueue / saveQueue round-trip", () => {
 });
 
 describe("getStreamUrl", () => {
-  it("prefers canonical by-storage stream URLs for normal playback", () => {
+  it("prefers canonical by-entity stream URLs when entityUid is available", () => {
     const url = getStreamUrl({
       id: "t1",
-      storageId: "storage-1",
+      entityUid: "entity-1",
       title: "Song",
       artist: "Band",
     });
 
-    expect(url).toContain("/api/tracks/by-storage/storage-1/stream");
+    expect(url).toContain("/api/tracks/by-entity/entity-1/stream");
+  });
+
+  it("falls back to path-based stream URLs for normal playback without canonical ids", () => {
+    const url = getStreamUrl({
+      id: "t1",
+      path: "Band/Album/Song.flac",
+      title: "Song",
+      artist: "Band",
+    });
+
+    expect(url).toContain("/api/stream/Band/Album/Song.flac");
   });
 
   it("prefers the native offline file URL when one exists", () => {
@@ -115,7 +126,7 @@ describe("getStreamUrl", () => {
 
     const url = getStreamUrl({
       id: "t1",
-      storageId: "storage-1",
+      entityUid: "entity-1",
       title: "Song",
       artist: "Band",
     });

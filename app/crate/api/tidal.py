@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 
 from crate.api.auth import _require_auth, _require_admin
-from crate.api._deps import artist_name_from_id
+from crate.api._deps import artist_name_from_entity_uid, artist_name_from_id
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.tidal import (
@@ -177,6 +177,19 @@ def tidal_missing_by_id(request: Request, artist_id: int):
     return tidal_missing(request, artist_name)
 
 
+@router.get(
+    "/missing/artists/by-entity/{artist_entity_uid}",
+    response_model=TidalMissingResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="List Tidal albums missing from the local library by artist entity UID",
+)
+def tidal_missing_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return tidal_missing(request, artist_name)
+
+
 def tidal_download_missing(request: Request, artist: str, body: TidalDownloadMissingRequest):
     """Download multiple missing albums from Tidal."""
     _require_auth(request)
@@ -212,6 +225,19 @@ def tidal_download_missing(request: Request, artist: str, body: TidalDownloadMis
 )
 def tidal_download_missing_by_id(request: Request, artist_id: int, body: TidalDownloadMissingRequest):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return tidal_download_missing(request, artist_name, body)
+
+
+@router.post(
+    "/download-missing/artists/by-entity/{artist_entity_uid}",
+    response_model=TidalDownloadMissingResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Queue downloads for multiple missing Tidal albums by artist entity UID",
+)
+def tidal_download_missing_by_entity_uid(request: Request, artist_entity_uid: str, body: TidalDownloadMissingRequest):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return tidal_download_missing(request, artist_name, body)

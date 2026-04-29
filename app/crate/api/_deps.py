@@ -5,7 +5,9 @@ from pathlib import Path
 from crate.config import load_config
 from crate.db.repositories.library import (
     enrich_track_refs,
+    get_library_album_by_entity_uid,
     get_library_album_by_id,
+    get_library_artist_by_entity_uid,
     get_library_artist_by_id,
     get_library_artist_by_slug,
 )
@@ -84,11 +86,13 @@ def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
         current = dict(track)
         ref = refs_by_track_id.get(track.get("track_id"))
         if ref:
-            current.setdefault("track_storage_id", ref.get("track_storage_id"))
+            current.setdefault("track_entity_uid", ref.get("track_entity_uid"))
             current.setdefault("track_slug", ref.get("track_slug"))
             current.setdefault("album_id", ref.get("album_id"))
+            current.setdefault("album_entity_uid", ref.get("album_entity_uid"))
             current.setdefault("album_slug", ref.get("album_slug"))
             current.setdefault("artist_id", ref.get("artist_id"))
+            current.setdefault("artist_entity_uid", ref.get("artist_entity_uid"))
             current.setdefault("artist_slug", ref.get("artist_slug"))
         enriched.append(current)
     return enriched
@@ -96,6 +100,11 @@ def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
 
 def artist_name_from_id(artist_id: int) -> str | None:
     artist = get_library_artist_by_id(artist_id)
+    return artist["name"] if artist else None
+
+
+def artist_name_from_entity_uid(artist_entity_uid: str) -> str | None:
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
     return artist["name"] if artist else None
 
 
@@ -112,6 +121,13 @@ def artist_name_from_ref(artist_id: int, slug: str | None = None) -> str | None:
 
 def album_names_from_id(album_id: int) -> tuple[str, str] | None:
     album = get_library_album_by_id(album_id)
+    if not album:
+        return None
+    return album["artist"], album["name"]
+
+
+def album_names_from_entity_uid(album_entity_uid: str) -> tuple[str, str] | None:
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return None
     return album["artist"], album["name"]

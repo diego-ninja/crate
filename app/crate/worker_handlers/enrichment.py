@@ -21,7 +21,7 @@ from crate.db.jobs.enrichment import (
 )
 from crate.db.repositories.library import get_library_albums, get_library_artist, get_library_artists, get_library_tracks
 from crate.db.queries.tasks import get_task
-from crate.storage_layout import looks_like_storage_id, resolve_artist_dir
+from crate.storage_layout import looks_like_entity_uid, resolve_artist_dir
 from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
@@ -391,12 +391,12 @@ def _reorganize_artist_folders(
 
     artist_row = get_library_artist(artist_name)
     artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist_name, existing_only=True)
-    if artist_row and looks_like_storage_id(str(artist_row.get("folder_name") or "")):
+    if artist_row and looks_like_entity_uid(str(artist_row.get("folder_name") or "")):
         log.info("Skip folder reorganization for managed-storage artist %s", artist_name)
         return
     if not artist_dir or not artist_dir.is_dir():
         return
-    if any(looks_like_storage_id(part.name) for part in artist_dir.iterdir() if part.is_dir()):
+    if any(looks_like_entity_uid(part.name) for part in artist_dir.iterdir() if part.is_dir()):
         log.info("Skip folder reorganization for %s because managed-storage album dirs were detected", artist_name)
         return
 
@@ -838,6 +838,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
 
             results.append({
                 "artist_id": artist["id"],
+                "artist_entity_uid": artist.get("entity_uid"),
                 "artist_slug": artist["slug"],
                 "artist": artist["name"],
                 "has_photo": bool(artist["has_photo"]),

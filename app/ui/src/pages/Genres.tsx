@@ -727,7 +727,7 @@ function GenreView({ slug }: { slug: string }) {
             {genre.artists.map((a) => (
               <button
                 key={a.artist_name}
-                onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug }))}
+                onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug, artistName: a.artist_name }))}
                 className="rounded-md border border-white/8 bg-black/20 p-3 text-left shadow-[0_16px_36px_rgba(0,0,0,0.16)] transition-colors hover:border-primary"
               >
                 <div className="w-full aspect-square rounded-md mb-2 overflow-hidden bg-secondary">
@@ -764,7 +764,7 @@ function GenreView({ slug }: { slug: string }) {
             {genre.albums.map((a) => (
               <button
                 key={a.album_id}
-                onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug }))}
+                onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug, artistName: a.artist, albumName: a.name }))}
                 className="overflow-hidden rounded-md border border-white/8 bg-black/20 text-left shadow-[0_16px_36px_rgba(0,0,0,0.16)] transition-colors hover:border-primary"
               >
                 <div className="w-full aspect-square bg-secondary">

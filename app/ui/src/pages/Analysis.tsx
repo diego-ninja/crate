@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Activity,
   AudioWaveform,
+  Fingerprint,
   Gauge,
   Loader2,
   Music,
@@ -20,7 +21,7 @@ import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ActionKey = "analysis" | "bliss" | "popularity" | null;
+type ActionKey = "analysis" | "bliss" | "popularity" | "fingerprints" | null;
 
 function formatPercent(done: number, total: number) {
   if (total <= 0) return 0;
@@ -196,6 +197,7 @@ export function Analysis() {
       return {
         analysisPercent: 0,
         blissPercent: 0,
+        fingerprintPercent: 0,
         activeJobs: 0,
         failedJobs: 0,
       };
@@ -204,6 +206,7 @@ export function Analysis() {
     return {
       analysisPercent: formatPercent(status.analysis_done, status.total),
       blissPercent: formatPercent(status.bliss_done, status.total),
+      fingerprintPercent: formatPercent(status.fingerprint_done, status.total),
       activeJobs: status.analysis_active + status.bliss_active,
       failedJobs: status.analysis_failed + status.bliss_failed,
     };
@@ -240,6 +243,16 @@ export function Analysis() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => queueAction("/api/tasks/backfill-track-fingerprints", "fingerprints", "Audio fingerprint backfill queued")}
+              disabled={activeAction !== null}
+              className="gap-2"
+            >
+              {activeAction === "fingerprints" ? <Loader2 size={14} className="animate-spin" /> : <Fingerprint size={14} />}
+              Backfill fingerprints
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => queueAction("/api/manage/compute-popularity", "popularity", "Popularity recomputation queued")}
               disabled={activeAction !== null}
               className="gap-2"
@@ -272,13 +285,24 @@ export function Analysis() {
         <CratePill active icon={Music}>{status.total.toLocaleString()} tracks</CratePill>
         <CratePill icon={Gauge}>{metrics.analysisPercent}% audio covered</CratePill>
         <CratePill icon={Waves}>{metrics.blissPercent}% bliss covered</CratePill>
+        <CratePill icon={Fingerprint}>{metrics.fingerprintPercent}% fingerprinted</CratePill>
+        <CratePill className={status.chromaprint_available ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100"}>
+          {status.chromaprint_available ? "Chromaprint ready" : "PCM fallback"}
+        </CratePill>
         {metrics.activeJobs > 0 ? <CratePill icon={Activity}>{metrics.activeJobs} active</CratePill> : null}
         {metrics.failedJobs > 0 ? <CratePill className="border-red-500/25 bg-red-500/10 text-red-100">{metrics.failedJobs} failed</CratePill> : null}
       </OpsPageHero>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <OpsStatTile icon={Music} label="Audio Coverage" value={`${metrics.analysisPercent}%`} caption={`${status.analysis_done.toLocaleString()} analyzed`} tone="primary" />
         <OpsStatTile icon={Waves} label="Bliss Coverage" value={`${metrics.blissPercent}%`} caption={`${status.bliss_done.toLocaleString()} vectors`} />
+        <OpsStatTile
+          icon={Fingerprint}
+          label="Fingerprint Coverage"
+          value={`${metrics.fingerprintPercent}%`}
+          caption={`${status.fingerprint_done.toLocaleString()} tracks fingerprinted`}
+          tone={status.chromaprint_available ? "success" : "warning"}
+        />
         <OpsStatTile icon={Activity} label="Active Workers" value={metrics.activeJobs.toLocaleString()} caption="Analysis + bliss jobs currently running" tone={metrics.activeJobs > 0 ? "success" : "default"} />
         <OpsStatTile icon={Zap} label="Failures" value={metrics.failedJobs.toLocaleString()} caption="Tracks that need another pass or repair" tone={metrics.failedJobs > 0 ? "warning" : "default"} />
       </div>
@@ -288,7 +312,7 @@ export function Analysis() {
         title="Pipeline coverage"
         description="Track how far each background pipeline has progressed and spot failures before they rot."
       >
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-3">
           <PipelineCoverage
             icon={Music}
             title="Audio features"
@@ -311,6 +335,45 @@ export function Analysis() {
             accentClassName="text-emerald-300"
             emptyLabel="Waiting for tracks"
           />
+          <div className="rounded-md border border-white/8 bg-black/20 p-4">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-sky-300">
+                  <Fingerprint size={16} />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-white">Audio fingerprints</div>
+                  <div className="text-xs text-white/40">
+                    {status.total > 0
+                      ? `${status.fingerprint_done.toLocaleString()} of ${status.total.toLocaleString()} tracks fingerprinted`
+                      : "Waiting for tracks"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <CrateChip className="text-[10px]">{metrics.fingerprintPercent}% coverage</CrateChip>
+                <CrateChip className={status.chromaprint_available ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200" : "border-amber-500/20 bg-amber-500/10 text-amber-100"}>
+                  {status.chromaprint_available ? "Chromaprint active" : "PCM fallback"}
+                </CrateChip>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="h-2 overflow-hidden rounded-sm bg-white/[0.06]">
+                <div
+                  className="h-full rounded-sm bg-sky-400/80 transition-all duration-500"
+                  style={{ width: `${Math.min(metrics.fingerprintPercent, 100)}%` }}
+                />
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-4">
+                <MiniMetric label="Done" value={status.fingerprint_done.toLocaleString()} />
+                <MiniMetric label="Pending" value={status.fingerprint_pending.toLocaleString()} />
+                <MiniMetric label="Chromaprint" value={status.fingerprint_chromaprint.toLocaleString()} />
+                <MiniMetric label="PCM Fallback" value={status.fingerprint_pcm.toLocaleString()} tone={status.fingerprint_pcm > 0 ? "muted" : "default"} />
+              </div>
+            </div>
+          </div>
         </div>
       </OpsPanel>
 
@@ -348,6 +411,12 @@ export function Analysis() {
               <div className="text-sm font-medium text-white">Popularity jobs</div>
               <div className="mt-1 text-sm text-white/45">
                 Popularity is now part of the same operational story. Run it after enrichment waves so sorting and smart playlists stay current.
+              </div>
+            </div>
+            <div className="rounded-sm border border-white/6 bg-black/15 p-3">
+              <div className="text-sm font-medium text-white">AcoustID / Chromaprint</div>
+              <div className="mt-1 text-sm text-white/45">
+                Track fingerprints now prefer Chromaprint via <code>fpcalc</code>. If the runtime cannot see it, Crate falls back to deterministic PCM hashing so identity backfills can still progress.
               </div>
             </div>
           </div>

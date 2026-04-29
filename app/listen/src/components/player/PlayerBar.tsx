@@ -213,7 +213,11 @@ export function PlayerBar() {
 
   if (!currentTrack) return null;
 
-  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
+  const liked = isLiked(
+    currentTrack.libraryTrackId ?? null,
+    currentTrack.entityUid ?? null,
+    currentTrack.path || currentTrack.id,
+  );
 
   function prepareQueuePanel() {
     setShouldRenderQueuePanel(true);
@@ -248,13 +252,13 @@ export function PlayerBar() {
   async function toggleLike() {
     if (!currentTrack) return;
     const trackId = currentTrack.libraryTrackId ?? null;
-    const trackStorageId = currentTrack.storageId ?? null;
+    const trackEntityUid = currentTrack.entityUid ?? null;
     const trackPath = currentTrack.path || currentTrack.id;
     try {
       if (liked) {
-        await unlikeTrack(trackId, trackStorageId, trackPath);
+        await unlikeTrack(trackId, trackEntityUid, trackPath);
       } else {
-        await likeTrack(trackId, trackStorageId, trackPath);
+        await likeTrack(trackId, trackEntityUid, trackPath);
       }
     } catch { /* ignore */ }
   }
@@ -262,7 +266,11 @@ export function PlayerBar() {
   async function handleAddToCollection() {
     if (!currentTrack) return;
     try {
-      await likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
+      await likeTrack(
+        currentTrack.libraryTrackId ?? null,
+        currentTrack.entityUid ?? null,
+        currentTrack.path || currentTrack.id,
+      );
       toast.success("Added to collection");
     } catch { /* ignore */ }
   }

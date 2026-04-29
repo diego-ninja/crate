@@ -3,6 +3,7 @@ import { useCallback, useRef } from "react";
 import type { PlaySource, Track } from "@/contexts/player-types";
 import { getTrackCacheKey } from "@/contexts/player-utils";
 import { postWithRetry } from "@/lib/play-event-queue";
+import { toTrackReferencePayload } from "@/lib/track-reference";
 
 interface PlayEventSession {
   trackKey: string;
@@ -52,6 +53,7 @@ function buildSession(
 function dispatchPlayEvent(session: PlayEventSession, reason: FlushReason) {
   const trackDurationSeconds = session.trackDurationSeconds;
   const playedSeconds = Math.max(0, session.listenedSeconds);
+  const ref = toTrackReferencePayload(session.track);
 
   if (playedSeconds < PLAY_EVENT_MIN_SECONDS && reason !== "completed") {
     return;
@@ -65,9 +67,9 @@ function dispatchPlayEvent(session: PlayEventSession, reason: FlushReason) {
 
   void postWithRetry("/api/me/play-events", {
     client_event_id: generateClientEventId(),
-    track_id: session.track.libraryTrackId ?? null,
-    track_storage_id: session.track.storageId ?? null,
-    track_path: session.track.path || session.track.id,
+    track_id: ref.track_id ?? null,
+    track_entity_uid: ref.entity_uid ?? null,
+    track_path: ref.path || session.track.id,
     title: session.track.title,
     artist: session.track.artist,
     album: session.track.album || "",

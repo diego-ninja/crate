@@ -12,7 +12,12 @@ from pathlib import Path
 import requests
 
 from crate.db.cache_settings import get_setting, set_setting
-from crate.storage_import import infer_album_identity, move_album_tree, resolve_import_album_target
+from crate.storage_import import (
+    infer_album_identity,
+    move_album_tree,
+    resolve_import_album_target,
+    resolve_managed_track_destination,
+)
 
 log = logging.getLogger(__name__)
 
@@ -608,7 +613,13 @@ def move_to_library_detailed(processing_path: str, library_path: str) -> list[di
                 artist_name, album_name = infer_album_identity(album_item, fallback_artist=item.name)
                 _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 try:
-                    moved = move_album_tree(album_item, target_album_dir, managed_track_names=managed_track_names)
+                    moved = move_album_tree(
+                        album_item,
+                        target_album_dir,
+                        managed_track_names=managed_track_names,
+                        artist_name=artist_name,
+                        album_name=album_name,
+                    )
                     key = (artist_name, album_name, str(target_album_dir))
                     imported_targets[key] = {
                         "artist": artist_name,
@@ -629,7 +640,13 @@ def move_to_library_detailed(processing_path: str, library_path: str) -> list[di
                 _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 target_album_dir.mkdir(parents=True, exist_ok=True)
                 dest_file = (
-                    target_album_dir / f"{uuid.uuid4()}{album_item.suffix.lower()}"
+                    resolve_managed_track_destination(
+                        album_item,
+                        target_album_dir,
+                        artist_name=artist_name,
+                        album_name=album_name,
+                        album_entity_uid=target_album_dir.name,
+                    )
                     if managed_track_names
                     else target_album_dir / album_item.name
                 )

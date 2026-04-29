@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { api } from "@/lib/api";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playlists/PlaylistTrackFilterBar";
@@ -14,6 +14,9 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { isOfflineBusy } from "@/lib/offline";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { hasTrackReference, toTrackReferencePayload } from "@/lib/track-reference";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { fetchPlaylistRadio } from "@/lib/radio";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
@@ -22,14 +25,16 @@ interface CuratedPlaylistTrack {
   id: number;
   playlist_id: number;
   track_id?: number;
-  track_storage_id?: string;
+  track_entity_uid?: string;
   track_path: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration: number;
   position: number;
@@ -71,23 +76,19 @@ export function CuratedPlaylist() {
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
-    return data.tracks.map(
-      (t): Track => ({
-        id: t.track_storage_id || t.track_path,
-        storageId: t.track_storage_id,
-        title: t.title || "Unknown",
-        artist: t.artist || "",
-        artistId: t.artist_id,
-        artistSlug: t.artist_slug,
-        album: t.album,
-        albumId: t.album_id,
-        albumSlug: t.album_slug,
-        albumCover:
+    return data.tracks.map((t): Track =>
+      toPlayableTrack(t, {
+        cover:
           t.artist && t.album
-            ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
+            ? albumCoverApiUrl({
+                albumId: t.album_id,
+                albumEntityUid: t.album_entity_uid,
+                artistEntityUid: t.artist_entity_uid,
+                albumSlug: t.album_slug,
+                artistName: t.artist,
+                albumName: t.album,
+              })
             : undefined,
-        path: t.track_path,
-        libraryTrackId: t.track_id,
       }),
     );
   }, [data]);
@@ -163,19 +164,16 @@ export function CuratedPlaylist() {
 
   async function handleAddTrackToPlaylist(
     playlistId: number,
-    track: { title: string; artist: string; album?: string; duration?: number; path?: string; libraryTrackId?: number },
+    track: TrackRowData,
   ) {
-    if (!track.path && track.libraryTrackId == null) return;
+    if (!hasTrackReference(track)) return;
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
-        tracks: [{
-          track_id: track.libraryTrackId,
-          path: track.path,
-          title: track.title,
-          artist: track.artist,
+        tracks: [toTrackReferencePayload({
+          ...track,
           album: track.album || "",
           duration: track.duration || 0,
-        }],
+        })],
       });
       toast.success("Track added to playlist");
     } catch {
@@ -183,23 +181,9 @@ export function CuratedPlaylist() {
     }
   }
 
-  function handleCreatePlaylistFromTrack(track: {
-    title: string;
-    artist: string;
-    album?: string;
-    duration?: number;
-    path?: string;
-    library_track_id?: number;
-  }) {
+  function handleCreatePlaylistFromTrack(track: TrackRowData) {
     openCreatePlaylist({
-      tracks: track.path ? [{
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        duration: track.duration,
-        path: track.path,
-        libraryTrackId: track.library_track_id,
-      }] : [],
+      tracks: hasTrackReference(track) ? [toPlayableTrack(track)] : [],
     });
   }
 
@@ -427,20 +411,11 @@ export function CuratedPlaylist() {
           {filteredTracks.map((track, index) => (
             <TrackRow
               key={track.id}
-              track={{
-                id: track.track_storage_id ?? track.track_id ?? track.track_path,
-                storage_id: track.track_storage_id,
-                title: track.title || "Unknown",
-                artist: track.artist || "",
-                artist_id: track.artist_id,
-                artist_slug: track.artist_slug,
-                album: track.album,
-                album_id: track.album_id,
-                album_slug: track.album_slug,
-                duration: track.duration,
-                path: track.track_path,
+              track={toTrackRowData({
+                ...track,
+                id: track.track_id ?? track.track_path ?? track.title,
                 library_track_id: track.track_id,
-              }}
+              })}
               index={index + 1}
               showArtist
               showAlbum

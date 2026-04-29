@@ -52,7 +52,7 @@ describe("TrackRow playback behavior", () => {
     const tracks: TrackRowData[] = [
       {
         id: 1,
-        storage_id: "storage-1",
+        entity_uid: "entity-1",
         title: "Track One",
         artist: "Artist",
         album: "Album",
@@ -64,7 +64,7 @@ describe("TrackRow playback behavior", () => {
       },
       {
         id: 2,
-        storage_id: "storage-2",
+        entity_uid: "entity-2",
         title: "Track Two",
         artist: "Artist",
         album: "Album",
@@ -94,16 +94,18 @@ describe("TrackRow playback behavior", () => {
     expect(playAll).toHaveBeenCalledWith(
       [
         expect.objectContaining({
-          id: "storage-1",
-          storageId: "storage-1",
+          id: "entity-1",
+          entityUid: "entity-1",
+          storageId: undefined,
           format: "flac",
           bitrate: 1411,
           sampleRate: 44100,
           bitDepth: 16,
         }),
         expect.objectContaining({
-          id: "storage-2",
-          storageId: "storage-2",
+          id: "entity-2",
+          entityUid: "entity-2",
+          storageId: undefined,
           format: "aac",
           bitrate: 320,
           sampleRate: 48000,

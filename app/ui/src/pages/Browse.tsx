@@ -5,7 +5,7 @@ import { Button } from "@crate/ui/shadcn/button";
 import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@/lib/api";
-import { artistPagePath } from "@/lib/library-routes";
+import { artistActionApiPath, artistManagementApiPath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import {
   LayoutGrid, List, Loader2,
@@ -16,6 +16,7 @@ import { ArtistRow } from "@/components/artist/ArtistRow";
 
 interface ArtistItem {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   name: string;
   albums: number;
@@ -101,8 +102,11 @@ export function Browse() {
 
   async function batchEnrich() {
     for (const artistId of selected) {
+      const artist = artists.find((item) => item.id === artistId);
+      const endpoint = artistActionApiPath({ artistId, artistEntityUid: artist?.entity_uid }, "enrich");
+      if (!endpoint) continue;
       try {
-        await api(`/api/artists/${artistId}/enrich`, "POST");
+        await api(endpoint, "POST");
       } catch { /* continue */ }
     }
     toast.success(`Enrichment started for ${selected.size} artists`);
@@ -111,8 +115,11 @@ export function Browse() {
 
   async function batchAnalyze() {
     for (const artistId of selected) {
+      const artist = artists.find((item) => item.id === artistId);
+      const endpoint = artistManagementApiPath({ artistId, artistEntityUid: artist?.entity_uid }, "reanalyze");
+      if (!endpoint) continue;
       try {
-        await api(`/api/artists/${artistId}/analyze`, "POST");
+        await api(endpoint, "POST");
       } catch { /* continue */ }
     }
     toast.success(`Analysis started for ${selected.size} artists`);
@@ -124,8 +131,14 @@ export function Browse() {
     let failed = 0;
 
     for (const artistId of selected) {
+      const artist = artists.find((item) => item.id === artistId);
+      const endpoint = artistManagementApiPath({ artistId, artistEntityUid: artist?.entity_uid }, "delete");
+      if (!endpoint) {
+        failed += 1;
+        continue;
+      }
       try {
-        await api<{ task_id: string }>(`/api/manage/artists/${artistId}/delete`, "POST", { mode: "full" });
+        await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
         queued += 1;
       } catch {
         failed += 1;

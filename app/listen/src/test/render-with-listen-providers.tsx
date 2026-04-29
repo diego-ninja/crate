@@ -139,8 +139,8 @@ export function createMockOfflineValue(
 
 export function createMockTrack(overrides: Partial<Track> = {}): Track {
   return {
-    id: "storage-1",
-    storageId: "storage-1",
+    id: "track-1",
+    entityUid: "track-1",
     title: "Track One",
     artist: "Artist One",
     ...overrides,

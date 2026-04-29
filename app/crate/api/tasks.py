@@ -151,6 +151,23 @@ def api_tasks(request: Request, status: str | None = None, limit: int = 50, fres
 
 
 @router.post(
+    "/api/tasks/backfill-track-fingerprints",
+    response_model=TaskEnqueueResponse,
+    responses=_TASK_RESPONSES,
+    summary="Queue audio fingerprint backfill",
+)
+def api_backfill_track_fingerprints(request: Request):
+    """Populate entity-stable audio fingerprints for tracks missing them."""
+    _require_admin(request)
+    pending = list_tasks(status="pending", task_type="backfill_track_audio_fingerprints", limit=1)
+    running = list_tasks(status="running", task_type="backfill_track_audio_fingerprints", limit=1)
+    if pending or running:
+        return JSONResponse({"error": "Already running"}, status_code=409)
+    task_id = create_task("backfill_track_audio_fingerprints")
+    return {"task_id": task_id}
+
+
+@router.post(
     "/api/tasks/backfill-similarities",
     response_model=TaskEnqueueResponse,
     responses=_TASK_RESPONSES,

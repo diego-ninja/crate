@@ -21,13 +21,14 @@ const {
         trackCount: 1,
         readyTrackCount: 1,
         totalBytes: 1234,
-        readyStorageIds: ["storage-1"],
+        readyAssetKeys: ["storage-1"],
         tracks: [{
+          entity_uid: "entity-1",
           storage_id: "storage-1",
           title: "Track One",
           artist: "Artist",
-          stream_url: "/api/tracks/by-storage/storage-1/stream",
-          download_url: "/api/tracks/by-storage/storage-1/download",
+          stream_url: "/api/tracks/by-entity/entity-1/stream",
+          download_url: "/api/tracks/by-entity/entity-1/download",
         }],
       },
     },
@@ -46,6 +47,10 @@ vi.mock("@/lib/offline", () => ({
   deriveOfflineProfileKey: vi.fn(() => "profile-1"),
   ensureOfflineStorageBudget: vi.fn(async () => {}),
   getOfflineItemKey: (kind: string, entityId: string | number) => `${kind}:${entityId}`,
+  getOfflineTrackAssetKey: (track: string | { entity_uid?: string | null; storage_id?: string | null; entityUid?: string | null; storageId?: string | null }) => {
+    if (typeof track === "string") return track;
+    return track.entity_uid || track.entityUid || track.storage_id || track.storageId || null;
+  },
   hasCachedTrackAsset: vi.fn(async () => false),
   hydrateOfflineProfileState: hydrateOfflineProfileStateMock,
   isOfflineBusy: (state: string) => ["queued", "downloading", "syncing"].includes(state),
@@ -88,7 +93,7 @@ function OfflineProbe() {
   return (
     <div>
       <div>{offline.summary.itemCount}</div>
-      <div>{offline.getTrackState("storage-1")}</div>
+      <div>{offline.getTrackState("entity-1")}</div>
       <button onClick={() => void offline.clearActiveProfile()}>clear</button>
     </div>
   );

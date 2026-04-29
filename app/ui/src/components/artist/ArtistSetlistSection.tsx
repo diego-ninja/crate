@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router";
 import { fuzzyMatchTrack } from "@/components/artist/ArtistPageBits";
 import { api } from "@/lib/api";
-import { albumPagePath } from "@/lib/library-routes";
+import { albumPagePath, artistActionApiPath } from "@/lib/library-routes";
 import { toast } from "sonner";
 
 interface SetlistSong {
@@ -28,6 +28,7 @@ interface LibraryTrackTitle {
 interface ArtistSetlistSectionProps {
   artistName: string;
   artistId?: number;
+  artistEntityUid?: string;
   setlistData?: SetlistData;
   allTrackTitles: LibraryTrackTitle[];
   onTrackTitlesLoaded: (tracks: LibraryTrackTitle[]) => void;
@@ -36,6 +37,7 @@ interface ArtistSetlistSectionProps {
 export function ArtistSetlistSection({
   artistName,
   artistId,
+  artistEntityUid,
   setlistData,
   allTrackTitles,
   onTrackTitlesLoaded,
@@ -54,10 +56,11 @@ export function ArtistSetlistSection({
   }
 
   async function ensureTrackTitles() {
-    if (artistId == null) return [];
+    const endpoint = artistActionApiPath({ artistId, artistEntityUid }, "track-titles");
+    if (!endpoint) return [];
     if (allTrackTitles.length > 0) return allTrackTitles;
     try {
-      const tracks = await api<LibraryTrackTitle[]>(`/api/artists/${artistId}/track-titles`);
+      const tracks = await api<LibraryTrackTitle[]>(endpoint);
       if (Array.isArray(tracks)) {
         onTrackTitlesLoaded(tracks);
         return tracks;

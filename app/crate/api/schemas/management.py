@@ -122,6 +122,12 @@ class AnalysisStatusResponse(BaseModel):
     bliss_pending: int = 0
     bliss_active: int = 0
     bliss_failed: int = 0
+    fingerprint_done: int = 0
+    fingerprint_pending: int = 0
+    fingerprint_chromaprint: int = 0
+    fingerprint_pcm: int = 0
+    chromaprint_available: bool = False
+    fingerprint_strategy: str = "unavailable"
     last_analyzed: AnalysisTrackSummaryResponse = Field(default_factory=AnalysisTrackSummaryResponse)
     last_bliss: BlissTrackSummaryResponse = Field(default_factory=BlissTrackSummaryResponse)
 

@@ -40,7 +40,7 @@ interface ConnectedAccount {
 
 interface CurrentTrack {
   track_id?: number | null;
-  track_storage_id?: string | null;
+  track_entity_uid?: string | null;
   title?: string | null;
   artist?: string | null;
   artist_id?: number | null;

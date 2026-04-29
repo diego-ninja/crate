@@ -139,9 +139,11 @@ class TimelineAlbumResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     artist: str
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str
     tracks: int

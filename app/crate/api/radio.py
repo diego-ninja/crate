@@ -15,7 +15,10 @@ from crate.bliss import (
 )
 from crate.db.repositories.auth import get_user_by_email
 from crate.db.cache_store import get_cache, set_cache
-from crate.db.repositories.library import get_library_artist_by_id, get_library_track_by_storage_id
+from crate.db.repositories.library import (
+    get_library_artist_by_id,
+    resolve_library_track_reference,
+)
 from crate.db.queries.radio import (
     get_track_path_by_id,
     get_track_path_by_pattern,
@@ -48,13 +51,27 @@ def _effective_user_id(user: dict) -> int | None:
     return existing["id"] if existing else None
 
 
-def _resolve_track_path(track_id: int = 0, path: str = "", storage_id: str = "") -> str | None:
+def _sanitize_radio_tracks(rows: list[dict]) -> list[dict]:
+    sanitized: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        item.pop("track_storage_id", None)
+        item.pop("storage_id", None)
+        sanitized.append(item)
+    return sanitized
+
+
+def _resolve_track_path(track_id: int = 0, path: str = "", storage_id: str = "", entity_uid: str = "") -> str | None:
     if track_id:
         return get_track_path_by_id(track_id)
 
-    if storage_id:
-        row = get_library_track_by_storage_id(storage_id)
-        return row["path"] if row else None
+    track = resolve_library_track_reference(
+        track_entity_uid=entity_uid or None,
+        track_storage_id=storage_id or None,
+        track_path=path or None,
+    )
+    if track and track.get("path"):
+        return track["path"]
 
     if not path:
         return None
@@ -81,7 +98,7 @@ def api_artist_radio(request: Request, artist_id: int, limit: int = Query(50, ge
     tracks = generate_artist_radio(artist_id, limit=limit, user_id=effective_user_id)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
-    enriched_tracks = _enrich_radio_tracks(tracks)
+    enriched_tracks = _sanitize_radio_tracks(_enrich_radio_tracks(tracks))
     result = {
         "session": {
             "type": "artist",
@@ -115,13 +132,19 @@ def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(
 def api_track_radio(
     request: Request,
     track_id: int = 0,
-    storage_id: str = "",
+    entity_uid: str = "",
     path: str = "",
     limit: int = Query(50, ge=1, le=100),
 ):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
-    resolved_path = _resolve_track_path(track_id=track_id, path=path, storage_id=storage_id)
+    legacy_storage_id = request.query_params.get("storage_id", "")
+    resolved_path = _resolve_track_path(
+        track_id=track_id,
+        path=path,
+        storage_id=legacy_storage_id,
+        entity_uid=entity_uid,
+    )
     if not resolved_path:
         raise HTTPException(status_code=404, detail="Track not found")
 
@@ -134,15 +157,16 @@ def api_track_radio(
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
-    enriched_tracks = _enrich_radio_tracks(tracks)
+    enriched_tracks = _sanitize_radio_tracks(_enrich_radio_tracks(tracks))
     seed_track = enriched_tracks[0]
+    seed_entity_uid = seed_track.get("track_entity_uid")
     result = {
         "session": {
             "type": "track",
             "name": f"{seed_track.get('title') or 'Track'} Radio",
             "seed": {
                 "track_id": seed_track.get("track_id"),
-                "track_storage_id": seed_track.get("track_storage_id"),
+                "track_entity_uid": seed_entity_uid,
                 "track_path": seed_track.get("track_path"),
                 "title": seed_track.get("title"),
                 "artist": seed_track.get("artist"),
@@ -177,7 +201,7 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
-    enriched_tracks = _enrich_radio_tracks(tracks)
+    enriched_tracks = _sanitize_radio_tracks(_enrich_radio_tracks(tracks))
     result = {
         "session": {
             "type": "album",
@@ -225,7 +249,7 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
-    enriched_tracks = _enrich_radio_tracks(tracks)
+    enriched_tracks = _sanitize_radio_tracks(_enrich_radio_tracks(tracks))
     result = {
         "session": {
             "type": "playlist",
@@ -266,7 +290,7 @@ def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Que
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
-    enriched_tracks = _enrich_radio_tracks(tracks)
+    enriched_tracks = _sanitize_radio_tracks(_enrich_radio_tracks(tracks))
     result = {
         "session": {
             "type": "playlist",

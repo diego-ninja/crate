@@ -115,7 +115,7 @@ class TestShouldProcessArtist:
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00")
 
-            with patch("crate.content.get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}), \
+            with patch("crate.content._get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("NewBand", library_path=lib) is True
 
@@ -135,7 +135,7 @@ class TestShouldProcessArtist:
             with patch.dict("sys.modules", {"crate.crate_cli": mock_cli}):
                 current_hash = compute_dir_hash(artist_dir)
 
-            with patch("crate.content.get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}), \
+            with patch("crate.content._get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("SameBand", library_path=lib) is False
 
@@ -149,7 +149,7 @@ class TestShouldProcessArtist:
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00" * 100)
 
-            with patch("crate.content.get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}), \
+            with patch("crate.content._get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("ChangedBand", library_path=lib) is True
 
@@ -159,6 +159,47 @@ class TestShouldProcessArtist:
         from crate.content import should_process_artist
 
         with tempfile.TemporaryDirectory() as lib:
-            with patch("crate.content.get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}), \
+            with patch("crate.content._get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}), \
                  patch("crate.content.resolve_artist_dir", return_value=None):
                 assert should_process_artist("GhostBand", library_path=lib) is False
+
+
+class TestQueueProcessNewContent:
+    def test_force_and_non_force_share_same_artist_dedup_key(self, pg_db, monkeypatch):
+        from crate.content import queue_process_new_content_if_needed
+
+        monkeypatch.setattr("crate.content.should_process_artist", lambda artist_name, library_path=None: True)
+
+        first = queue_process_new_content_if_needed("Terror", force=False)
+        second = queue_process_new_content_if_needed("Terror", force=True)
+
+        assert first is not None
+        assert second is None
+
+        tasks = pg_db.list_tasks(task_type="process_new_content")
+        assert len(tasks) == 1
+        assert tasks[0]["params"]["artist"] == "Terror"
+
+    def test_dedup_key_normalizes_case_and_whitespace(self, pg_db, monkeypatch):
+        from crate.content import queue_process_new_content_if_needed
+
+        monkeypatch.setattr("crate.content.should_process_artist", lambda artist_name, library_path=None: True)
+
+        first = queue_process_new_content_if_needed(" Terror ")
+        second = queue_process_new_content_if_needed("terror", force=True)
+        third = queue_process_new_content_if_needed("TERROR")
+
+        assert first is not None
+        assert second is None
+        assert third is None
+        assert len(pg_db.list_tasks(task_type="process_new_content")) == 1
+
+    def test_skip_if_unchanged_still_short_circuits_before_queueing(self, pg_db, monkeypatch):
+        from crate.content import queue_process_new_content_if_needed
+
+        monkeypatch.setattr("crate.content.should_process_artist", lambda artist_name, library_path=None: False)
+
+        created = queue_process_new_content_if_needed("Terror", force=False)
+
+        assert created is None
+        assert pg_db.list_tasks(task_type="process_new_content") == []

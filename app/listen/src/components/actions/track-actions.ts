@@ -25,6 +25,7 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
+import { hasPlayableTrackReference } from "@/lib/playable-track";
 import { fetchTrackRadio } from "@/lib/radio";
 
 interface UseTrackActionEntriesInput {
@@ -49,9 +50,10 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
 
   const libraryTrackId =
     input.track.library_track_id ?? (typeof input.track.id === "number" ? input.track.id : null);
-  const trackStorageId = input.track.storage_id ?? null;
-  const liked = isLiked(libraryTrackId, trackStorageId, input.track.path);
-  const offlineState = getTrackState(trackStorageId);
+  const trackEntityUid = input.track.entity_uid ?? null;
+  const hasTrackRef = hasPlayableTrackReference(input.track);
+  const liked = isLiked(libraryTrackId, trackEntityUid, input.track.path);
+  const offlineState = getTrackState(trackEntityUid);
 
   return useMemo<ItemActionMenuEntry[]>(() => {
     const playerTrack = buildTrackMenuPlayerTrack(input.track, input.albumCover);
@@ -80,9 +82,9 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
         label: liked ? "Unlike track" : "Like track",
         icon: Heart,
         active: liked,
-        disabled: libraryTrackId == null && !trackStorageId,
+        disabled: !hasTrackRef,
         onSelect: async () => {
-          await toggleTrackLike(libraryTrackId, trackStorageId, input.track.path);
+          await toggleTrackLike(libraryTrackId, trackEntityUid, input.track.path);
           toast.success(liked ? "Removed from liked tracks" : "Added to liked tracks");
         },
       }),
@@ -90,12 +92,12 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
         key: "radio",
         label: "Start track radio",
         icon: Radio,
-        disabled: libraryTrackId == null && !trackStorageId && !input.track.path,
+        disabled: !hasTrackRef,
         onSelect: async () => {
           try {
             const radio = await fetchTrackRadio({
               libraryTrackId,
-              storageId: trackStorageId,
+              entityUid: trackEntityUid,
               path: input.track.path,
               title: input.track.title,
             });
@@ -114,10 +116,13 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
         label: getOfflineActionLabel(offlineState),
         icon: isOfflineBusy(offlineState) ? Loader2 : ArrowDownToLine,
         active: offlineState === "ready",
-        disabled: !offlineSupported || !trackStorageId || isOfflineBusy(offlineState),
+        disabled: !offlineSupported || !trackEntityUid || isOfflineBusy(offlineState),
         onSelect: async () => {
           try {
-            const result = await toggleTrackOffline({ storageId: trackStorageId, title: input.track.title });
+            const result = await toggleTrackOffline({
+              entityUid: trackEntityUid,
+              title: input.track.title,
+            });
             toast.success(result === "removed" ? "Offline copy removed" : "Track available offline");
           } catch (error) {
             toast.error((error as Error).message || "Failed to update offline copy");
@@ -194,9 +199,10 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
     input.track,
     liked,
     libraryTrackId,
+    hasTrackRef,
     offlineState,
     offlineSupported,
-    trackStorageId,
+    trackEntityUid,
     navigate,
     play,
     playAll,

@@ -18,6 +18,9 @@ import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { formatTotalDuration } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { hasTrackReference, toTrackReferencePayload } from "@/lib/track-reference";
+import { toTrackRowData } from "@/lib/track-row-data";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
 
@@ -45,13 +48,16 @@ interface Playlist {
 interface PlaylistTrack {
   id: number;
   track_id?: number;
+  track_entity_uid?: string;
   track_path: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration: number;
   position: number;
@@ -81,6 +87,7 @@ interface LibraryPlaylistsPageData {
 interface FollowedArtist {
   artist_name: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   created_at: string;
   album_count: number;
@@ -91,9 +98,11 @@ interface FollowedArtist {
 interface SavedAlbum {
   saved_at: string;
   id: number;
+  album_entity_uid?: string;
   slug?: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   name: string;
   year: string;
@@ -213,13 +222,11 @@ function PlaylistsTab() {
         }
       }
 
-      const newTracks = payload.tracks.filter((track) => track.playlistEntryId == null && track.path);
+      const newTracks = payload.tracks.filter((track) => track.playlistEntryId == null && hasTrackReference(track));
       if (newTracks.length > 0) {
         await api(`/api/playlists/${editingPlaylist.id}/tracks`, "POST", {
-          tracks: newTracks.map((track) => ({
-            path: track.path,
-            title: track.title,
-            artist: track.artist,
+          tracks: newTracks.map((track) => toTrackReferencePayload({
+            ...track,
             album: track.album || "",
             duration: track.duration || 0,
           })),
@@ -385,12 +392,7 @@ function PlaylistsTab() {
 
 function editableTracks(playlist: PlaylistDetail): PlaylistComposerTrack[] {
   return playlist.tracks.map((track) => ({
-    title: track.title || "Unknown",
-    artist: track.artist || "",
-    album: track.album,
-    duration: track.duration,
-    path: track.track_path,
-    libraryTrackId: track.track_id,
+    ...toPlayableTrack(track),
     playlistEntryId: track.id,
     playlistPosition: track.position,
   }));
@@ -411,6 +413,7 @@ function ArtistsTab() {
           key={a.artist_id ?? a.artist_name}
           name={a.artist_name}
           artistId={a.artist_id}
+          artistEntityUid={a.artist_entity_uid}
           artistSlug={a.artist_slug}
           subtitle={`${a.album_count} album${a.album_count !== 1 ? "s" : ""}`}
           layout="grid"
@@ -436,6 +439,8 @@ function AlbumsTab() {
           artist={a.artist}
           album={a.name}
           albumId={a.id}
+          albumEntityUid={a.album_entity_uid}
+          artistEntityUid={a.artist_entity_uid}
           albumSlug={a.slug}
           year={a.year}
           layout="grid"
@@ -472,19 +477,14 @@ function LikedTab() {
   }, [tracks, search, sort]);
 
   const trackRows = useMemo<TrackRowData[]>(() =>
-    filtered.map((t) => ({
-      id: t.track_id,
-      title: t.title,
-      artist: t.artist,
-      artist_id: t.artist_id,
-      artist_slug: t.artist_slug,
-      album: t.album,
-      album_id: t.album_id,
-      album_slug: t.album_slug,
-      duration: t.duration,
-      path: t.relative_path || t.path,
-      library_track_id: t.track_id,
-    })),
+    filtered.map((t) =>
+      toTrackRowData({
+        ...t,
+        id: t.track_id ?? t.relative_path ?? t.path ?? t.title,
+        path: t.relative_path || t.path,
+        library_track_id: t.track_id,
+      }),
+    ),
     [filtered],
   );
 
@@ -495,21 +495,28 @@ function LikedTab() {
 
   function handlePlayAll() {
     const list = filtered.length ? filtered : tracks!;
-    const playerTracks: Track[] = list.map((t) => ({
-      id: t.relative_path || t.path,
-      title: t.title,
-      artist: t.artist,
-      artistId: t.artist_id,
-      artistSlug: t.artist_slug,
-      album: t.album,
-      albumId: t.album_id,
-      albumSlug: t.album_slug,
-      albumCover: t.artist && t.album
-        ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
-        : undefined,
-      path: t.relative_path || t.path,
-      libraryTrackId: t.track_id,
-    }));
+    const playerTracks: Track[] = list.map((t) =>
+      toPlayableTrack(
+        {
+          ...t,
+          id: t.track_id ?? t.relative_path ?? t.path ?? t.title,
+          path: t.relative_path || t.path,
+          library_track_id: t.track_id,
+        },
+        {
+          cover: t.artist && t.album
+            ? albumCoverApiUrl({
+                albumId: t.album_id,
+                albumEntityUid: t.album_entity_uid,
+                artistEntityUid: t.artist_entity_uid,
+                albumSlug: t.album_slug,
+                artistName: t.artist,
+                albumName: t.album,
+              })
+            : undefined,
+        },
+      ),
+    );
     playAll(playerTracks, 0);
   }
 
@@ -553,7 +560,14 @@ function LikedTab() {
             showArtist
             showAlbum
             albumCover={row.artist && row.album
-              ? albumCoverApiUrl({ albumId: row.album_id, albumSlug: row.album_slug, artistName: row.artist, albumName: row.album })
+              ? albumCoverApiUrl({
+                  albumId: row.album_id,
+                  albumEntityUid: row.album_entity_uid,
+                  artistEntityUid: row.artist_entity_uid,
+                  albumSlug: row.album_slug,
+                  artistName: row.artist,
+                  albumName: row.album,
+                })
               : undefined}
             showCoverThumb
             queueTracks={trackRows}

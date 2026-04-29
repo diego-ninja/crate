@@ -87,16 +87,16 @@ def unsave_album(user_id: int, album_id: int) -> bool:
 def like_track(
     user_id: int,
     track_id: int | None = None,
+    track_entity_uid: str | None = None,
     track_path: str | None = None,
-    track_storage_id: str | None = None,
 ) -> bool | None:
     now = utc_now_iso()
     with transaction_scope() as session:
         resolved_track_id = resolve_track_id(
             session,
             track_id=track_id,
+            track_entity_uid=track_entity_uid,
             track_path=track_path,
-            track_storage_id=track_storage_id,
         )
         if not resolved_track_id:
             return None
@@ -123,15 +123,15 @@ def like_track(
 def unlike_track(
     user_id: int,
     track_id: int | None = None,
+    track_entity_uid: str | None = None,
     track_path: str | None = None,
-    track_storage_id: str | None = None,
 ) -> bool:
     with transaction_scope() as session:
         resolved_track_id = resolve_track_id(
             session,
             track_id=track_id,
+            track_entity_uid=track_entity_uid,
             track_path=track_path,
-            track_storage_id=track_storage_id,
         )
         if not resolved_track_id:
             return False

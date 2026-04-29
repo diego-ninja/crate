@@ -30,6 +30,7 @@ interface TidalMissingAlbum {
 interface ArtistDiscographySectionProps {
   artistName: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   albums: ArtistAlbumSummary[];
   sortedAlbums: ArtistAlbumSummary[];
@@ -46,6 +47,7 @@ interface ArtistDiscographySectionProps {
 export function ArtistDiscographySection({
   artistName,
   artistId,
+  artistEntityUid,
   artistSlug,
   albums,
   sortedAlbums,
@@ -140,9 +142,11 @@ export function ArtistDiscographySection({
               <AlbumCard
                 key={`local-${item.album.name}`}
                 albumId={item.album.id}
+                albumEntityUid={item.album.entity_uid}
                 albumSlug={item.album.slug}
                 artist={artistName}
                 artistId={artistId}
+                artistEntityUid={artistEntityUid}
                 artistSlug={artistSlug}
                 name={item.album.name}
                 displayName={item.album.display_name}
@@ -159,6 +163,7 @@ export function ArtistDiscographySection({
                   key={`tidal-${item.album.url}`}
                   artist={artistName}
                   artistId={artistId}
+                  artistEntityUid={artistEntityUid}
                   title={item.album.title}
                   year={item.album.year}
                   tracks={item.album.tracks}

@@ -10,6 +10,8 @@ function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
   if (!track.artist || !track.album) return null;
   return albumCoverApiUrl({
     albumId: track.album_id,
+    albumEntityUid: track.album_entity_uid,
+    artistEntityUid: track.artist_entity_uid,
     albumSlug: track.album_slug,
     artistName: track.artist,
     albumName: track.album,

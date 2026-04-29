@@ -62,8 +62,8 @@ def has_legacy_stream_id_column() -> bool:
 def resolve_track_id(
     session,
     track_id: int | None = None,
+    track_entity_uid: str | None = None,
     track_path: str | None = None,
-    track_storage_id: str | None = None,
 ) -> int | None:
     if track_id is not None:
         row = session.execute(
@@ -73,10 +73,10 @@ def resolve_track_id(
         if row:
             return row["id"]
 
-    if track_storage_id:
+    if track_entity_uid:
         row = session.execute(
-            text("SELECT id FROM library_tracks WHERE storage_id = :storage_id"),
-            {"storage_id": track_storage_id},
+            text("SELECT id FROM library_tracks WHERE entity_uid = :entity_uid"),
+            {"entity_uid": track_entity_uid},
         ).mappings().first()
         if row:
             return row["id"]
@@ -149,6 +149,44 @@ def resolve_track_id(
     return row["id"] if row else None
 
 
+def resolve_track_reference(
+    session,
+    track_id: int | None = None,
+    track_entity_uid: str | None = None,
+    track_path: str | None = None,
+) -> dict | None:
+    resolved_track_id = resolve_track_id(
+        session,
+        track_id=track_id,
+        track_entity_uid=track_entity_uid,
+        track_path=track_path,
+    )
+    if resolved_track_id is None:
+        return None
+
+    row = session.execute(
+        text(
+            """
+            SELECT
+                id AS track_id,
+                entity_uid::text AS track_entity_uid,
+                path AS track_path
+            FROM library_tracks
+            WHERE id = :track_id
+            LIMIT 1
+            """
+        ),
+        {"track_id": resolved_track_id},
+    ).mappings().first()
+    if row:
+        return dict(row)
+    return {
+        "track_id": resolved_track_id,
+        "track_entity_uid": track_entity_uid,
+        "track_path": track_path,
+    }
+
+
 def emit_user_domain_event(session, *, event_type: str, user_id: int, payload: dict | None = None) -> None:
     append_domain_event(
         event_type,
@@ -169,6 +207,7 @@ __all__ = [
     "has_legacy_stream_id_column",
     "library_root",
     "relative_track_path",
+    "resolve_track_reference",
     "resolve_track_id",
     "utc_now_iso",
 ]

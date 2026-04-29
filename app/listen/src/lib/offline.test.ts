@@ -4,7 +4,9 @@ import {
   deriveOfflineProfileKeyFromStoredUser,
   getActiveOfflineProfileKey,
   getOfflineItemKey,
+  getOfflineTrackManifestPaths,
   loadOfflineSnapshot,
+  normalizeOfflineSnapshot,
   saveOfflineSnapshot,
   setActiveOfflineProfileKey,
   summarizeOfflineSnapshot,
@@ -122,5 +124,52 @@ describe("offline metadata helpers", () => {
       readyTrackCount: 2,
       totalBytes: 400,
     });
+  });
+
+  it("canonicalizes legacy track snapshots to entity_uid when available", () => {
+    const snapshot = normalizeOfflineSnapshot({
+      items: {
+        "track:storage-1": {
+          key: "track:storage-1",
+          kind: "track",
+          entityId: "storage-1",
+          title: "Track",
+          state: "ready",
+          trackCount: 1,
+          readyTrackCount: 1,
+          totalBytes: 1234,
+          readyAssetKeys: ["storage-1"],
+          tracks: [{
+            entity_uid: "entity-1",
+            storage_id: "storage-1",
+            title: "Track",
+            artist: "Artist",
+            stream_url: "/api/tracks/by-entity/entity-1/stream",
+            download_url: "/api/tracks/by-entity/entity-1/download",
+          }],
+        },
+      },
+    });
+
+    expect(snapshot.items["track:entity-1"]).toBeTruthy();
+    expect(snapshot.items["track:entity-1"]?.entityId).toBe("entity-1");
+    expect(snapshot.items["track:entity-1"]?.readyAssetKeys).toEqual(["entity-1"]);
+    expect(snapshot.items["track:entity-1"]?.readyStorageIds).toBeUndefined();
+  });
+
+  it("builds offline track manifest candidates preferring entity_uid", () => {
+    expect(
+      getOfflineTrackManifestPaths({
+        entity_uid: "entity-1",
+        storage_id: "storage-1",
+      }),
+    ).toEqual([
+      "/api/offline/tracks/by-entity/entity-1/manifest",
+    ]);
+
+    expect(getOfflineTrackManifestPaths("entity-legacy")).toEqual([
+      "/api/offline/tracks/by-entity/entity-legacy/manifest",
+      "/api/offline/tracks/by-storage/entity-legacy/manifest",
+    ]);
   });
 });

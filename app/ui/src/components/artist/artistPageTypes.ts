@@ -2,6 +2,7 @@ import type { GenreProfileItem } from "@/components/genres/GenrePill";
 
 export interface ArtistData {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   name: string;
   updated_at?: string | null;
@@ -20,6 +21,7 @@ export interface ArtistData {
 
 export interface ArtistAlbumSummary {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   name: string;
   display_name?: string;

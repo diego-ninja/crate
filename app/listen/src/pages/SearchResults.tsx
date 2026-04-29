@@ -3,15 +3,42 @@ import { useSearchParams } from "react-router";
 import { Loader2, Play } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
-import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
+import { TrackRow } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 
 interface SearchData {
-  artists: { id?: number; slug?: string; name: string }[];
-  albums: { artist: string; artist_id?: number; artist_slug?: string; name: string; id?: number; slug?: string; year?: string }[];
-  tracks: { id?: number; storage_id?: string; slug?: string; title: string; artist: string; artist_id?: number; artist_slug?: string; album: string; album_id?: number; album_slug?: string; path?: string; duration?: number }[];
+  artists: { id?: number; entity_uid?: string; slug?: string; name: string }[];
+  albums: {
+    artist: string;
+    artist_id?: number;
+    artist_entity_uid?: string;
+    artist_slug?: string;
+    name: string;
+    id?: number;
+    entity_uid?: string;
+    slug?: string;
+    year?: string;
+  }[];
+  tracks: {
+    id?: number;
+    entity_uid?: string;
+    slug?: string;
+    title: string;
+    artist: string;
+    artist_id?: number;
+    artist_entity_uid?: string;
+    artist_slug?: string;
+    album: string;
+    album_id?: number;
+    album_entity_uid?: string;
+    album_slug?: string;
+    path?: string;
+    duration?: number;
+  }[];
 }
 
 export function SearchResults() {
@@ -32,19 +59,10 @@ export function SearchResults() {
     return () => controller.abort();
   }, [query]);
 
-  const trackRowData = useMemo<TrackRowData[]>(() =>
-    (data?.tracks ?? []).map((t, i) => ({
-      id: String(t.id || t.path || i),
-      title: t.title,
-      artist: t.artist,
-      artist_id: t.artist_id,
-      artist_slug: t.artist_slug,
-      album: t.album,
-      album_id: t.album_id,
-      album_slug: t.album_slug,
-      storage_id: t.storage_id,
-      duration: t.duration,
-      path: t.path,
+  const trackRowData = useMemo(() =>
+    (data?.tracks ?? []).map((t, i) => toTrackRowData({
+      ...t,
+      id: t.id ?? t.path ?? `${t.artist}-${t.title}-${i}`,
       library_track_id: typeof t.id === "number" ? t.id : undefined,
     })),
     [data?.tracks],
@@ -54,20 +72,22 @@ export function SearchResults() {
   if (loading && !data) return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
   if (!data) return null;
 
-  const trackToPlayer = (t: SearchData["tracks"][0]): Track => ({
-    id: t.storage_id || t.path || String(t.id || `${t.artist}-${t.title}`),
-    storageId: t.storage_id,
-    title: t.title,
-    artist: t.artist,
-    artistId: t.artist_id,
-    artistSlug: t.artist_slug,
-    album: t.album,
-    albumId: t.album_id,
-    albumSlug: t.album_slug,
-    path: t.path,
-    libraryTrackId: typeof t.id === "number" ? t.id : undefined,
-    albumCover: t.album ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }) : undefined,
-  });
+  const trackToPlayer = (t: SearchData["tracks"][0]): Track =>
+    toPlayableTrack({
+      ...t,
+      library_track_id: typeof t.id === "number" ? t.id : undefined,
+    }, {
+      cover: t.album
+        ? albumCoverApiUrl({
+            albumId: t.album_id,
+            albumEntityUid: t.album_entity_uid,
+            artistEntityUid: t.artist_entity_uid,
+            albumSlug: t.album_slug,
+            artistName: t.artist,
+            albumName: t.album,
+          })
+        : undefined,
+    });
 
   return (
     <div className="space-y-8">
@@ -78,7 +98,14 @@ export function SearchResults() {
           <h2 className="text-lg font-semibold mb-3">Artists ({data.artists.length})</h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.artists.map((a) => (
-              <ArtistCard key={a.id || a.name} name={a.name} artistId={a.id} artistSlug={a.slug} layout="grid" />
+              <ArtistCard
+                key={a.id || a.entity_uid || a.name}
+                name={a.name}
+                artistId={a.id}
+                artistEntityUid={a.entity_uid}
+                artistSlug={a.slug}
+                layout="grid"
+              />
             ))}
           </div>
         </section>
@@ -89,7 +116,25 @@ export function SearchResults() {
           <h2 className="text-lg font-semibold mb-3">Albums ({data.albums.length})</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {data.albums.map((a) => (
-              <AlbumCard layout="grid" key={a.id || `${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.id} albumSlug={a.slug} year={a.year} cover={albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name })} />
+              <AlbumCard
+                layout="grid"
+                key={a.id || a.entity_uid || `${a.artist}-${a.name}`}
+                artist={a.artist}
+                album={a.name}
+                albumId={a.id}
+                albumEntityUid={a.entity_uid}
+                artistEntityUid={a.artist_entity_uid}
+                albumSlug={a.slug}
+                year={a.year}
+                cover={albumCoverApiUrl({
+                  albumId: a.id,
+                  albumEntityUid: a.entity_uid,
+                  artistEntityUid: a.artist_entity_uid,
+                  albumSlug: a.slug,
+                  artistName: a.artist,
+                  albumName: a.name,
+                })}
+              />
             ))}
           </div>
         </section>
@@ -109,7 +154,7 @@ export function SearchResults() {
           <div>
             {trackRowData.map((t, i) => (
               <TrackRow
-                key={t.storage_id || t.path || `${t.artist}-${t.title}-${i}`}
+                key={t.id || t.path || `${t.artist}-${t.title}-${i}`}
                 track={t}
                 index={i}
                 showArtist

@@ -14,6 +14,7 @@ from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
 from crate.db.repositories.library import (
     get_library_album_by_id,
+    get_library_album_by_entity_uid,
     get_library_albums,
     get_library_artist,
     get_library_artist_by_slug,
@@ -72,6 +73,19 @@ _ZIP_RESPONSES = merge_responses(
 )
 def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
     album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_related_albums(request, album["artist"], album["name"], limit)
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/related",
+    response_model=list[RelatedAlbumResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List albums related to a given album by entity UID",
+)
+def api_related_albums_by_entity_uid(request: Request, album_entity_uid: str, limit: int = 15):
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_related_albums(request, album["artist"], album["name"], limit)
@@ -137,10 +151,11 @@ def api_album(request: Request, artist: str, album: str):
     track_list = []
     album_tags = {}
     for track in tracks_data:
+        entity_uid = track.get("entity_uid")
         track_list.append(
             {
                 "id": track["id"],
-                "storage_id": track.get("storage_id"),
+                "entity_uid": entity_uid,
                 "filename": track["filename"],
                 "format": track.get("format", ""),
                 "size_mb": round(track["size"] / (1024**2), 1) if track.get("size") else 0,
@@ -192,8 +207,10 @@ def api_album(request: Request, artist: str, album: str):
 
     return {
         "id": album_data["id"],
+        "entity_uid": album_data.get("entity_uid"),
         "slug": album_data.get("slug"),
         "artist_id": artist_row["id"] if (artist_row := get_library_artist(artist)) else None,
+        "artist_entity_uid": artist_row.get("entity_uid") if artist_row else None,
         "artist_slug": artist_row["slug"] if artist_row else None,
         "artist": artist,
         "name": album,
@@ -238,6 +255,19 @@ def api_album_by_artist_slug(request: Request, artist_slug: str, album_slug: str
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_album(request, artist["name"], album["name"])
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information by entity UID",
+)
+def api_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_album(request, album["artist"], album["name"])
 
 
 @router.get(
@@ -368,6 +398,19 @@ def api_enrich_album(request: Request, album_id: int):
 
 
 @router.post(
+    "/api/albums/by-entity/{album_entity_uid}/enrich",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue album enrichment by entity UID",
+)
+def api_enrich_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_enrich_album(request, album["id"])
+
+
+@router.post(
     "/api/albums/{album_id}/fetch-cover",
     response_model=TaskEnqueueResponse,
     responses=_BROWSE_RESPONSES,
@@ -389,6 +432,19 @@ def api_fetch_cover(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
+@router.post(
+    "/api/albums/by-entity/{album_entity_uid}/fetch-cover",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artwork fetching for an album by entity UID",
+)
+def api_fetch_cover_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    return api_fetch_cover(request, album["id"])
+
+
 @router.get(
     "/api/albums/{album_id}/cover",
     responses=_IMAGE_RESPONSES,
@@ -396,6 +452,20 @@ def api_fetch_cover(request: Request, album_id: int):
 )
 def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024)):
     album = get_library_album_by_id(album_id)
+    if not album:
+        return _placeholder_cover("?")
+    artist = get_library_artist(album["artist"])
+    album_dir = resolve_album_dir(library_path(), album, artist=artist)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/cover",
+    responses=_IMAGE_RESPONSES,
+    summary="Get album artwork by entity UID",
+)
+def api_cover_by_entity_uid(album_entity_uid: str, size: int | None = Query(None, ge=32, le=1024)):
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return _placeholder_cover("?")
     artist = get_library_artist(album["artist"])
@@ -439,6 +509,18 @@ def api_download_album(request: Request, artist: str, album: str):
 )
 def api_download_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
+    if not album:
+        return Response(status_code=404)
+    return api_download_album(request, album["artist"], album["name"])
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/download",
+    responses=_ZIP_RESPONSES,
+    summary="Download an album as a zip archive by entity UID",
+)
+def api_download_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return Response(status_code=404)
     return api_download_album(request, album["artist"], album["name"])

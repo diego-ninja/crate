@@ -16,21 +16,42 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
             text(
                 """
                 SELECT
-                    pt.*,
-                    lt.id AS track_id,
-                    lt.storage_id::text AS track_storage_id,
+                    pt.id,
+                    pt.playlist_id,
+                    COALESCE(lt.id, pt.track_id) AS track_id,
+                    COALESCE(lt.entity_uid::text, pt.track_entity_uid::text) AS track_entity_uid,
+                    COALESCE(lt.path, pt.track_path) AS track_path,
+                    COALESCE(lt.title, NULLIF(pt.title, ''), lt.filename, 'Unknown') AS title,
+                    COALESCE(lt.artist, NULLIF(pt.artist, ''), '') AS artist,
+                    COALESCE(lt.album, NULLIF(pt.album, ''), '') AS album,
+                    CASE
+                        WHEN COALESCE(pt.duration, 0) > 0 THEN pt.duration
+                        ELSE COALESCE(lt.duration, pt.duration, 0)
+                    END AS duration,
+                    pt.position,
+                    pt.added_at,
                     ar.id AS artist_id,
+                    ar.entity_uid::text AS artist_entity_uid,
                     ar.slug AS artist_slug,
                     alb.id AS album_id,
+                    alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
-                    SELECT id, storage_id::text, path, artist, album, album_id
+                    SELECT id, entity_uid::text, path, title, filename, artist, album, album_id, duration
                     FROM library_tracks lt
                     WHERE lt.id = pt.track_id
+                       OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)
+                       OR (pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id)
                        OR lt.path = pt.track_path
                        OR lt.path LIKE ('%/' || pt.track_path)
-                    ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
+                    ORDER BY CASE
+                        WHEN lt.id = pt.track_id THEN 0
+                        WHEN pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid THEN 1
+                        WHEN pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id THEN 2
+                        WHEN lt.path = pt.track_path THEN 3
+                        ELSE 4
+                    END
                     LIMIT 1
                 ) lt ON TRUE
                 LEFT JOIN library_albums alb

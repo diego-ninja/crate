@@ -22,6 +22,7 @@ class ArtistRow(BaseModel):
 
     id: int | None = None
     storage_id: str | None = None
+    entity_uid: str | None = None
     name: str
     slug: str | None = None
     folder_name: str | None = None
@@ -72,6 +73,7 @@ class AlbumRow(BaseModel):
 
     id: int
     storage_id: str | None = None
+    entity_uid: str | None = None
     artist: str
     name: str
     slug: str | None = None
@@ -106,6 +108,7 @@ class TrackRow(BaseModel):
 
     id: int
     storage_id: str | None = None
+    entity_uid: str | None = None
     album_id: int | None = None
     artist: str
     album: str
@@ -125,6 +128,8 @@ class TrackRow(BaseModel):
     albumartist: str | None = None
     musicbrainz_albumid: str | None = None
     musicbrainz_trackid: str | None = None
+    audio_fingerprint: str | None = None
+    audio_fingerprint_source: str | None = None
     path: str
     updated_at: datetime | None = None
 

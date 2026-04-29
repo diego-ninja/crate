@@ -17,6 +17,7 @@ def list_invalid_genre_taxonomy_nodes(*, session=None) -> list[dict]:
             """
             SELECT
                 n.id,
+                n.entity_uid::text AS entity_uid,
                 n.slug,
                 n.name,
                 COUNT(DISTINCT a.alias_slug)::INTEGER AS alias_count,
@@ -26,7 +27,7 @@ def list_invalid_genre_taxonomy_nodes(*, session=None) -> list[dict]:
             LEFT JOIN genre_taxonomy_edges e
               ON e.source_genre_id = n.id
               OR e.target_genre_id = n.id
-            GROUP BY n.id, n.slug, n.name
+            GROUP BY n.id, n.entity_uid, n.slug, n.name
             ORDER BY n.slug ASC
             """
         )
@@ -52,6 +53,7 @@ def list_genre_taxonomy_nodes_for_external_enrichment(
     with read_scope() as session:
         query = """
             SELECT
+                entity_uid::text AS entity_uid,
                 slug,
                 name,
                 description,
@@ -85,6 +87,7 @@ def list_genre_taxonomy_nodes_for_musicbrainz_sync(
     with read_scope() as session:
         query = """
             SELECT
+                n.entity_uid::text AS entity_uid,
                 n.slug,
                 n.name,
                 n.description,
@@ -110,6 +113,7 @@ def list_genre_taxonomy_nodes_for_musicbrainz_sync(
         query += """
             GROUP BY
                 n.id,
+                n.entity_uid,
                 n.slug,
                 n.name,
                 n.description,

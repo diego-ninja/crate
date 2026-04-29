@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
+from crate.db.repositories.entity_identity_keys import upsert_entity_identity_key
 from crate.db.repositories.genres_taxonomy_shared import (
     normalize_taxonomy_text,
     slugify_taxonomy_value,
 )
 from crate.db.tx import transaction_scope
+from crate.entity_ids import genre_taxonomy_entity_uid
 from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache_after_commit
 
 
@@ -43,7 +45,7 @@ def upsert_genre_taxonomy_node(
     if mbid:
         row = session.execute(
             text(
-                "SELECT id, slug, name, description, is_top_level, musicbrainz_mbid "
+                "SELECT id, entity_uid, slug, name, description, is_top_level, musicbrainz_mbid "
                 "FROM genre_taxonomy_nodes WHERE musicbrainz_mbid = :mbid"
             ),
             {"mbid": mbid},
@@ -51,7 +53,7 @@ def upsert_genre_taxonomy_node(
     if not row:
         row = session.execute(
             text(
-                "SELECT id, slug, name, description, is_top_level, musicbrainz_mbid "
+                "SELECT id, entity_uid, slug, name, description, is_top_level, musicbrainz_mbid "
                 "FROM genre_taxonomy_nodes WHERE slug = :slug"
             ),
             {"slug": candidate_slug},
@@ -64,6 +66,16 @@ def upsert_genre_taxonomy_node(
         idx = 0
         current_name = normalize_taxonomy_text(row.get("name"))
         generic_name = row["slug"].replace("-", " ")
+        if row.get("entity_uid") is None:
+            update_fields.append(f"entity_uid = :u{idx}")
+            values[f"u{idx}"] = str(
+                genre_taxonomy_entity_uid(
+                    slug=row["slug"] or candidate_slug,
+                    name=row.get("name") or candidate_name,
+                    musicbrainz_mbid=row.get("musicbrainz_mbid") or mbid,
+                )
+            )
+            idx += 1
         if candidate_name and (not current_name or current_name == generic_name):
             update_fields.append(f"name = :u{idx}")
             values[f"u{idx}"] = candidate_name
@@ -86,7 +98,7 @@ def upsert_genre_taxonomy_node(
                         UPDATE genre_taxonomy_nodes
                         SET {', '.join(update_fields)}
                         WHERE id = :node_id
-                        RETURNING id, slug, name, description, is_top_level, musicbrainz_mbid
+                        RETURNING id, entity_uid, slug, name, description, is_top_level, musicbrainz_mbid
                         """
                     ),
                     values,
@@ -97,12 +109,19 @@ def upsert_genre_taxonomy_node(
             session.execute(
                 text(
                     """
-                    INSERT INTO genre_taxonomy_nodes (slug, name, description, is_top_level, musicbrainz_mbid)
-                    VALUES (:slug, :name, :description, :is_top_level, :mbid)
-                    RETURNING id, slug, name, description, is_top_level, musicbrainz_mbid
+                    INSERT INTO genre_taxonomy_nodes (entity_uid, slug, name, description, is_top_level, musicbrainz_mbid)
+                    VALUES (:entity_uid, :slug, :name, :description, :is_top_level, :mbid)
+                    RETURNING id, entity_uid, slug, name, description, is_top_level, musicbrainz_mbid
                     """
                 ),
                 {
+                    "entity_uid": str(
+                        genre_taxonomy_entity_uid(
+                            slug=candidate_slug,
+                            name=candidate_name,
+                            musicbrainz_mbid=mbid,
+                        )
+                    ),
                     "slug": candidate_slug,
                     "name": candidate_name,
                     "description": candidate_description,
@@ -141,6 +160,16 @@ def upsert_genre_taxonomy_node(
         )
 
     invalidate_runtime_taxonomy_cache_after_commit(session)
+    upsert_entity_identity_key(session, entity_type="genre_taxonomy", entity_uid=row.get("entity_uid"), key_type="slug", key_value=row["slug"], is_primary=True)
+    upsert_entity_identity_key(session, entity_type="genre_taxonomy", entity_uid=row.get("entity_uid"), key_type="name", key_value=row["name"], is_primary=True)
+    if row.get("musicbrainz_mbid"):
+        upsert_entity_identity_key(
+            session,
+            entity_type="genre_taxonomy",
+            entity_uid=row.get("entity_uid"),
+            key_type="mbid",
+            key_value=row["musicbrainz_mbid"],
+        )
     return row
 
 

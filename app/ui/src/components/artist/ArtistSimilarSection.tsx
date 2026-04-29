@@ -13,15 +13,16 @@ interface SimilarArtist {
 interface ArtistSimilarSectionProps {
   artistName: string;
   artistId?: number;
+  artistEntityUid?: string;
   artists: SimilarArtist[];
 }
 
-export function ArtistSimilarSection({ artistName, artistId, artists }: ArtistSimilarSectionProps) {
+export function ArtistSimilarSection({ artistName, artistId, artistEntityUid, artists }: ArtistSimilarSectionProps) {
   return (
     <div>
       <div className="bg-card border border-border rounded-md overflow-hidden mb-6">
         <h4 className="text-sm font-semibold px-4 pt-4 pb-2">Artist Network</h4>
-        <ArtistNetworkGraph centerArtist={artistName} centerArtistId={artistId} />
+        <ArtistNetworkGraph centerArtist={artistName} centerArtistId={artistId} centerArtistEntityUid={artistEntityUid} />
       </div>
       {artists.length > 0 && (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">

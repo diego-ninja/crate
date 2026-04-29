@@ -20,6 +20,9 @@ import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { toTrackReferencePayload } from "@/lib/track-reference";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { buildAlbumPlayerTracks, buildAlbumQualityBadges } from "@/pages/album-model";
@@ -34,7 +37,7 @@ function albumGenreSlug(name: string) {
 
 interface AlbumTrack {
   id: number;
-  storage_id?: string;
+  entity_uid?: string;
   filename: string;
   format: string;
   size_mb: number;
@@ -60,8 +63,10 @@ interface AlbumTrack {
 
 interface AlbumData {
   id: number;
+  entity_uid?: string;
   slug?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist: string;
   name: string;
@@ -152,11 +157,23 @@ export function Album() {
   }
 
   const coverUrl = albumCoverApiUrl(
-    { albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name },
+    {
+      albumId: data.id,
+      albumEntityUid: data.entity_uid,
+      artistEntityUid: data.artist_entity_uid,
+      albumSlug: data.slug,
+      artistName: data.artist,
+      albumName: data.name,
+    },
     { size: 768 },
   );
   const artistPhotoUrl = artistPhotoApiUrl(
-    { artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist },
+    {
+      artistId: data.artist_id,
+      artistEntityUid: data.artist_entity_uid,
+      artistSlug: data.artist_slug,
+      artistName: data.artist,
+    },
     { size: 512 },
   );
   const displayName = data.display_name || data.name;
@@ -298,11 +315,16 @@ export function Album() {
   }
 
   const playlistTracksPayload = albumTracks.map((track) => ({
-    path: track.path,
-    title: track.tags.title || track.filename,
-    artist: artistName,
-    album: displayName,
-    duration: track.length_sec,
+    ...toTrackReferencePayload({
+      id: track.id,
+      entity_uid: track.entity_uid,
+      path: track.path,
+      title: track.tags.title || track.filename,
+      artist: artistName,
+      album: displayName,
+      duration: track.length_sec,
+      library_track_id: track.id,
+    }),
   }));
 
   async function handleAddToPlaylist(playlistId: number) {
@@ -319,14 +341,11 @@ export function Album() {
   async function handleAddTrackToPlaylist(playlistId: number, track: TrackRowData) {
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
-        tracks: [{
-          track_id: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-          path: track.path,
-          title: track.title,
-          artist: track.artist,
+        tracks: [toTrackReferencePayload({
+          ...track,
           album: track.album || displayName,
           duration: track.duration || 0,
-        }],
+        })],
       });
       toast.success(`Added "${track.title}" to playlist`);
     } catch {
@@ -337,13 +356,17 @@ export function Album() {
   function handleCreatePlaylistFromAlbum() {
     openCreatePlaylist({
       name: displayName,
-      tracks: albumTracks.map((track) => ({
+      tracks: albumTracks.map((track) => toPlayableTrack({
+        id: track.id,
+        entity_uid: track.entity_uid,
         title: track.tags.title || track.filename,
         artist: artistName,
+        artist_entity_uid: data?.artist_entity_uid,
         album: displayName,
+        album_entity_uid: data?.entity_uid,
         duration: track.length_sec,
         path: track.path,
-        libraryTrackId: track.id,
+        library_track_id: track.id,
       })),
     });
     setMenuOpen(false);
@@ -352,14 +375,11 @@ export function Album() {
 
   function handleCreatePlaylistFromTrack(track: TrackRowData) {
     openCreatePlaylist({
-      tracks: [{
-        title: track.title,
-        artist: track.artist,
+      tracks: [toPlayableTrack({
+        ...track,
         album: track.album || displayName,
-        duration: track.duration,
-        path: track.path,
-        libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-      }],
+        library_track_id: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
+      })],
     });
   }
 
@@ -592,16 +612,18 @@ export function Album() {
                 {tracks.map((t, idx) => (
                   <TrackRow
                     key={t.id}
-                    track={{
-                      id: String(t.id),
+                    track={toTrackRowData({
+                      id: t.id,
+                      entity_uid: t.entity_uid,
                       title: t.tags.title || t.filename,
                       artist: data.artist,
                       artist_id: data.artist_id,
+                      artist_entity_uid: data.artist_entity_uid,
                       artist_slug: data.artist_slug,
                       album: displayName,
                       album_id: data.id,
+                      album_entity_uid: data.entity_uid,
                       album_slug: data.slug,
-                      storage_id: t.storage_id,
                       duration: t.length_sec,
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
@@ -610,7 +632,7 @@ export function Album() {
                       sample_rate: t.sample_rate,
                       bit_depth: t.bit_depth,
                       library_track_id: t.id,
-                    }}
+                    })}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
                     albumCover={coverUrl}
                     playlistOptions={playlists ?? undefined}
@@ -626,17 +648,19 @@ export function Album() {
           data.tracks.map((t, idx) => (
             <TrackRow
               key={t.id}
-                track={{
-                  id: String(t.id),
-                  title: t.tags.title || t.filename,
-                  artist: data.artist,
-                  artist_id: data.artist_id,
-                  artist_slug: data.artist_slug,
-                  album: displayName,
-                  album_id: data.id,
-                  album_slug: data.slug,
-                  storage_id: t.storage_id,
-                  duration: t.length_sec,
+              track={toTrackRowData({
+                id: t.id,
+                entity_uid: t.entity_uid,
+                title: t.tags.title || t.filename,
+                artist: data.artist,
+                artist_id: data.artist_id,
+                artist_entity_uid: data.artist_entity_uid,
+                artist_slug: data.artist_slug,
+                album: displayName,
+                album_id: data.id,
+                album_entity_uid: data.entity_uid,
+                album_slug: data.slug,
+                duration: t.length_sec,
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
@@ -644,7 +668,7 @@ export function Album() {
                 sample_rate: t.sample_rate,
                 bit_depth: t.bit_depth,
                 library_track_id: t.id,
-              }}
+              })}
               index={parseInt(t.tags.tracknumber) || idx + 1}
               albumCover={coverUrl}
               playlistOptions={playlists ?? undefined}

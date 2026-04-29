@@ -64,12 +64,15 @@ function recentArtwork(item: HomeRecentItem): string | null {
   if (item.type === "artist") {
     return artistPhotoApiUrl({
       artistId: item.artist_id,
+      artistEntityUid: item.artist_entity_uid,
       artistSlug: item.artist_slug,
       artistName: item.artist_name,
     }, { size: 192 }) || null;
   }
   return albumCoverApiUrl({
     albumId: item.album_id,
+    albumEntityUid: item.album_entity_uid,
+    artistEntityUid: item.artist_entity_uid,
     albumSlug: item.album_slug,
     artistName: item.artist_name,
     albumName: item.album_name,
@@ -80,6 +83,8 @@ function radioArtwork(station: HomeRadioStation): string | null {
   if (station.type === "album") {
     return albumCoverApiUrl({
       albumId: station.album_id,
+      albumEntityUid: station.album_entity_uid,
+      artistEntityUid: station.artist_entity_uid,
       albumSlug: station.album_slug,
       artistName: station.artist_name,
       albumName: station.album_name,
@@ -87,6 +92,7 @@ function radioArtwork(station: HomeRadioStation): string | null {
   }
   return artistPhotoApiUrl({
     artistId: station.artist_id,
+    artistEntityUid: station.artist_entity_uid,
     artistSlug: station.artist_slug,
     artistName: station.artist_name,
   }, { size: 256 }) || null;
@@ -577,6 +583,8 @@ export function SuggestedAlbumsSection({
             artist={album.artist_name}
             album={album.album_name}
             albumId={album.album_id}
+            albumEntityUid={album.album_entity_uid}
+            artistEntityUid={album.artist_entity_uid}
             albumSlug={album.album_slug}
             year={album.year}
           />
@@ -724,6 +732,7 @@ export function FavoriteArtistsSection({
             key={artist.artist_id ?? artist.artist_name}
             name={artist.artist_name}
             artistId={artist.artist_id}
+            artistEntityUid={artist.artist_entity_uid}
             artistSlug={artist.artist_slug}
             subtitle={`${artist.play_count} plays`}
           />

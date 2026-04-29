@@ -1,19 +1,22 @@
 import type { PlaySource, Track } from "@/contexts/PlayerContext";
 import { ApiError, api } from "@/lib/api";
 import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
 import { getPlaySourceLabel } from "@/components/player/player-source";
 
 export interface RadioTrackPayload {
   track_id?: number | null;
-  track_storage_id?: string | null;
+  track_entity_uid?: string | null;
   track_slug?: string | null;
   track_path?: string | null;
   title: string;
   artist: string;
   artist_id?: number | null;
+  artist_entity_uid?: string | null;
   artist_slug?: string | null;
   album?: string | null;
   album_id?: number | null;
+  album_entity_uid?: string | null;
   album_slug?: string | null;
   duration?: number | null;
   score?: number | null;
@@ -25,7 +28,7 @@ interface RadioResponse {
     name?: string;
     seed?: {
       track_id?: number | null;
-      track_storage_id?: string | null;
+      track_entity_uid?: string | null;
       track_path?: string | null;
       artist_id?: number | null;
       artist_name?: string | null;
@@ -40,44 +43,38 @@ interface RadioRequestOptions {
   signal?: AbortSignal;
 }
 
-function toTrack(payload: RadioTrackPayload): Track {
-  const trackPath = payload.track_path || "";
-  const playbackId =
-    payload.track_storage_id ||
-    trackPath ||
-    (payload.track_id != null
-      ? String(payload.track_id)
-      : `radio:${payload.artist || "unknown"}:${payload.album || "unknown"}:${payload.title || "unknown"}`);
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
-  return {
-    id: playbackId,
-    storageId: payload.track_storage_id || undefined,
-    title: payload.title || "Unknown",
-    artist: payload.artist || "Unknown",
-    artistId: payload.artist_id || undefined,
-    artistSlug: payload.artist_slug || undefined,
-    album: payload.album || undefined,
-    albumId: payload.album_id || undefined,
-    albumSlug: payload.album_slug || undefined,
-    albumCover: payload.album
-      ? albumCoverApiUrl({
-          albumId: payload.album_id,
-          albumSlug: payload.album_slug,
-          artistName: payload.artist,
-          albumName: payload.album,
-        }, { size: 512 }) || artistPhotoApiUrl({
-          artistId: payload.artist_id,
-          artistSlug: payload.artist_slug,
-          artistName: payload.artist,
-        }, { size: 512 }) || undefined
-      : artistPhotoApiUrl({
-          artistId: payload.artist_id,
-          artistSlug: payload.artist_slug,
-          artistName: payload.artist,
-        }, { size: 512 }) || undefined,
-    path: trackPath || undefined,
-    libraryTrackId: payload.track_id || undefined,
-  };
+function toTrack(payload: RadioTrackPayload): Track {
+  const cover = payload.album
+    ? albumCoverApiUrl({
+        albumId: payload.album_id,
+        albumEntityUid: payload.album_entity_uid,
+        artistEntityUid: payload.artist_entity_uid,
+        albumSlug: payload.album_slug,
+        artistName: payload.artist,
+        albumName: payload.album,
+      }, { size: 512 }) || artistPhotoApiUrl({
+        artistId: payload.artist_id,
+        artistEntityUid: payload.artist_entity_uid,
+        artistSlug: payload.artist_slug,
+        artistName: payload.artist,
+      }, { size: 512 }) || undefined
+    : artistPhotoApiUrl({
+        artistId: payload.artist_id,
+        artistEntityUid: payload.artist_entity_uid,
+        artistSlug: payload.artist_slug,
+        artistName: payload.artist,
+      }, { size: 512 }) || undefined;
+
+  return toPlayableTrack({
+    ...payload,
+    id: payload.track_id ?? `radio:${payload.artist || "unknown"}:${payload.album || "unknown"}:${payload.title || "unknown"}`,
+    path: payload.track_path,
+    library_track_id: payload.track_id,
+  }, { cover });
 }
 
 async function requestRadio(url: string, options: RadioRequestOptions = {}): Promise<RadioResponse> {
@@ -147,7 +144,7 @@ export async function fetchArtistRadio(
 
 export async function fetchTrackRadio(seed: {
   libraryTrackId?: number | null;
-  storageId?: string | null;
+  entityUid?: string | null;
   path?: string | null;
   title: string;
 }, options: RadioRequestOptions = {}): Promise<{
@@ -157,9 +154,9 @@ export async function fetchTrackRadio(seed: {
   const seedValue =
     seed.libraryTrackId != null
       ? String(seed.libraryTrackId)
-      : seed.storageId || seed.path;
+      : seed.entityUid || seed.path;
   if (!seedValue) {
-    throw new Error("track radio requires libraryTrackId, storageId or path");
+    throw new Error("track radio requires libraryTrackId, entityUid or path");
   }
   return startSeededRadioSession("track", seedValue, seed.title, options);
 }
@@ -215,12 +212,23 @@ export async function fetchRadioContinuation(
 
   if (radio.seedType === "track") {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (radio.seedId != null) {
+    const legacySeedStorageId = (radio as { seedStorageId?: string | null }).seedStorageId;
+    if (radio.seedEntityUid) {
+      params.set("entity_uid", radio.seedEntityUid);
+    } else if (typeof radio.seedId === "number") {
       params.set("track_id", String(radio.seedId));
-    } else if (radio.seedStorageId) {
-      params.set("storage_id", radio.seedStorageId);
+    } else if (typeof radio.seedId === "string" && looksLikeUuid(radio.seedId)) {
+      params.set("entity_uid", radio.seedId);
+    } else if (typeof radio.seedId === "string" && radio.seedId.includes("/")) {
+      params.set("path", radio.seedId);
     } else if (radio.seedPath) {
       params.set("path", radio.seedPath);
+    } else if (legacySeedStorageId) {
+      // Compatibility for persisted legacy radio sessions. New sessions should
+      // always carry an entity UID, path, or numeric library track id instead.
+      params.set("storage_id", legacySeedStorageId);
+    } else if (radio.seedId != null) {
+      return [];
     } else {
       return [];
     }
@@ -273,7 +281,7 @@ export async function fetchInfiniteContinuation(
 
 export interface ShapedRadioTrack {
   track_id: number;
-  storage_id?: string | null;
+  entity_uid?: string | null;
   title: string;
   artist: string;
   album?: string | null;
@@ -294,18 +302,22 @@ interface ShapedRadioNextResponse {
 }
 
 function shapedToTrack(t: ShapedRadioTrack): Track {
-  return {
-    id: t.storage_id || String(t.track_id),
-    storageId: t.storage_id || undefined,
-    title: t.title,
-    artist: t.artist,
-    album: t.album || undefined,
-    albumId: t.album_id || undefined,
-    albumCover: t.album_id
-      ? albumCoverApiUrl({ albumId: t.album_id }) || undefined
-      : undefined,
-    libraryTrackId: t.track_id,
-  };
+  return toPlayableTrack(
+    {
+      id: t.track_id,
+      entity_uid: t.entity_uid,
+      title: t.title,
+      artist: t.artist,
+      album: t.album,
+      album_id: t.album_id,
+      library_track_id: t.track_id,
+    },
+    {
+      cover: t.album_id
+        ? albumCoverApiUrl({ albumId: t.album_id }) || undefined
+        : undefined,
+    },
+  );
 }
 
 export async function startShapedRadio(

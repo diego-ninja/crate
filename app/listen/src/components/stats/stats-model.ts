@@ -1,4 +1,5 @@
 import type { Track } from "@/contexts/PlayerContext";
+import { toPlayableTrack } from "@/lib/playable-track";
 
 export type StatsWindow = "7d" | "30d" | "90d" | "365d" | "all_time";
 
@@ -34,7 +35,7 @@ export interface StatsTrends {
 
 export interface StatsTrack {
   track_id: number | null;
-  track_storage_id?: string | null;
+  track_entity_uid?: string | null;
   track_path: string | null;
   title: string;
   artist: string;
@@ -129,19 +130,10 @@ export function formatStatsPercent(value: number): string {
 }
 
 export function toPlayerTrack(item: StatsTrack): Track {
-  return {
-    id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-    storageId: item.track_storage_id || undefined,
-    title: item.title,
-    artist: item.artist,
-    album: item.album,
-    path: item.track_path || undefined,
-    libraryTrackId: item.track_id || undefined,
-    artistId: item.artist_id || undefined,
-    artistSlug: item.artist_slug || undefined,
-    albumId: item.album_id || undefined,
-    albumSlug: item.album_slug || undefined,
-  };
+  return toPlayableTrack({
+    ...item,
+    id: item.track_id || `${item.artist}-${item.title}`,
+  });
 }
 
 export function buildRecapHighlights(

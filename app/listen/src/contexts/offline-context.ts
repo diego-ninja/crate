@@ -7,7 +7,7 @@ import type {
 } from "@/lib/offline";
 
 export interface OfflineTrackInput {
-  storageId?: string | null;
+  entityUid?: string | null;
   title?: string | null;
 }
 
@@ -26,12 +26,12 @@ export interface OfflineContextValue {
   supported: boolean;
   syncing: boolean;
   summary: OfflineSummary;
-  getTrackState: (storageId?: string | null) => OfflineItemState;
+  getTrackState: (entityUid?: string | null) => OfflineItemState;
   getAlbumState: (albumId?: number | null) => OfflineItemState;
   getPlaylistState: (playlistId?: number | null) => OfflineItemState;
   getAlbumRecord: (albumId?: number | null) => OfflineItemRecord | null;
   getPlaylistRecord: (playlistId?: number | null) => OfflineItemRecord | null;
-  isTrackOffline: (storageId?: string | null) => boolean;
+  isTrackOffline: (entityUid?: string | null) => boolean;
   isAlbumOffline: (albumId?: number | null) => boolean;
   isPlaylistOffline: (playlistId?: number | null) => boolean;
   toggleTrackOffline: (input: OfflineTrackInput) => Promise<"enabled" | "removed">;

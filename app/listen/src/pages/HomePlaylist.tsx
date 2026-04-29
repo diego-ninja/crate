@@ -15,6 +15,9 @@ import { useApi } from "@/hooks/use-api";
 import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { hasTrackReference, toTrackReferencePayload } from "@/lib/track-reference";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { fetchHomePlaylistRadio } from "@/lib/radio";
 import { formatTotalDuration, shuffleArray } from "@/lib/utils";
 
@@ -32,28 +35,19 @@ export function HomePlaylist() {
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
-    return data.tracks.map(
-      (track): Track => ({
-        id: track.track_storage_id || track.track_path || String(track.track_id || `${track.artist}-${track.title}`),
-        storageId: track.track_storage_id || undefined,
-        title: track.title || "Unknown",
-        artist: track.artist || "",
-        artistId: track.artist_id || undefined,
-        artistSlug: track.artist_slug || undefined,
-        album: track.album || undefined,
-        albumId: track.album_id || undefined,
-        albumSlug: track.album_slug || undefined,
-        albumCover:
+    return data.tracks.map((track): Track =>
+      toPlayableTrack(track, {
+        cover:
           track.artist && track.album
             ? albumCoverApiUrl({
                 albumId: track.album_id || undefined,
+                albumEntityUid: track.album_entity_uid || undefined,
+                artistEntityUid: track.artist_entity_uid || undefined,
                 albumSlug: track.album_slug || undefined,
                 artistName: track.artist,
                 albumName: track.album,
               }) || undefined
             : undefined,
-        path: track.track_path || undefined,
-        libraryTrackId: track.track_id || undefined,
       }),
     );
   }, [data]);
@@ -64,20 +58,13 @@ export function HomePlaylist() {
   );
 
   const trackRows = useMemo<TrackRowData[]>(() =>
-    filteredTracks.map((track) => ({
-      id: track.track_storage_id ?? track.track_id ?? track.track_path ?? track.title,
-      storage_id: track.track_storage_id ?? undefined,
-      title: track.title,
-      artist: track.artist,
-      artist_id: track.artist_id ?? undefined,
-      artist_slug: track.artist_slug ?? undefined,
-      album: track.album ?? undefined,
-      album_id: track.album_id ?? undefined,
-      album_slug: track.album_slug ?? undefined,
-      duration: track.duration ?? undefined,
-      path: track.track_path ?? undefined,
-      library_track_id: track.track_id ?? undefined,
-    })),
+    filteredTracks.map((track) =>
+      toTrackRowData({
+        ...track,
+        id: track.track_id ?? track.track_path ?? track.title,
+        library_track_id: track.track_id,
+      }),
+    ),
     [filteredTracks],
   );
 
@@ -133,19 +120,16 @@ export function HomePlaylist() {
 
   async function handleAddTrackToPlaylist(
     targetPlaylistId: number,
-    track: { title: string; artist: string; album?: string; duration?: number; path?: string; libraryTrackId?: number },
+    track: TrackRowData,
   ) {
-    if (!track.path && track.libraryTrackId == null) return;
+    if (!hasTrackReference(track)) return;
     try {
       await api(`/api/playlists/${targetPlaylistId}/tracks`, "POST", {
-        tracks: [{
-          track_id: track.libraryTrackId,
-          path: track.path,
-          title: track.title,
-          artist: track.artist,
+        tracks: [toTrackReferencePayload({
+          ...track,
           album: track.album || "",
           duration: track.duration || 0,
-        }],
+        })],
       });
       toast.success("Track added to playlist");
     } catch {
@@ -153,23 +137,9 @@ export function HomePlaylist() {
     }
   }
 
-  function handleCreatePlaylistFromTrack(track: {
-    title: string;
-    artist: string;
-    album?: string | null;
-    duration?: number | null;
-    path?: string | null;
-    track_id?: number | null;
-  }) {
+  function handleCreatePlaylistFromTrack(track: TrackRowData) {
     openCreatePlaylist({
-      tracks: track.path ? [{
-        title: track.title,
-        artist: track.artist,
-        album: track.album || undefined,
-        duration: track.duration || undefined,
-        path: track.path,
-        libraryTrackId: track.track_id || undefined,
-      }] : [],
+      tracks: hasTrackReference(track) ? [toPlayableTrack(track)] : [],
     });
   }
 
@@ -292,7 +262,7 @@ export function HomePlaylist() {
         <div className="space-y-1">
           {trackRows.map((row, index) => (
             <TrackRow
-              key={row.storage_id ?? row.id ?? `${row.path}-${index}`}
+              key={row.id ?? `${row.path}-${index}`}
               track={row}
               index={index + 1}
               showArtist

@@ -67,7 +67,7 @@ function getOfflineCacheName() {
 
 function getOfflineStreamKey(requestUrl) {
   const url = new URL(requestUrl);
-  if (!/\/api\/tracks\/by-storage\/[^/]+\/stream$/.test(url.pathname)) return null;
+  if (!/\/api\/tracks\/by-(storage|entity)\/[^/]+\/stream$/.test(url.pathname)) return null;
   return `${url.origin}${url.pathname}`;
 }
 

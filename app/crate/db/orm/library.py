@@ -15,7 +15,8 @@ class LibraryArtist(Base):
     __tablename__ = "library_artists"
 
     id: Mapped[int] = mapped_column(BIGINT, primary_key=True)
-    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    storage_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    entity_uid: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     slug: Mapped[str | None] = mapped_column(Text)
     folder_name: Mapped[str | None] = mapped_column(Text)
@@ -59,7 +60,8 @@ class LibraryAlbum(Base):
     __tablename__ = "library_albums"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    storage_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    entity_uid: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     artist: Mapped[str] = mapped_column(Text, ForeignKey("library_artists.name"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
@@ -90,7 +92,8 @@ class LibraryTrack(Base):
     __tablename__ = "library_tracks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    storage_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    entity_uid: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     album_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("library_albums.id", ondelete="CASCADE"))
     artist: Mapped[str] = mapped_column(Text, nullable=False)
     album: Mapped[str] = mapped_column(Text, nullable=False)
@@ -109,6 +112,9 @@ class LibraryTrack(Base):
     albumartist: Mapped[str | None] = mapped_column(Text)
     musicbrainz_albumid: Mapped[str | None] = mapped_column(Text)
     musicbrainz_trackid: Mapped[str | None] = mapped_column(Text)
+    audio_fingerprint: Mapped[str | None] = mapped_column(Text)
+    audio_fingerprint_source: Mapped[str | None] = mapped_column(Text)
+    audio_fingerprint_computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     bpm: Mapped[float | None] = mapped_column(Float)

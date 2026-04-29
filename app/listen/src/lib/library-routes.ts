@@ -8,10 +8,16 @@ import {
   albumApiPath as _albumApiPath,
   albumRelatedApiPath as _albumRelatedApiPath,
   albumCoverApiUrl as _albumCoverApiUrl,
+  trackDownloadApiPath as _trackDownloadApiPath,
+  trackEqFeaturesApiPath as _trackEqFeaturesApiPath,
+  trackGenreApiPath as _trackGenreApiPath,
+  trackInfoApiPath as _trackInfoApiPath,
+  trackOfflineManifestApiPath as _trackOfflineManifestApiPath,
+  trackStreamApiPath as _trackStreamApiPath,
   isReservedArtistChildSlug as _isReservedArtistChildSlug,
   recordAssetInvalidationScope as _recordAssetInvalidationScope,
 } from "../../../shared/web/library-routes";
-export type { ArtistRouteInput, AlbumRouteInput } from "../../../shared/web/library-routes";
+export type { ArtistRouteInput, AlbumRouteInput, TrackRouteInput } from "../../../shared/web/library-routes";
 
 import { getApiBase, getAuthToken } from "@/lib/api";
 
@@ -41,8 +47,14 @@ function authedUrl<F extends (...args: any[]) => string>(fn: F): F {
 export const artistApiPath = _artistApiPath;
 export const albumApiPath = _albumApiPath;
 export const albumRelatedApiPath = _albumRelatedApiPath;
+export const trackInfoApiPath = _trackInfoApiPath;
+export const trackEqFeaturesApiPath = _trackEqFeaturesApiPath;
+export const trackGenreApiPath = _trackGenreApiPath;
+export const trackOfflineManifestApiPath = _trackOfflineManifestApiPath;
 
 export const artistPhotoApiUrl = authedUrl(_artistPhotoApiUrl);
 export const artistBackgroundApiUrl = authedUrl(_artistBackgroundApiUrl);
 export const albumCoverApiUrl = authedUrl(_albumCoverApiUrl);
+export const trackStreamApiPath = _trackStreamApiPath;
+export const trackDownloadApiPath = _trackDownloadApiPath;
 export const recordAssetInvalidationScope = _recordAssetInvalidationScope;

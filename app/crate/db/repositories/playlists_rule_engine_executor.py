@@ -47,7 +47,7 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
         rows = session.execute(
             text(
                 f"""
-                SELECT t.id, t.storage_id::text, t.path, t.title, t.artist, a.name AS album,
+                SELECT t.id, t.entity_uid::text AS entity_uid, t.path, t.title, t.artist, a.name AS album,
                        t.duration, t.format, t.bpm, t.energy, t.genre, t.year,
                        a.id AS album_id, a.slug AS album_slug,
                        a_artist.id AS artist_id, a_artist.slug AS artist_slug

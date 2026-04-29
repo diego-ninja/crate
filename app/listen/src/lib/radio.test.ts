@@ -33,6 +33,7 @@ describe("fetchRadioContinuation", () => {
       tracks: [
         {
           track_id: 42,
+          entity_uid: "123e4567-e89b-12d3-a456-426614174042",
           storage_id: "track-42",
           title: "Axe to Fall",
           artist: "Converge",
@@ -63,10 +64,91 @@ describe("fetchRadioContinuation", () => {
     );
     expect(tracks).toHaveLength(1);
     expect(tracks[0]).toMatchObject({
-      id: "track-42",
+      id: "123e4567-e89b-12d3-a456-426614174042",
+      entityUid: "123e4567-e89b-12d3-a456-426614174042",
       libraryTrackId: 42,
       title: "Axe to Fall",
       artist: "Converge",
+    });
+  });
+
+  it("falls back to legacy track continuation by entity UID when present", async () => {
+    mockApi.mockResolvedValue({
+      session: {
+        type: "track",
+        seed: {
+          track_entity_uid: "123e4567-e89b-12d3-a456-426614174000",
+        },
+      },
+      tracks: [
+        {
+          track_id: 7,
+          track_entity_uid: "123e4567-e89b-12d3-a456-426614174000",
+          title: "Locust Reign",
+          artist: "Converge",
+          album: "Petitioning the Empty Sky",
+        },
+      ],
+    });
+
+    const source: PlaySource = {
+      type: "radio",
+      name: "Track Radio",
+      radio: {
+        seedType: "track",
+        seedEntityUid: "123e4567-e89b-12d3-a456-426614174000",
+      },
+    };
+
+    const tracks = await fetchRadioContinuation(source, 9);
+
+    expect(mockApi).toHaveBeenCalledWith(
+      "/api/radio/track?limit=9&entity_uid=123e4567-e89b-12d3-a456-426614174000",
+      "GET",
+      undefined,
+      { signal: undefined },
+    );
+    expect(tracks[0]).toMatchObject({
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      entityUid: "123e4567-e89b-12d3-a456-426614174000",
+      libraryTrackId: 7,
+    });
+  });
+
+  it("treats string UUID seed ids as entity UIDs for legacy continuations", async () => {
+    mockApi.mockResolvedValue({
+      session: { type: "track" },
+      tracks: [
+        {
+          track_id: 7,
+          track_entity_uid: "123e4567-e89b-12d3-a456-426614174000",
+          title: "Locust Reign",
+          artist: "Converge",
+          album: "Petitioning the Empty Sky",
+        },
+      ],
+    });
+
+    const source: PlaySource = {
+      type: "radio",
+      name: "Track Radio",
+      radio: {
+        seedType: "track",
+        seedId: "123e4567-e89b-12d3-a456-426614174000",
+      },
+    };
+
+    const tracks = await fetchRadioContinuation(source, 9);
+
+    expect(mockApi).toHaveBeenCalledWith(
+      "/api/radio/track?limit=9&entity_uid=123e4567-e89b-12d3-a456-426614174000",
+      "GET",
+      undefined,
+      { signal: undefined },
+    );
+    expect(tracks[0]).toMatchObject({
+      id: "123e4567-e89b-12d3-a456-426614174000",
+      entityUid: "123e4567-e89b-12d3-a456-426614174000",
     });
   });
 });

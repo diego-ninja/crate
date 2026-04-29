@@ -171,7 +171,8 @@ class FixIssuesResponse(BaseModel):
 
 
 class MatchApplyRequest(BaseModel):
-    album_id: int
+    album_id: int | None = None
+    album_entity_uid: str | None = None
     release: dict[str, Any]
 
 

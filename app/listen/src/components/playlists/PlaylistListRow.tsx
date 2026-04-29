@@ -12,18 +12,22 @@ import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlis
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
+import { toPlayableTrack } from "@/lib/playable-track";
 import { cn, shuffleArray } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 
 interface PlaylistTrackResponse {
   track_id?: number;
+  track_entity_uid?: string;
   track_path: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration: number;
 }
@@ -61,22 +65,30 @@ interface PlaylistListRowProps {
 
 
 function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
-  return tracks.map((track) => ({
-    id: track.track_path,
-    title: track.title || "Unknown",
-    artist: track.artist || "",
-    artistId: track.artist_id,
-    artistSlug: track.artist_slug,
-    album: track.album,
-    albumId: track.album_id,
-    albumSlug: track.album_slug,
-    albumCover:
-      track.artist && track.album
-        ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
-        : undefined,
-    path: track.track_path,
-    libraryTrackId: track.track_id,
-  }));
+  return tracks.map((track) =>
+    toPlayableTrack(
+      {
+        ...track,
+        id: track.track_id ?? track.track_entity_uid ?? track.track_path,
+        entity_uid: track.track_entity_uid,
+        path: track.track_path,
+        library_track_id: track.track_id,
+      },
+      {
+        cover:
+          track.artist && track.album
+            ? albumCoverApiUrl({
+                albumId: track.album_id,
+                albumEntityUid: track.album_entity_uid,
+                artistEntityUid: track.artist_entity_uid,
+                albumSlug: track.album_slug,
+                artistName: track.artist,
+                albumName: track.album,
+              })
+            : undefined,
+      },
+    ),
+  );
 }
 
 export function PlaylistListRow({

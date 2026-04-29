@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
+from crate.api.schemas.common import IdentityFieldsMixin, OkResponse, TaskEnqueueResponse
 from crate.api.schemas.radio import RadioTrack
 
 
@@ -13,6 +13,7 @@ class SearchArtistResultResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     name: str
     album_count: int | None = None
@@ -23,26 +24,30 @@ class SearchAlbumResultResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     artist: str
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     name: str
     year: str | int | None = None
     has_cover: bool | int | None = None
 
 
-class TrackRefResponse(BaseModel):
+class TrackRefResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
-    storage_id: str | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     title: str
     artist: str
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
     album: str
     path: str
@@ -86,9 +91,10 @@ class BlissSignatureResponse(BaseModel):
     density: float
 
 
-class TrackInfoResponse(BaseModel):
+class TrackInfoResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
+    entity_uid: str | None = None
     title: str | None = None
     artist: str | None = None
     album: str | None = None
@@ -159,6 +165,7 @@ class DiscoverCompletenessArtistResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     artist: str
     has_photo: bool | int | None = None

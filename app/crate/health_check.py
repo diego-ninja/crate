@@ -23,7 +23,7 @@ from crate.db.queries.health import (
     get_tracks_tag_sample,
     get_zombie_artists,
 )
-from crate.storage_layout import looks_like_storage_id
+from crate.storage_layout import looks_like_entity_uid
 from crate.utils import PHOTO_NAMES, normalize_key
 
 log = logging.getLogger(__name__)
@@ -370,10 +370,10 @@ class LibraryHealthCheck:
             year = row["year"][:4]
             album_path = row["path"]
 
-            # Skip V2 managed-storage albums — their paths are UUID-based by design
+            # Skip entity-managed albums — their paths are UUID-based by design
             if album_path:
                 parts = Path(album_path).parts
-                if len(parts) >= 2 and looks_like_storage_id(parts[-1]):
+                if len(parts) >= 2 and looks_like_entity_uid(parts[-1]):
                     continue
 
             # Strip year prefix from folder name to get clean album name

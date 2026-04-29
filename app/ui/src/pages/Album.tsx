@@ -12,7 +12,7 @@ import { Button } from "@crate/ui/shadcn/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { api } from "@/lib/api";
-import { albumApiPath, albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
+import { albumApiPath, albumCoverApiUrl, albumManagementApiPath, albumMatchApiPath, albumPagePath, albumReanalyzeApiPath, artistActionApiPath, artistPagePath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
@@ -22,8 +22,10 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface AlbumData {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist: string;
   name: string;
@@ -78,9 +80,19 @@ interface MatchResult {
 }
 
 export function Album() {
-  const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
+  const {
+    albumId: albumIdParam,
+    artistSlug,
+    albumSlug,
+  } = useParams<{ albumId?: string; artistSlug?: string; albumSlug?: string }>();
   const albumId = albumIdParam ? Number(albumIdParam) : undefined;
-  const { data, loading, refetch } = useApi<AlbumData>(albumId != null ? albumApiPath({ albumId }) : null);
+  const { data, loading, refetch } = useApi<AlbumData>(
+    albumApiPath({
+      albumId,
+      artistSlug,
+      albumSlug,
+    }) || null,
+  );
   const [showTags, setShowTags] = useState(false);
   const [matches, setMatches] = useState<MatchResult[] | null>(null);
   const [matching, setMatching] = useState(false);
@@ -88,22 +100,35 @@ export function Album() {
   const [analysisData, setAnalysisData] = useState<Record<string, AudioAnalysisTrack> | null>(null);
 
   useEffect(() => {
-    if (data?.artist_id == null) return;
-    api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
+    const endpoint = artistActionApiPath({ artistId: data?.artist_id, artistEntityUid: data?.artist_entity_uid }, "analysis-data");
+    if (!endpoint) return;
+    api<Record<string, AudioAnalysisTrack>>(endpoint)
       .then((d) => { if (d && Object.keys(d).length > 0) setAnalysisData(d); })
       .catch(() => {});
-  }, [data?.artist_id]);
+  }, [data?.artist_entity_uid, data?.artist_id]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (albumId == null || !data?.artist_slug || !data?.slug) return;
+    navigate(
+      albumPagePath({
+        artistSlug: data.artist_slug,
+        artistName: data.artist,
+        albumSlug: data.slug,
+        albumName: data.name,
+      }),
+      { replace: true },
+    );
+  }, [albumId, data?.artist_slug, data?.artist, data?.slug, data?.name, navigate]);
+
   async function findMatches() {
-    if (data?.id == null) return;
+    const endpoint = albumMatchApiPath({ albumId: data?.id, albumEntityUid: data?.entity_uid });
+    if (!endpoint) return;
     setMatching(true);
     try {
-      const results = await api<MatchResult[]>(
-        `/api/match/albums/${data.id}`,
-      );
+      const results = await api<MatchResult[]>(endpoint);
       setMatches(results);
     } finally {
       setMatching(false);
@@ -111,10 +136,11 @@ export function Album() {
   }
 
   async function applyMatch(match: MatchResult) {
-    if (data?.id == null) return;
+    if (!data?.entity_uid && data?.id == null) return;
     try {
       const { task_id } = await api<{ task_id: string }>("/api/match/apply", "POST", {
         album_id: data.id,
+        album_entity_uid: data.entity_uid,
         release: match,
       });
       setPendingMatch(null);
@@ -151,8 +177,10 @@ export function Album() {
     <div className="-mt-16 md:-mt-[6.5rem]">
         <AlbumHeader
           albumId={data.id}
+          albumEntityUid={data.entity_uid}
           albumSlug={data.slug}
           artistId={data.artist_id}
+          artistEntityUid={data.artist_entity_uid}
           artistSlug={data.artist_slug}
           artist={data.artist}
           album={data.name}
@@ -170,8 +198,9 @@ export function Album() {
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
           isAdmin={isAdmin}
           onAnalysisComplete={() => {
-            if (data?.artist_id == null) return;
-            api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
+            const endpoint = artistActionApiPath({ artistId: data?.artist_id, artistEntityUid: data?.artist_entity_uid }, "analysis-data");
+            if (!endpoint) return;
+            api<Record<string, AudioAnalysisTrack>>(endpoint)
               .then((d) => { if (d && Object.keys(d).length > 0) setAnalysisData(d); })
               .catch(() => {});
           }}
@@ -206,7 +235,9 @@ export function Album() {
             className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
             onClick={async () => {
               try {
-                await api(`/api/albums/${data.id}/analyze`, "POST");
+                const endpoint = albumReanalyzeApiPath({ albumId: data.id, albumEntityUid: data.entity_uid });
+                if (!endpoint) throw new Error("album reference missing");
+                await api(endpoint, "POST");
                 toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
               } catch {
                 toast.error("Failed to queue analysis");
@@ -231,6 +262,7 @@ export function Album() {
         {showTags && data.id != null && (
           <TagEditor
             albumId={data.id}
+            albumEntityUid={data.entity_uid}
             tags={data.album_tags}
             tracks={data.tracks?.map((t: { filename: string; tags: { title?: string; tracknumber?: string; artist?: string } }) => ({
               filename: t.filename,
@@ -311,7 +343,7 @@ export function Album() {
             album={data.name}
             albumId={data.id}
             albumSlug={data.slug}
-            albumCover={albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name })}
+            albumCover={albumCoverApiUrl({ albumId: data.id, albumEntityUid: data.entity_uid, albumSlug: data.slug, artistName: data.artist, albumName: data.name })}
             analysisData={analysisData ?? undefined}
           />
         </div>
@@ -337,7 +369,9 @@ export function Album() {
           variant="destructive"
           onConfirm={async () => {
             try {
-              await api<{ task_id: string }>(`/api/manage/albums/${data.id}/delete`, "POST", { mode: "full" });
+              const endpoint = albumManagementApiPath({ albumId: data.id, albumEntityUid: data.entity_uid }, "delete");
+              if (!endpoint) throw new Error("album reference missing");
+              await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
               toast.success("Album deletion queued", {
                 description: "The worker will delete the album in the background.",
               });

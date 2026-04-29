@@ -39,6 +39,7 @@ class GenreSummaryResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     name: str
     slug: str
     artist_count: int = 0
@@ -109,6 +110,7 @@ class InvalidGenreTaxonomyNodeResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str
     name: str | None = None
     alias_count: int = 0
@@ -124,6 +126,7 @@ class GenreTaxonomyInvalidStatusResponse(BaseModel):
 
 
 class GenreTaxonomyTreeNodeResponse(BaseModel):
+    entity_uid: str | None = None
     slug: str
     name: str
     description: str | None = None

@@ -56,8 +56,27 @@ def get_library_album_by_id(album_id: int, *, session: Session | None = None) ->
         return impl(s)
 
 
+def get_library_album_by_entity_uid(album_entity_uid: str, *, session: Session | None = None) -> dict | None:
+    def impl(s: Session) -> dict | None:
+        row = (
+            s.execute(
+                select(LibraryAlbum)
+                .where(LibraryAlbum.entity_uid == album_entity_uid)
+                .limit(1)
+            )
+            .scalar_one_or_none()
+        )
+        return album_to_dict(row)
+
+    if session is not None:
+        return impl(session)
+    with read_scope() as s:
+        return impl(s)
+
+
 __all__ = [
     "get_library_album",
+    "get_library_album_by_entity_uid",
     "get_library_album_by_id",
     "get_library_albums",
 ]

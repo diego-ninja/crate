@@ -24,6 +24,10 @@ system works today.
 10. [Development, Deployment, and Operations](/technical/development-deployment-and-operations) — dev stack, deploy model, observability, and operator workflows.
 11. [Documentation Platform and Hosted Site](/technical/documentation-platform-and-hosted-site) — how the docs/reference surfaces themselves are built.
 
+## Practical deployment guides
+
+- [Dedicated laptop deployment guide](./dedicated-laptop-deployment.md) — Debian stable netinst on a reused laptop, Docker Compose, Traefik, Cloudflare, and DDNS.
+
 ## Focused references
 
 These are shorter companion notes. They are intentionally high-level and should
