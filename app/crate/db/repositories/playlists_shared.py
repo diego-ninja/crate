@@ -121,9 +121,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                     pt.playlist_id,
                     COALESCE(lt.artist, pt.artist),
                     ar.id,
+                    ar.entity_uid,
                     ar.slug,
                     COALESCE(lt.album, pt.album),
                     alb.id,
+                    alb.entity_uid,
                     alb.slug
             ),
             ranked_artwork AS (
@@ -131,9 +133,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                     playlist_id,
                     artist,
                     artist_id,
+                    artist_entity_uid,
                     artist_slug,
                     album,
                     album_id,
+                    album_entity_uid,
                     album_slug,
                     ROW_NUMBER() OVER (
                         PARTITION BY playlist_id
@@ -145,9 +149,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                 playlist_id,
                 artist,
                 artist_id,
+                artist_entity_uid,
                 artist_slug,
                 album,
                 album_id,
+                album_entity_uid,
                 album_slug
             FROM ranked_artwork
             WHERE artwork_rank <= 4
