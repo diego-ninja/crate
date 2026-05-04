@@ -26,7 +26,7 @@ def _normalise_queues(value) -> list[str]:
     else:
         parts = []
     queues = [str(part).strip() for part in parts if str(part).strip()]
-    return queues or ["fast", "heavy", "default"]
+    return queues or ["fast", "heavy", "default", "maintenance"]
 
 
 def _is_cancelled(task_id: str) -> bool:
@@ -61,11 +61,8 @@ def run_worker(config: dict):
     init_musicbrainz()
     cleanup_orphaned_tasks(pools=queues)
 
-    # Clear stale locks from previous run
-    if any(queue in {"fast", "heavy", "default"} for queue in queues):
-        from crate.actors import clear_db_heavy_lock, clear_download_slots
-        clear_db_heavy_lock()
-        clear_download_slots()
+    # Runtime semaphores use TTLs and owner checks.  Do not clear them on
+    # startup: another worker instance may still be doing real work.
     if "playback" in queues:
         from crate.worker_handlers.playback import prune_stream_transcode_slots
         prune_stream_transcode_slots()
@@ -264,8 +261,8 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                         "active": int(activity["running_count"]),
                     },
                     "queue_breakdown": activity.get("queue_breakdown") or {
-                        "running": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
-                        "pending": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
+                        "running": {"fast": 0, "default": 0, "heavy": 0, "maintenance": 0, "playback": 0},
+                        "pending": {"fast": 0, "default": 0, "heavy": 0, "maintenance": 0, "playback": 0},
                     },
                     "db_heavy_gate": activity.get("db_heavy_gate") or {
                         "active": 0,

@@ -38,7 +38,13 @@ class LibraryRepair:
         self.library_path = Path(config["library_path"])
         self.extensions = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
 
-    def _normalized_issues(self, report: dict, *, auto_only: bool) -> list[tuple[str, dict, object | None]]:
+    def _normalized_issues(
+        self,
+        report: dict,
+        *,
+        auto_only: bool,
+        global_only: bool = False,
+    ) -> list[tuple[str, dict, object | None]]:
         normalized: list[tuple[str, dict, object | None]] = []
         for raw_issue in report.get("issues", []):
             issue = dict(raw_issue)
@@ -55,19 +61,26 @@ class LibraryRepair:
                 issue["supports_batch"] = catalog_entry.supports_batch
                 issue["supports_artist_scope"] = catalog_entry.supports_artist_scope
                 issue["supports_global_scope"] = catalog_entry.supports_global_scope
-            if auto_only and not issue.get("auto_fixable", False):
+            if auto_only:
+                if not issue.get("auto_fixable", False):
+                    continue
+            if global_only and catalog_entry is not None and not catalog_entry.globally_runnable:
                 continue
             normalized.append((check, issue, catalog_entry))
         return normalized
 
-    def preview(self, report: dict, *, auto_only: bool = False) -> dict:
+    def preview(self, report: dict, *, auto_only: bool = False, global_only: bool = False) -> dict:
         items: list[dict] = []
         fixers = {
             check: getattr(self, method_name)
             for check, method_name in self.FIXER_METHODS.items()
         }
 
-        for check, issue, catalog_entry in self._normalized_issues(report, auto_only=auto_only):
+        for check, issue, catalog_entry in self._normalized_issues(
+            report,
+            auto_only=auto_only,
+            global_only=global_only,
+        ):
             support = getattr(catalog_entry, "support", "manual")
             item = {
                 "issue_id": issue.get("id"),
@@ -263,8 +276,16 @@ class LibraryRepair:
             "message": item_result.get("message"),
         }
 
-    def repair(self, report: dict, dry_run: bool = True, auto_only: bool = True,
-               task_id: str | None = None, progress_callback=None, event_callback=None) -> dict:
+    def repair(
+        self,
+        report: dict,
+        dry_run: bool = True,
+        auto_only: bool = True,
+        task_id: str | None = None,
+        progress_callback=None,
+        event_callback=None,
+        global_only: bool = False,
+    ) -> dict:
         issues = report.get("issues", [])
         actions = []
         item_results: list[dict] = []
@@ -285,7 +306,11 @@ class LibraryRepair:
         }
 
         by_check: dict[str, list[dict]] = {}
-        for check, issue, _catalog_entry in self._normalized_issues({"issues": issues}, auto_only=auto_only):
+        for check, issue, _catalog_entry in self._normalized_issues(
+            {"issues": issues},
+            auto_only=auto_only,
+            global_only=global_only,
+        ):
             by_check.setdefault(check, []).append(issue)
 
         total_groups = len(by_check)

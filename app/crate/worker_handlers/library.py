@@ -138,6 +138,59 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
     sync = LibrarySync(config)
+
+    album_dir_param = params.get("album_dir")
+    if album_dir_param:
+        album_dir = Path(str(album_dir_param))
+        try:
+            album_dir.resolve().relative_to(sync.library_path.resolve())
+        except ValueError:
+            return {"error": f"Album path is outside the configured library: {album_dir}"}
+        if not album_dir.exists():
+            return {"mode": "album", "album_dir": str(album_dir), "skipped": "missing"}
+
+        artist_hint = str(params.get("artist") or album_dir.parent.name)
+        artist_dir = album_dir.parent
+        canonical = sync._canonical_artist_name(artist_dir, artist_hint)
+        emit_task_event(
+            task_id,
+            "info",
+            {"message": "Starting scoped library sync", "artist": canonical, "album": album_dir.name},
+        )
+        album_result = sync.sync_album(album_dir, canonical) if album_dir.is_dir() else {}
+        artist_tracks = sync.sync_artist(artist_dir)
+
+        process_task_id = None
+        if params.get("is_new_file"):
+            try:
+                from crate.content import queue_process_new_content_if_needed
+
+                process_task_id = queue_process_new_content_if_needed(
+                    canonical,
+                    library_path=sync.library_path,
+                )
+                if process_task_id:
+                    emit_task_event(
+                        task_id,
+                        "info",
+                        {
+                            "message": "Queued process_new_content after scoped sync",
+                            "artist": canonical,
+                            "process_task_id": process_task_id,
+                        },
+                    )
+            except Exception:
+                log.debug("Failed to queue process_new_content after scoped sync", exc_info=True)
+
+        return {
+            "mode": "album",
+            "artist": canonical,
+            "album": album_dir.name,
+            "album_result": album_result,
+            "artist_tracks": artist_tracks,
+            "process_task_id": process_task_id,
+        }
+
     emit_task_event(task_id, "info", {"message": "Starting library sync..."})
 
     p = TaskProgress(phase="syncing", phase_count=1)

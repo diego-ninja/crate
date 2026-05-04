@@ -738,7 +738,13 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_backfill_track_audio_fingerprints(task_id: str, params: dict, config: dict) -> dict:
     limit = max(1, min(int(params.get("limit") or 5000), 50_000))
-    tracks = list_tracks_missing_audio_fingerprints(limit=limit)
+    tracks = list_tracks_missing_audio_fingerprints(
+        limit=limit,
+        track_id=int(params["track_id"]) if params.get("track_id") else None,
+        album_id=int(params["album_id"]) if params.get("album_id") else None,
+        artist=params.get("artist"),
+        album=params.get("album"),
+    )
     total = len(tracks)
     processed = 0
     fingerprinted = 0
@@ -756,6 +762,8 @@ def _handle_backfill_track_audio_fingerprints(task_id: str, params: dict, config
     progress = TaskProgress(phase="fingerprints", phase_count=1, total=total)
     emit_progress(task_id, progress, force=True)
 
+    from crate.resource_governor import wait_while_pressured
+
     for index, track in enumerate(tracks, start=1):
         if is_cancelled(task_id):
             emit_task_event(task_id, "warning", {"message": "Fingerprint backfill cancelled"})
@@ -769,6 +777,16 @@ def _handle_backfill_track_audio_fingerprints(task_id: str, params: dict, config
             path=track.get("path", ""),
         )
         emit_progress(task_id, progress)
+
+        if not wait_while_pressured(
+            label="track audio fingerprint",
+            task_type="backfill_track_audio_fingerprints",
+            is_cancelled_fn=is_cancelled,
+            task_id=task_id,
+            emit_event_fn=emit_task_event,
+            max_sleep_seconds=300,
+        ):
+            break
 
         fingerprint_payload = compute_audio_fingerprint_with_source(track["path"])
         processed += 1

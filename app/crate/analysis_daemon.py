@@ -46,28 +46,14 @@ def _should_pause_for_load() -> bool:
     (idle tabs don't count).
     Also pauses when system load is high relative to CPU count.
     """
-    # Check active streams (users actually listening)
     try:
-        from crate.db.queries.management import count_recent_active_users
+        from crate.resource_governor import evaluate_resources, record_decision
 
-        active = count_recent_active_users(window_minutes=5)
-        if active > 0:
-            return True
+        decision = evaluate_resources(label="analysis daemon", listener_sensitive=True)
+        record_decision(decision, task_type="analysis_daemon", source="daemon")
+        return not decision.allowed
     except Exception:
-        pass
-
-    # Check system load average
-    try:
-        import os
-        load_1min = os.getloadavg()[0]
-        cpu_count = os.cpu_count() or 2
-        # Pause if load is above 80% of available cores
-        if load_1min > cpu_count * 0.8:
-            return True
-    except Exception:
-        pass
-
-    return False
+        return False
 
 
 def _claim_tracks(state_column: str, *, limit: int):

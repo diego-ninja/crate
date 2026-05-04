@@ -9,7 +9,6 @@ from pathlib import Path
 import mutagen
 
 from crate.audio import read_tags
-from crate.audio_fingerprint import compute_audio_fingerprint_with_source
 from crate.db.engine import get_engine
 from crate.db.repositories.library import (
     delete_album,
@@ -507,9 +506,6 @@ class LibrarySync:
                 mb_albumid = tags.get("musicbrainz_albumid")
             if not tag_album and tags.get("album"):
                 tag_album = tags["album"]
-            fingerprint_payload = compute_audio_fingerprint_with_source(f)
-            audio_fingerprint = fingerprint_payload[0] if fingerprint_payload else None
-            audio_fingerprint_source = fingerprint_payload[1] if fingerprint_payload else None
 
             track_data_list.append({
                 "artist": tags.get("artist") or artist_name,
@@ -530,8 +526,8 @@ class LibrarySync:
                 "albumartist": tags.get("albumartist"),
                 "musicbrainz_albumid": tags.get("musicbrainz_albumid"),
                 "musicbrainz_trackid": tags.get("musicbrainz_trackid"),
-                "audio_fingerprint": audio_fingerprint,
-                "audio_fingerprint_source": audio_fingerprint_source,
+                "audio_fingerprint": None,
+                "audio_fingerprint_source": None,
                 "path": fpath,
             })
 

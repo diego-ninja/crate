@@ -35,7 +35,7 @@ def _coerce_json_list(value) -> list[dict]:
 
 
 def _pool_counts_template() -> dict[str, int]:
-    return {"fast": 0, "default": 0, "heavy": 0, "playback": 0}
+    return {"fast": 0, "default": 0, "heavy": 0, "maintenance": 0, "playback": 0}
 
 
 def _coerce_pool_counts(value) -> dict[str, int]:
@@ -123,12 +123,14 @@ def get_task_activity_snapshot(*, running_limit: int = 100, pending_limit: int =
                         'fast', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'fast'),
                         'default', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND COALESCE(pool, 'default') = 'default'),
                         'heavy', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'heavy'),
+                        'maintenance', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'maintenance'),
                         'playback', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'playback')
                     ) AS running_by_pool,
                     jsonb_build_object(
                         'fast', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'fast'),
                         'default', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND COALESCE(pool, 'default') = 'default'),
                         'heavy', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'heavy'),
+                        'maintenance', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'maintenance'),
                         'playback', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'playback')
                     ) AS pending_by_pool,
                     (SELECT COUNT(*) FROM tasks WHERE status = 'running' AND type = ANY(:db_heavy_types)) AS db_heavy_running_count,

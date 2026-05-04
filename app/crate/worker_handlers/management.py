@@ -397,6 +397,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
         auto_only=True,
         task_id=task_id,
         progress_callback=_pipe_repair_progress,
+        global_only=True,
     )
 
     if is_cancelled(task_id):

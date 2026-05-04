@@ -58,7 +58,7 @@ def main():
     worker_cmd.add_argument("--processes", type=int, default=_env_int("CRATE_WORKER_PROCESSES", 2), help="Number of Dramatiq worker processes")
     worker_cmd.add_argument(
         "--queues",
-        default=os.environ.get("CRATE_WORKER_QUEUES", "fast,heavy,default"),
+        default=os.environ.get("CRATE_WORKER_QUEUES", "fast,heavy,default,maintenance"),
         help="Comma-separated Dramatiq queues to consume",
     )
     worker_cmd.add_argument("--no-service-loop", action="store_true", help="Disable scheduler/watcher/zombie cleanup loop")

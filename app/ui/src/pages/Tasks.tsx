@@ -83,6 +83,7 @@ interface WorkerPoolBreakdown {
   fast: number;
   default: number;
   heavy: number;
+  maintenance: number;
   playback: number;
 }
 
@@ -239,6 +240,11 @@ const POOL_META: Record<keyof WorkerPoolBreakdown, { label: string; tone: string
     label: "Heavy",
     tone: "border-amber-500/20 bg-amber-500/[0.05]",
     accent: "text-amber-100",
+  },
+  maintenance: {
+    label: "Maintenance",
+    tone: "border-lime-400/20 bg-lime-400/[0.05]",
+    accent: "text-lime-100",
   },
   playback: {
     label: "Playback",
@@ -609,7 +615,7 @@ function WorkerControlPanel({
     }
   }
 
-  const poolKeys: Array<keyof WorkerPoolBreakdown> = ["fast", "default", "heavy", "playback"];
+  const poolKeys: Array<keyof WorkerPoolBreakdown> = ["fast", "default", "heavy", "maintenance", "playback"];
   const hasQueuedDbHeavy = dbHeavyGate.pending > 0;
   const gateMessage = dbHeavyGate.blocking
     ? `DB-heavy work is serialized right now: ${dbHeavyGate.active} running, ${dbHeavyGate.pending} waiting. Free Dramatiq slots will stay idle until the gate clears.`
@@ -673,7 +679,7 @@ function WorkerControlPanel({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
-        <div className="grid gap-2 md:grid-cols-4">
+        <div className="grid gap-2 md:grid-cols-5">
           {poolKeys.map((pool) => {
             const meta = POOL_META[pool];
             const runningForPool = queueBreakdown.running[pool] ?? 0;
@@ -1472,7 +1478,7 @@ export function Tasks() {
           running={live?.running_tasks.length ?? 0}
           pending={live?.pending_tasks.length ?? 0}
           slotLimit={live?.worker_slots.max ?? 3}
-          queueBreakdown={live?.queue_breakdown ?? { running: { fast: 0, default: 0, heavy: 0, playback: 0 }, pending: { fast: 0, default: 0, heavy: 0, playback: 0 } }}
+          queueBreakdown={live?.queue_breakdown ?? { running: { fast: 0, default: 0, heavy: 0, maintenance: 0, playback: 0 }, pending: { fast: 0, default: 0, heavy: 0, maintenance: 0, playback: 0 } }}
           dbHeavyGate={live?.db_heavy_gate ?? { active: 0, pending: 0, blocking: false }}
           activeTasks={(live?.running_tasks ?? []).map((task) => ({ id: task.id, type: task.type, pool: task.pool }))}
           refreshTasks={fetchSnapshot}

@@ -32,6 +32,11 @@ _DASHBOARD_TIMESERIES = {
     "worker.queue.depth": "worker.queue.depth",
     "worker.task.duration": "worker.task.duration",
     "worker.queue.wait": "worker.queue.wait",
+    "worker.resource.deferred": "worker.resource.deferred",
+    "worker.resource.defer_seconds": "worker.resource.defer_seconds",
+    "worker.resource.load_ratio": "worker.resource.load_ratio",
+    "worker.resource.iowait_percent": "worker.resource.iowait_percent",
+    "worker.resource.swap_used_percent": "worker.resource.swap_used_percent",
 }
 
 _SUMMARY_METRICS = {
@@ -54,6 +59,11 @@ _SUMMARY_METRICS = {
     "home_endpoint_cache_hit": ("home.endpoint_cache.hit", 15),
     "home_endpoint_cache_miss": ("home.endpoint_cache.miss", 15),
     "home_endpoint_compute_ms": ("home.endpoint_compute.ms", 15),
+    "worker_resource_deferred": ("worker.resource.deferred", 60),
+    "worker_resource_defer_seconds": ("worker.resource.defer_seconds", 60),
+    "worker_resource_load_ratio": ("worker.resource.load_ratio", 60),
+    "worker_resource_iowait_percent": ("worker.resource.iowait_percent", 60),
+    "worker_resource_swap_used_percent": ("worker.resource.swap_used_percent", 60),
 }
 
 def _get_redis_url() -> str:
@@ -67,7 +77,6 @@ def _build_metrics_summary() -> dict:
 
 
 def _build_metrics_system() -> dict:
-    import os
     import shutil
 
     disk = {}
@@ -152,7 +161,41 @@ def _build_metrics_system() -> dict:
     except Exception:
         pass
 
-    return {"disk": disk, "db_pool": db_pool, "db_pools": db_pools, "analysis": analysis, "load": load}
+    resource_pressure = {}
+    try:
+        from crate.db.cache_store import get_cache
+        from crate.resource_governor import evaluate_maintenance_window, evaluate_resources
+
+        decision = evaluate_resources(label="admin metrics", listener_sensitive=True)
+        resource_pressure = decision.to_dict()
+        window_decision = evaluate_maintenance_window(task_type="library_pipeline")
+        if window_decision.window:
+            resource_pressure["window"] = window_decision.window
+        if not window_decision.allowed:
+            resource_pressure["allowed"] = False
+            resource_pressure["reason"] = (
+                window_decision.reason
+                if decision.allowed
+                else f"{window_decision.reason}, {decision.reason}"
+            )
+            resource_pressure["defer_seconds"] = max(
+                int(resource_pressure.get("defer_seconds") or 0),
+                window_decision.defer_seconds,
+            )
+        last_defer = get_cache("resource_pressure", max_age_seconds=600)
+        if isinstance(last_defer, dict) and not last_defer.get("allowed", True):
+            resource_pressure["last_defer"] = last_defer
+    except Exception:
+        resource_pressure = {}
+
+    return {
+        "disk": disk,
+        "db_pool": db_pool,
+        "db_pools": db_pools,
+        "analysis": analysis,
+        "load": load,
+        "resource_pressure": resource_pressure,
+    }
 
 
 def _list_running_tasks(limit: int = 10) -> list[dict]:

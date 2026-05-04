@@ -23,7 +23,6 @@ import {
   BarChart2,
   Sparkles,
   Compass,
-  FolderSync,
   Archive,
   FileInput,
   FileJson,
@@ -336,18 +335,6 @@ export function CommandPalette() {
                 >
                   <Sparkles size={14} className="text-muted-foreground" />
                   Check New Releases (MusicBrainz)
-                </Command.Item>
-                <Command.Item
-                  onSelect={() =>
-                    action(
-                      () => api("/api/manage/migrate-storage-v2", "POST"),
-                      "Migrate to Storage V2",
-                    )
-                  }
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
-                >
-                  <FolderSync size={14} className="text-muted-foreground" />
-                  Migrate All Artists to Storage V2
                 </Command.Item>
               </Command.Group>
             )}

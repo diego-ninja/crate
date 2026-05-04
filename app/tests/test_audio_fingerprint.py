@@ -49,7 +49,7 @@ def test_backfill_track_audio_fingerprints_handler_stores_successful_rows(monkey
     stored: list[tuple[int, str, str]] = []
     monkeypatch.setattr(
         "crate.worker_handlers.analysis.list_tracks_missing_audio_fingerprints",
-        lambda limit=5000: [
+        lambda **kwargs: [
             {"id": 1, "path": "/music/a.flac", "artist": "Terror", "album": "Keepers", "title": "01"},
             {"id": 2, "path": "/music/b.flac", "artist": "Terror", "album": "Keepers", "title": "02"},
         ],
@@ -65,6 +65,7 @@ def test_backfill_track_audio_fingerprints_handler_stores_successful_rows(monkey
     monkeypatch.setattr("crate.worker_handlers.analysis.emit_progress", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.analysis.emit_task_event", lambda *args, **kwargs: None)
     monkeypatch.setattr("crate.worker_handlers.analysis.is_cancelled", lambda task_id: False)
+    monkeypatch.setattr("crate.resource_governor.wait_while_pressured", lambda **kwargs: True)
 
     result = _handle_backfill_track_audio_fingerprints("task-1", {"limit": 10}, {})
 

@@ -23,23 +23,23 @@ jobs:
       contents: write # create/update releases
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: app/listen/package-lock.json
 
       - name: Setup Java (required by Gradle)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install web dependencies
         run: npm ci
@@ -71,7 +71,11 @@ jobs:
           if [[ "$TAG_NAME" == "" || "$TAG_NAME" == "main" ]]; then
             TAG_NAME="dev"
           fi
-          DEST="crate-${TAG_NAME}.apk"
+          SAFE_TAG_NAME=$(printf '%s' "$TAG_NAME" | sed 's#[^A-Za-z0-9._-]#-#g')
+          if [[ "$SAFE_TAG_NAME" == "" ]]; then
+            SAFE_TAG_NAME="dev"
+          fi
+          DEST="crate-${SAFE_TAG_NAME}.apk"
           cp "${{ steps.locate.outputs.apk_path }}" "$DEST"
           # Also publish under a stable filename so the site can hard-link
           # to /releases/latest/download/crate.apk without knowing the
@@ -80,7 +84,7 @@ jobs:
           echo "dest=$DEST" >> "$GITHUB_OUTPUT"
 
       - name: Upload as build artifact (always)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.rename.outputs.dest }}
           path: ${{ steps.rename.outputs.dest }}
@@ -88,7 +92,7 @@ jobs:
 
       - name: Attach APK to GitHub Release (tag pushes only)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             ${{ steps.rename.outputs.dest }}

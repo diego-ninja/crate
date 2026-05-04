@@ -1447,8 +1447,8 @@ class TestHomeCaching:
         assert {task["id"] for task in snapshot["running_tasks"]} == {running_id, delegated_id}
         assert {task["id"] for task in snapshot["pending_tasks"]} == {pending_id, heavy_pending_id}
         assert snapshot["queue_breakdown"] == {
-            "running": {"fast": 1, "default": 0, "heavy": 1, "playback": 0},
-            "pending": {"fast": 0, "default": 1, "heavy": 1, "playback": 0},
+            "running": {"fast": 1, "default": 0, "heavy": 1, "maintenance": 0, "playback": 0},
+            "pending": {"fast": 0, "default": 1, "heavy": 1, "maintenance": 0, "playback": 0},
         }
         assert snapshot["db_heavy_gate"] == {"active": 0, "pending": 2, "blocking": False}
         assert {task["id"] for task in snapshot["recent_tasks"]} >= {

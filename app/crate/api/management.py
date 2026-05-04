@@ -899,10 +899,11 @@ def read_audit_log(request: Request, limit: int = 100, offset: int = 0, action: 
     "/migrate-storage-v2",
     response_model=TaskEnqueueResponse,
     responses=AUTH_ERROR_RESPONSES,
-    summary="Queue storage layout migration to V2",
+    summary="Queue legacy storage layout migration to V2",
+    deprecated=True,
 )
 def migrate_storage_v2(request: Request, body: StorageMigrationRequest | None = None):
-    """Start V2 storage migration. Optionally pass {"artist": "Name"} for single artist."""
+    """Legacy V2 storage migration. Entity-UID layout repair now uses fix_artist."""
     _require_admin(request)
     params = {}
     if body and body.artist:
@@ -915,10 +916,11 @@ def migrate_storage_v2(request: Request, body: StorageMigrationRequest | None = 
     "/verify-storage-v2",
     response_model=TaskEnqueueResponse,
     responses=AUTH_ERROR_RESPONSES,
-    summary="Queue storage layout verification",
+    summary="Queue legacy storage layout verification",
+    deprecated=True,
 )
 def verify_storage_v2(request: Request):
-    """Verify storage integrity after V2 migration."""
+    """Legacy V2 storage verification."""
     _require_admin(request)
     task_id = create_task("verify_storage_v2")
     return {"task_id": task_id}

@@ -29,7 +29,7 @@ NC     := \033[0m
 # ===========================================================================
 
 DC_DEV := $(DC) -f docker-compose.dev.yaml
-DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-playback-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
+DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-maintenance-worker crate-dev-analysis-worker crate-dev-playback-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
 
 .PHONY: dev
 dev: ## Start backend (Postgres + Redis + API + Worker + Caddy) and frontend dev servers

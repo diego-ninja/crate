@@ -108,6 +108,7 @@ class WorkerPoolBreakdownResponse(BaseModel):
     fast: int = 0
     default: int = 0
     heavy: int = 0
+    maintenance: int = 0
     playback: int = 0
 
 
