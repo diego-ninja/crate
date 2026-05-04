@@ -29,6 +29,13 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
                         WHEN COALESCE(pt.duration, 0) > 0 THEN pt.duration
                         ELSE COALESCE(lt.duration, pt.duration, 0)
                     END AS duration,
+                    lt.bpm,
+                    lt.audio_key,
+                    lt.audio_scale,
+                    lt.energy,
+                    lt.danceability,
+                    lt.valence,
+                    lt.bliss_vector,
                     pt.position,
                     pt.added_at,
                     ar.id AS artist_id,
@@ -39,7 +46,8 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
                     alb.slug AS album_slug
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
-                    SELECT id, entity_uid::text, storage_id::text, path, title, filename, artist, album, album_id, duration
+                    SELECT id, entity_uid::text, storage_id::text, path, title, filename, artist, album, album_id, duration,
+                           bpm, audio_key, audio_scale, energy, danceability, valence, bliss_vector
                     FROM library_tracks lt
                     WHERE lt.id = pt.track_id
                        OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)
@@ -65,7 +73,12 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
             ),
             {"playlist_id": playlist_id},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        tracks = [dict(row) for row in rows]
+        for track in tracks:
+            bliss_vector = track.get("bliss_vector")
+            if bliss_vector is not None:
+                track["bliss_vector"] = list(bliss_vector)
+        return tracks
 
     if session is not None:
         return _impl(session)

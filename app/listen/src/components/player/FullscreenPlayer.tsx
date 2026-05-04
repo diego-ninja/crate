@@ -8,20 +8,22 @@ import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSw
 import { SpinningDisc } from "@/components/player/SpinningDisc";
 import { getPlaySourceLabel } from "@/components/player/player-source";
 import { useResolvedPlayerArtist } from "@/components/player/useResolvedPlayerArtist";
-import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
-import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
-import { measureVisualizerCanvasRect } from "@/components/player/visualizer/canvas-layout";
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { InfoTab } from "@/components/player/extended/InfoTab";
-import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { api } from "@/lib/api";
+import { isAndroidNative } from "@/lib/capacitor-runtime";
+import {
+  getPlayerSurfaceModePreference,
+  PLAYER_VIZ_PREFS_EVENT,
+  setPlayerSurfaceModePreference,
+  type PlayerSurfaceMode,
+} from "@/lib/player-visualizer-prefs";
 import {
   ChevronDown,
   ListMusic,
   AlignLeft,
   Disc3,
   Info,
-  Settings,
   SlidersHorizontal,
 } from "lucide-react";
 import { artistPagePath } from "@/lib/library-routes";
@@ -29,7 +31,6 @@ import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContex
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
-import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 
@@ -43,6 +44,11 @@ function parseSyncedLyrics(raw: string): LyricLine[] {
     if (m) acc.push({ time: +m[1]! * 60 + +m[2]! + +m[3]! / 100, text: m[4]!.trim() });
     return acc;
   }, []);
+}
+
+function getMobileSurfaceModePreference(): PlayerSurfaceMode {
+  const mode = getPlayerSurfaceModePreference();
+  return mode === "visualizer" ? "cd" : mode;
 }
 
 interface FullscreenPlayerProps {
@@ -120,7 +126,7 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition, playSource } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, crossfadeTransition, playSource } = usePlayer();
   const { pause, resume } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Keep the crossfade visuals, but let time/progress track the live
@@ -131,85 +137,30 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     duration,
   );
   const navigate = useNavigate();
-  const isDesktop = useIsDesktop();
-  const allowFullscreenVisualizer = isDesktop;
+  const allowMobileEqualizer = !isAndroidNative;
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
+  const [surfaceMode, setSurfaceMode] = useState<PlayerSurfaceMode>(getMobileSurfaceModePreference);
   const [lyrics, setLyrics] = useState<{ synced: LyricLine[] | null; plain: string | null } | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const activeLyricRef = useRef<HTMLButtonElement>(null);
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [swipeY, setSwipeY] = useState(0);
-  const [showVizSettings, setShowVizSettings] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
   const { resolvedArtist, artistAvatarUrl, markArtistPhotoFailed } = useResolvedPlayerArtist(currentTrack, queue);
   const sourceLabel = getPlaySourceLabel(playSource);
 
   const swipeStartRef = useRef<number | null>(null);
+  const swipeYRef = useRef(0);
+  const swipeFrameRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
 
-  // Visualizer
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const fsRootRef = useRef<HTMLDivElement>(null);
   const equalizerRef = useRef<HTMLDivElement>(null);
   const equalizerButtonRef = useRef<HTMLButtonElement>(null);
-  const vizSettingsRef = useRef<HTMLDivElement>(null);
-  const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
-  const vizRef = useMusicVisualizer(
-    canvasRef,
-    `${currentTrack?.id ?? "none"}:${analyserVersion}`,
-    allowFullscreenVisualizer && visible && activeTab === "player",
-    playbackState,
-  );
-  const vizCfg = useVisualizerConfig(
-    vizRef,
-    currentTrack,
-    visible && activeTab === "player",
-    crossfadeTransition,
-    allowFullscreenVisualizer,
-  );
-  const isCdMode = vizCfg.surfaceMode === "cd";
-  const isVisualizerMode = allowFullscreenVisualizer && vizCfg.surfaceMode === "visualizer";
-  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number; referenceSize: number } | null>(null);
-
-  // Measure cover position relative to FS root. The canvas can grow beyond the
-  // visualizer's reference size so peaks don't clip, while the effect itself
-  // keeps roughly the same visual footprint.
-  useEffect(() => {
-    if (!isVisualizerMode || !visible || activeTab !== "player") {
-      setCanvasRect(null);
-      return;
-    }
-    const measure = () => {
-      const cover = coverRef.current;
-      const root = fsRootRef.current;
-      if (!cover || !root) return;
-      const cr = cover.getBoundingClientRect();
-      const rr = root.getBoundingClientRect();
-      // Skip if still animating in (root off-screen)
-      if (rr.top > window.innerHeight * 0.5) return;
-      setCanvasRect(
-        measureVisualizerCanvasRect(cr, rr, {
-          baseScale: 1.25,
-          edgePadding: 28,
-        }),
-      );
-    };
-    // Wait for open animation to settle before first measure
-    const t1 = window.setTimeout(measure, 350);
-    const resizeObs = new ResizeObserver(measure);
-    if (coverRef.current) resizeObs.observe(coverRef.current);
-    if (fsRootRef.current) resizeObs.observe(fsRootRef.current);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.clearTimeout(t1);
-      resizeObs.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [activeTab, isVisualizerMode, showVizSettings, visible]);
+  const isCdMode = surfaceMode === "cd";
 
   // Animate in/out
   useEffect(() => {
@@ -228,10 +179,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   useEscapeKey(visible, (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (showVizSettings) {
-      setShowVizSettings(false);
-      return;
-    }
+    if (showEqualizer) { setShowEqualizer(false); return; }
     if (activeTab !== "player") {
       setActiveTab("player");
       return;
@@ -250,22 +198,42 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     }));
   }
 
+  useEffect(() => {
+    const syncSurfaceMode = () => setSurfaceMode(getMobileSurfaceModePreference());
+    window.addEventListener("storage", syncSurfaceMode);
+    window.addEventListener(PLAYER_VIZ_PREFS_EVENT, syncSurfaceMode as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncSurfaceMode);
+      window.removeEventListener(PLAYER_VIZ_PREFS_EVENT, syncSurfaceMode as EventListener);
+    };
+  }, []);
+
   // Lyrics fetch
   useEffect(() => {
-    if (!visible || !currentTrack) { setLyrics(null); return; }
-    let cancelled = false;
+    if (!visible || activeTab !== "lyrics" || !currentTrack) {
+      if (!visible || !currentTrack) setLyrics(null);
+      return;
+    }
+    const controller = new AbortController();
     setLyrics(null);
-    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(`/api/lyrics?artist=${encodeURIComponent(currentTrack.artist || "")}&title=${encodeURIComponent(currentTrack.title || "")}`)
+    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(
+      `/api/lyrics?artist=${encodeURIComponent(currentTrack.artist || "")}&title=${encodeURIComponent(currentTrack.title || "")}`,
+      "GET",
+      undefined,
+      { signal: controller.signal },
+    )
       .then((d) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setLyrics({
           synced: d.syncedLyrics ? parseSyncedLyrics(d.syncedLyrics) : null,
           plain: d.plainLyrics || null,
         });
       })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [visible, currentTrack?.id]);
+      .catch(() => {
+        if (!controller.signal.aborted) setLyrics({ synced: null, plain: null });
+      });
+    return () => controller.abort();
+  }, [activeTab, visible, currentTrack?.id, currentTrack?.artist, currentTrack?.title]);
 
   // Active lyric index
   const activeLyricIndex = lyrics?.synced
@@ -279,23 +247,55 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   }, [activeLyricIndex, activeTab]);
 
   // Reset tab when player closes
-  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); setShowEqualizer(false); } }, [visible]);
-
   useEffect(() => {
-    if ((!allowFullscreenVisualizer || !isVisualizerMode) && showVizSettings) {
-      setShowVizSettings(false);
-    }
-  }, [allowFullscreenVisualizer, isVisualizerMode, showVizSettings]);
+    if (visible) return;
+    setActiveTab("player");
+    swipeYRef.current = 0;
+    setSwipeY(0);
+    setShowEqualizer(false);
+  }, [visible]);
 
   useDismissibleLayer({
-    active: visible && (showVizSettings || showEqualizer),
-    refs: [vizSettingsRef, vizSettingsButtonRef, equalizerRef, equalizerButtonRef],
+    active: visible && showEqualizer,
+    refs: [equalizerRef, equalizerButtonRef],
     onDismiss: () => {
-      setShowVizSettings(false);
       setShowEqualizer(false);
     },
     closeOnEscape: false,
   });
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleNativeBack = (event: Event) => {
+      event.preventDefault();
+      if (showEqualizer) {
+        setShowEqualizer(false);
+        return;
+      }
+      if (activeTab !== "player") {
+        setActiveTab("player");
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("crate:native-back", handleNativeBack);
+    return () => window.removeEventListener("crate:native-back", handleNativeBack);
+  }, [activeTab, onClose, showEqualizer, visible]);
+
+  useEffect(() => () => {
+    if (swipeFrameRef.current != null) {
+      window.cancelAnimationFrame(swipeFrameRef.current);
+    }
+  }, []);
+
+  const scheduleSwipeY = useCallback((nextY: number) => {
+    swipeYRef.current = nextY;
+    if (swipeFrameRef.current != null) return;
+    swipeFrameRef.current = window.requestAnimationFrame(() => {
+      swipeFrameRef.current = null;
+      setSwipeY(swipeYRef.current);
+    });
+  }, []);
 
   // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
@@ -308,15 +308,15 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const onSwipeMove = useCallback((e: React.TouchEvent) => {
     if (swipeStartRef.current === null || draggingRef.current) return;
     const dy = e.touches[0]!.clientY - swipeStartRef.current;
-    setSwipeY(dy > 0 ? Math.min(dy * 0.6, 300) : 0);
-  }, []);
+    scheduleSwipeY(dy > 0 ? Math.min(dy * 0.6, 300) : 0);
+  }, [scheduleSwipeY]);
   const onSwipeEnd = useCallback(() => {
-    if (swipeY > 100) {
+    if (swipeYRef.current > 100) {
       onClose();
     }
-    setSwipeY(0);
+    scheduleSwipeY(0);
     swipeStartRef.current = null;
-  }, [swipeY, onClose]);
+  }, [onClose, scheduleSwipeY]);
 
   if (!visible || !currentTrack) return null;
 
@@ -349,22 +349,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       onTouchMove={onSwipeMove}
       onTouchEnd={onSwipeEnd}
     >
-      {allowFullscreenVisualizer ? (
-        <div
-          className={`pointer-events-none absolute ${showVizSettings || showEqualizer ? "z-30" : "z-50"} ${
-            isVisualizerMode && activeTab === "player" && canvasRect ? "" : "hidden"
-          }`}
-          style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
-        >
-          <canvas
-            ref={canvasRef}
-            className="h-full w-full"
-            data-viz-reference-size={canvasRect ? String(canvasRect.referenceSize) : undefined}
-            style={{ background: "transparent" }}
-          />
-        </div>
-      ) : null}
-
       {/* Drag handle */}
       <div className="flex justify-center pt-3 pb-1">
         <div className="w-10 h-1 rounded-full bg-white/20" />
@@ -382,39 +366,25 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
         <div className="flex items-center -mr-2">
           <PlayerSurfaceModeSwitch
-            allowVisualizer={allowFullscreenVisualizer}
+            allowVisualizer={false}
             className="mr-1"
-            mode={vizCfg.surfaceMode}
+            mode={surfaceMode}
             onChange={(mode) => {
-              vizCfg.setSurfaceMode(mode);
-              if (mode !== "visualizer") setShowVizSettings(false);
+              const nextMode = mode === "visualizer" ? "cd" : mode;
+              setSurfaceMode(nextMode);
+              setPlayerSurfaceModePreference(nextMode);
             }}
             size="md"
             variant="ghost"
           />
-          <button
-            ref={equalizerButtonRef}
-            onClick={() => { setShowEqualizer((v) => !v); setShowVizSettings(false); }}
-            aria-label="Equalizer"
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
-          >
-            <SlidersHorizontal size={18} />
-          </button>
-          {allowFullscreenVisualizer ? (
+          {allowMobileEqualizer ? (
             <button
-              ref={vizSettingsButtonRef}
-              onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
-              aria-label="Visualizer settings"
-              disabled={!isVisualizerMode}
-              className={`w-11 h-11 flex items-center justify-center transition-colors ${
-                !isVisualizerMode
-                  ? "text-white/20"
-                  : showVizSettings
-                    ? "text-primary"
-                    : "text-white/40 active:text-white/60"
-              }`}
+              ref={equalizerButtonRef}
+              onClick={() => setShowEqualizer((v) => !v)}
+              aria-label="Equalizer"
+              className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
             >
-              <Settings size={18} />
+              <SlidersHorizontal size={18} />
             </button>
           ) : null}
         </div>
@@ -425,7 +395,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         {TAB_PILLS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
-            onClick={() => { setActiveTab(id); setShowVizSettings(false); }}
+            onClick={() => setActiveTab(id)}
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
               activeTab === id
                 ? "bg-white/12 text-white border border-white/15"
@@ -438,19 +408,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         ))}
       </div>
 
-      {/* Visualizer settings panel */}
-      {allowFullscreenVisualizer && showVizSettings && (
-        <div
-          ref={vizSettingsRef}
-          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
-        >
-          <VisualizerSettingsPanel config={vizCfg} />
-        </div>
-      )}
-
-      {/* Equalizer panel — absolute overlay so it doesn't push the cover
-          (and its measured visualizer canvas) out of place on mobile. */}
-      {showEqualizer && (
+      {allowMobileEqualizer && showEqualizer && (
         <div
           ref={equalizerRef}
           className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
@@ -493,7 +451,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
                         style={{
-                          filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
                           opacity: 1 - crossfadeProgress,
                         }}
                       />
@@ -504,7 +461,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
                         style={{
-                          filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
                           opacity: crossfadeProgress,
                         }}
                       />
@@ -515,7 +471,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                     src={currentTrack.albumCover}
                     alt=""
                     className="h-full w-full object-cover shadow-2xl shadow-black/60"
-                    style={{ filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none" }}
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-white/5 shadow-2xl shadow-black/60">
@@ -542,12 +497,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             titleClassName="text-lg"
             albumClassName="text-xs"
           />
-          {vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
-            <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/40">
-              {vizCfg.trackVizProfile.summary}
-            </p>
-          ) : null}
-
           <div className="mx-auto mt-4 w-full max-w-[360px]">
             <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums text-muted-foreground">
               <span>{formatPlayerTime(displayedTime)}</span>

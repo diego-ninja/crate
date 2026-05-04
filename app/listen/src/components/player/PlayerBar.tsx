@@ -10,6 +10,7 @@ import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { getTrackQualityFallback, getTrackQualityFromInfo, mergeTrackQualityParts } from "@/lib/track-info";
 import { getTrackQualityFromPlaybackQuality } from "@/lib/track-playback";
 import { getPlaybackDeliveryPolicyPreference, PLAYER_PLAYBACK_PREFS_EVENT, type PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
+import { isAndroidNative } from "@/lib/capacitor-runtime";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
@@ -124,7 +125,7 @@ export function PlayerBar() {
     toggleShuffle, cycleRepeat,
   } = usePlayerActions();
   const isDesktop = useIsDesktop();
-  const showPlayerBarAnalyzer = SHOW_PLAYER_BAR_ANALYZER && isDesktop;
+  const showPlayerBarAnalyzer = SHOW_PLAYER_BAR_ANALYZER && isDesktop && !isAndroidNative;
 
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Crossfade still animates visual elements like artwork/title, but
@@ -172,6 +173,29 @@ export function PlayerBar() {
     },
     closeOnPointerDownOutside: false,
   });
+
+  useEffect(() => {
+    const handleNativeBack = (event: Event) => {
+      if (fsOpen) return;
+      if (
+        !hasFloatingOverlayOpen &&
+        !showQueue &&
+        !showLyrics &&
+        !showEqualizer &&
+        !extendedOpen
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setHasFloatingOverlayOpen(false);
+      setShowQueue(false);
+      setShowLyrics(false);
+      setShowEqualizer(false);
+      setExtendedOpen(false);
+    };
+    window.addEventListener("crate:native-back", handleNativeBack);
+    return () => window.removeEventListener("crate:native-back", handleNativeBack);
+  }, [extendedOpen, fsOpen, hasFloatingOverlayOpen, showEqualizer, showLyrics, showQueue]);
 
   const touchStartX = useRef<number>(0);
   const touchStartY = useRef<number>(0);

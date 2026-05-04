@@ -5,6 +5,7 @@ def _track_payload(row: dict) -> dict:
     track_entity_uid = str(row["track_entity_uid"]) if row.get("track_entity_uid") is not None else None
     artist_entity_uid = str(row["artist_entity_uid"]) if row.get("artist_entity_uid") is not None else None
     album_entity_uid = str(row["album_entity_uid"]) if row.get("album_entity_uid") is not None else None
+    bliss_vector = row.get("bliss_vector")
     return {
         "track_id": row.get("track_id"),
         "track_entity_uid": track_entity_uid,
@@ -23,6 +24,13 @@ def _track_payload(row: dict) -> dict:
         "bitrate": (row["bitrate"] // 1000) if row.get("bitrate") else None,
         "sample_rate": row.get("sample_rate"),
         "bit_depth": row.get("bit_depth"),
+        "bpm": row.get("bpm"),
+        "audio_key": row.get("audio_key"),
+        "audio_scale": row.get("audio_scale"),
+        "energy": row.get("energy"),
+        "danceability": row.get("danceability"),
+        "valence": row.get("valence"),
+        "bliss_vector": list(bliss_vector) if bliss_vector is not None else None,
     }
 
 

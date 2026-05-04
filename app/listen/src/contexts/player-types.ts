@@ -17,6 +17,13 @@ export interface Track {
   bitrate?: number | null;
   sampleRate?: number | null;
   bitDepth?: number | null;
+  bpm?: number | null;
+  audioKey?: string | null;
+  audioScale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  blissVector?: number[] | null;
   isSuggested?: boolean;
   suggestionSource?: "playlist";
 }

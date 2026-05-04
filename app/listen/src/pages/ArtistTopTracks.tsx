@@ -22,6 +22,13 @@ interface ArtistTopTrack {
   album: string;
   duration: number;
   track: number;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
 }
 
 function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
@@ -36,6 +43,13 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
     albumId: track.album_id,
     albumEntityUid: track.album_entity_uid,
     albumSlug: track.album_slug,
+    bpm: track.bpm,
+    audioKey: track.audio_key,
+    audioScale: track.audio_scale,
+    energy: track.energy,
+    danceability: track.danceability,
+    valence: track.valence,
+    blissVector: track.bliss_vector,
     albumCover: track.artist && track.album
       ? albumCoverApiUrl({
           albumId: track.album_id,

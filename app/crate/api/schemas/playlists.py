@@ -68,6 +68,13 @@ class PlaylistArtworkTrackResponse(IdentityFieldsMixin):
     album_id: int | None = None
     album_entity_uid: str | None = None
     album_slug: str | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
 
 
 class PlaylistTrackResponse(IdentityFieldsMixin):

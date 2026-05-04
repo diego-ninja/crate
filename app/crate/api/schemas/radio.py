@@ -17,6 +17,13 @@ class RadioTrack(IdentityFieldsMixin):
     album: str | None = None
     duration: float | None = None
     score: float | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
 
 
 class RadioSeed(IdentityFieldsMixin):

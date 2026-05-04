@@ -56,6 +56,13 @@ export interface ArtistTopTrack {
   album: string;
   duration: number;
   track: number;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
 }
 
 export interface StatsArtist {
@@ -131,6 +138,13 @@ export function buildArtistPlayerTrack(
     album: track.album,
     albumId: track.album_id,
     albumSlug: track.album_slug,
+    bpm: track.bpm,
+    audioKey: track.audio_key,
+    audioScale: track.audio_scale,
+    energy: track.energy,
+    danceability: track.danceability,
+    valence: track.valence,
+    blissVector: track.bliss_vector,
     albumCover: track.artist && track.album
       ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
       : coverFallback,

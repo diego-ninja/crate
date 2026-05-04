@@ -4,6 +4,8 @@ import { Network } from "@capacitor/network";
 
 export const isNative = Capacitor.isNativePlatform();
 export const platform = Capacitor.getPlatform();
+export const isAndroidNative = isNative && platform === "android";
+export const isIosNative = isNative && platform === "ios";
 
 export function onAppPause(callback: () => void): () => void {
   if (!isNative) return () => {};

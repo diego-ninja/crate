@@ -50,6 +50,13 @@ def get_discovery_track_rows(*, genres: list[str], excluded_artist_names: list[s
             t.bitrate,
             t.sample_rate,
             t.bit_depth,
+            t.bpm,
+            t.audio_key,
+            t.audio_scale,
+            t.energy,
+            t.danceability,
+            t.valence,
+            t.bliss_vector,
             COALESCE(t.lastfm_playcount, 0) AS popularity
         FROM library_tracks t
         JOIN library_albums alb ON alb.id = t.album_id

@@ -99,7 +99,14 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
                     alb.id AS album_id,
                     alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug,
-                    lt.duration
+                    lt.duration,
+                    lt.bpm,
+                    lt.audio_key,
+                    lt.audio_scale,
+                    lt.energy,
+                    lt.danceability,
+                    lt.valence,
+                    lt.bliss_vector
                 FROM user_liked_tracks ult
                 JOIN library_tracks lt ON lt.id = ult.track_id
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
@@ -119,6 +126,8 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
             item["artist_entity_uid"] = str(item["artist_entity_uid"])
         if item.get("album_entity_uid") is not None:
             item["album_entity_uid"] = str(item["album_entity_uid"])
+        if item.get("bliss_vector") is not None:
+            item["bliss_vector"] = list(item["bliss_vector"])
         item["relative_path"] = relative_track_path(item.get("path") or "")
     return payload
 

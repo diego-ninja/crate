@@ -37,6 +37,13 @@ interface CuratedPlaylistTrack {
   album_entity_uid?: string;
   album_slug?: string;
   duration: number;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   position: number;
   added_at: string;
 }

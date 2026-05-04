@@ -5,4 +5,12 @@ export {
   persistOAuthCallbackPayload,
 } from "@/lib/capacitor-oauth";
 export { initCapacitor } from "@/lib/capacitor-init";
-export { isNative, isOnline, onAppPause, onAppResume, platform } from "@/lib/capacitor-runtime";
+export {
+  isAndroidNative,
+  isIosNative,
+  isNative,
+  isOnline,
+  onAppPause,
+  onAppResume,
+  platform,
+} from "@/lib/capacitor-runtime";

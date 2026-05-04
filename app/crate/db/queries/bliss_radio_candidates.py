@@ -31,6 +31,8 @@ def get_similar_artist_tracks_for_radio(
                         t.audio_key,
                         t.audio_scale,
                         t.energy,
+                        t.danceability,
+                        t.valence,
                         t.rating,
                         LOWER(a.artist) AS similar_name_key,
                         ROW_NUMBER() OVER (
@@ -61,7 +63,7 @@ def get_album_tracks_for_radio(session=None, album_id: int | None = None) -> lis
             text(
                 """
                 SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                       t.bliss_vector, t.rating
+                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.danceability, t.valence, t.rating
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE a.id = :album_id
@@ -90,10 +92,17 @@ def get_playlist_tracks_for_radio(session=None, playlist_id: int | None = None) 
                     la.year,
                     COALESCE(pt.duration, lt.duration, 0) AS duration,
                     lt.bliss_vector,
+                    lt.bpm,
+                    lt.audio_key,
+                    lt.audio_scale,
+                    lt.energy,
+                    lt.danceability,
+                    lt.valence,
                     lt.rating
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
-                    SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.bliss_vector, lt.album_id
+                    SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.bliss_vector, lt.album_id,
+                           lt.bpm, lt.audio_key, lt.audio_scale, lt.energy, lt.danceability, lt.valence, lt.rating
                     FROM library_tracks lt
                     WHERE lt.path = pt.track_path
                        OR lt.path LIKE ('%/' || pt.track_path)

@@ -339,6 +339,13 @@ def _generate_batch(session: dict, count: int = _BATCH_SIZE) -> list[dict]:
             "artist": artist,
             "album": candidate.get("album"),
             "album_id": candidate.get("album_id"),
+            "bpm": candidate.get("bpm"),
+            "audio_key": candidate.get("audio_key"),
+            "audio_scale": candidate.get("audio_scale"),
+            "energy": candidate.get("energy"),
+            "danceability": candidate.get("danceability"),
+            "valence": candidate.get("valence"),
+            "bliss_vector": list(cand_vec) if cand_vec else None,
             "distance": round(candidate["distance"], 6),
         })
 

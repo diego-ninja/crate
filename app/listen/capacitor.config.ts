@@ -1,5 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+const allowMixedContent = process.env.CRATE_ALLOW_MIXED_CONTENT === "true";
+
 const config: CapacitorConfig = {
   // Reverse-DNS of the project domain (cratemusic.app). The app itself is
   // just "Crate" — not "Crate Listen" — so the id drops the old ".listen"
@@ -13,7 +15,7 @@ const config: CapacitorConfig = {
     // so cross-origin is not a problem.
     androidScheme: "https",
     iosScheme: "https",
-    allowMixedContent: true,
+    allowMixedContent,
   },
 
   ios: {
@@ -24,7 +26,7 @@ const config: CapacitorConfig = {
 
   android: {
     backgroundColor: "#0a0a0f",
-    allowMixedContent: true,
+    allowMixedContent,
   },
 
   plugins: {

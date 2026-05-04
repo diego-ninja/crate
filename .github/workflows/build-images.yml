@@ -3,11 +3,6 @@ name: Build & Push Docker Images
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - "docs/**"
-      - "docker-compose.yaml"
-      - ".github/workflows/build-images.yml"
   workflow_dispatch:
     inputs:
       images:
@@ -19,48 +14,10 @@ env:
   OWNER: ${{ github.repository_owner }}
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      ui: ${{ steps.filter.outputs.ui }}
-      listen: ${{ steps.filter.outputs.listen }}
-      docs: ${{ steps.filter.outputs.docs }}
-      site: ${{ steps.filter.outputs.site }}
-      reference: ${{ steps.filter.outputs.reference }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        if: github.event_name == 'push'
-        with:
-          filters: |
-            backend:
-              - 'app/crate/**'
-              - 'app/requirements.txt'
-              - 'app/Dockerfile'
-              - 'app/bin/**'
-              - 'app/scripts/**'
-              - 'app/config.yaml'
-            ui:
-              - 'app/ui/**'
-              - 'app/shared/**'
-            listen:
-              - 'app/listen/**'
-              - 'app/shared/**'
-            docs:
-              - 'app/docs/**'
-              - 'docs/**'
-            site:
-              - 'app/site/**'
-            reference:
-              - 'app/reference/**'
-
   build-backend:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'backend') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.backend == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'backend') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -81,7 +38,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-backend
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6
@@ -96,10 +53,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-ui:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'ui') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.ui == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'ui') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,7 +76,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-ui
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6
@@ -134,10 +90,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-listen:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'listen') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.listen == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'listen') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -158,7 +113,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-listen
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6
@@ -172,10 +127,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-docs:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'docs') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.docs == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'docs') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -196,7 +150,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-docs
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       # NOTE: docs build context is the repo root (not ./app) because
@@ -213,10 +167,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-site:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'site') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.site == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'site') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -237,7 +190,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-site
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       # NOTE: site build context is the repo root (matches the docs job)
@@ -253,10 +206,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-reference:
-    needs: changes
     if: |
-      github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'reference') || github.event.inputs.images == 'all') ||
-      github.event_name == 'push' && needs.changes.outputs.reference == 'true'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (contains(github.event.inputs.images, 'reference') || github.event.inputs.images == 'all'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -277,7 +229,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/crate-reference
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,format=short
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6

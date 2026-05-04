@@ -13,7 +13,8 @@ def get_track_with_artist(session=None, track_path: str = "") -> dict | None:
             text(
                 """
                 SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
+                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
+                       t.danceability, t.valence, t.rating,
                        ar.id AS artist_id
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
@@ -47,7 +48,14 @@ def get_same_artist_tracks(
                         a.artist AS album_artist,
                         a.name AS album,
                         a.year,
-                        t.duration
+                        t.duration,
+                        t.bliss_vector,
+                        t.bpm,
+                        t.audio_key,
+                        t.audio_scale,
+                        t.energy,
+                        t.danceability,
+                        t.valence
                     FROM library_tracks t
                     JOIN library_albums a ON t.album_id = a.id
                     JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
@@ -70,7 +78,14 @@ def get_same_artist_tracks(
                         a.artist AS album_artist,
                         a.name AS album,
                         a.year,
-                        t.duration
+                        t.duration,
+                        t.bliss_vector,
+                        t.bpm,
+                        t.audio_key,
+                        t.audio_scale,
+                        t.energy,
+                        t.danceability,
+                        t.valence
                     FROM library_tracks t
                     JOIN library_albums a ON t.album_id = a.id
                     WHERE LOWER(a.artist) = LOWER(:artist_name) AND t.path != :exclude_path
@@ -104,6 +119,8 @@ def get_seed_tracks_by_paths(session=None, seed_paths: list[str] | None = None) 
                     t.audio_key,
                     t.audio_scale,
                     t.energy,
+                    t.danceability,
+                    t.valence,
                     t.rating
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id

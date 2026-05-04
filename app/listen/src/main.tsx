@@ -30,17 +30,19 @@ async function disableDevServiceWorker() {
   }
 }
 
+const isCapacitorBuild = import.meta.env.MODE === "capacitor";
+
 // Load Poppins only on web — iOS/Android use system fonts (San
-// Francisco / Roboto) for a native feel. The import is dynamic so
-// the woff2 files never end up in the Capacitor bundle.
-if (!isNative) {
+// Francisco / Roboto) for a native feel. The mode guard is build-time
+// constant, so Vite drops the font chunk from Capacitor bundles.
+if (!isCapacitorBuild && !isNative) {
   import("../../shared/fonts/poppins.css");
 }
 
 initCapacitor();
 void primeOfflineRuntimeProfile();
 
-if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+if (!isNative && typeof window !== "undefined" && "serviceWorker" in navigator) {
   if (import.meta.env.DEV) {
     void disableDevServiceWorker();
   } else {

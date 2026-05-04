@@ -37,6 +37,13 @@ interface PathTrack {
   album?: string;
   album_id?: number;
   album_entity_uid?: string;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   distance: number;
 }
 

@@ -1,12 +1,13 @@
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 
-import { apiFetch, apiUrl, getApiAuthHeaders, getApiBase } from "@/lib/api";
-import { isNative } from "@/lib/capacitor";
+import { api, apiFetch, apiUrl, getApiAuthHeaders, getApiBase } from "@/lib/api";
+import { isAndroidNative, isNative } from "@/lib/capacitor-runtime";
 import {
   trackOfflineManifestApiPath,
   trackStreamApiPath,
 } from "@/lib/library-routes";
+import type { PlaybackResolution } from "@/lib/track-playback";
 
 export type OfflineItemKind = "track" | "album" | "playlist";
 export type OfflineItemState = "idle" | "queued" | "downloading" | "syncing" | "ready" | "error";
@@ -96,6 +97,8 @@ const OFFLINE_NATIVE_META_DIR = "offline-meta";
 const OFFLINE_NATIVE_SNAPSHOT_PREFIX = "offline-index-";
 const OFFLINE_NATIVE_ASSET_FILE_PREFIX = "offline-assets-";
 const OFFLINE_STORAGE_HEADROOM_BYTES = 5 * 1024 * 1024;
+const NATIVE_OFFLINE_SOFT_LIMIT_BYTES = 8 * 1024 * 1024 * 1024;
+const ANDROID_OFFLINE_DELIVERY_POLICY = "balanced";
 const EMPTY_SNAPSHOT: OfflineSnapshot = { items: {} };
 const nativeSnapshotCache = new Map<string, OfflineSnapshot>();
 const nativeAssetIndexCache = new Map<string, Record<string, OfflineNativeAssetRecord>>();
@@ -617,9 +620,15 @@ export async function hasCachedTrackAsset(profileKey: string, track: OfflineTrac
   return false;
 }
 
-function inferOfflineFileExtension(track: OfflineManifestTrack): string {
-  const candidate = (track.format || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return candidate || "bin";
+function normalizeAudioExtension(value?: string | null): string | null {
+  const candidate = (value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!candidate) return null;
+  if (candidate === "aac") return "m4a";
+  return candidate;
+}
+
+function inferOfflineFileExtension(track: OfflineManifestTrack, formatOverride?: string | null): string {
+  return normalizeAudioExtension(formatOverride) || normalizeAudioExtension(track.format) || "bin";
 }
 
 function safeOfflineFileStem(assetKey: string): string {
@@ -633,14 +642,14 @@ function expectedTrackBytes(track: OfflineManifestTrack): number {
 
 async function assertNativeTrackIntegrity(
   path: string,
-  track: OfflineManifestTrack,
+  expectedBytes?: number | null,
 ): Promise<{ uri: string; size: number }> {
   const stat = await Filesystem.stat({
     path,
     directory: Directory.Data,
   });
   const actualSize = Number(stat.size || 0);
-  const expectedSize = expectedTrackBytes(track);
+  const expectedSize = Math.max(0, Number(expectedBytes ?? 0));
   if (expectedSize > 0 && actualSize > 0 && actualSize !== expectedSize) {
     await Filesystem.deleteFile({
       path,
@@ -676,13 +685,25 @@ async function estimateMissingOfflineBytes(
   return total;
 }
 
+async function estimateNativeOfflineBytes(profileKey: string): Promise<number> {
+  const assets = await ensureOfflineNativeAssetIndexLoaded(profileKey);
+  return Object.values(assets).reduce((total, asset) => total + Math.max(0, Number(asset.byteLength || 0)), 0);
+}
+
 export async function ensureOfflineStorageBudget(
   profileKey: string,
   tracks: OfflineManifestTrack[],
 ): Promise<void> {
-  if (isNative || typeof navigator === "undefined" || !navigator.storage?.estimate) return;
   const pendingBytes = await estimateMissingOfflineBytes(profileKey, tracks);
   if (pendingBytes <= 0) return;
+  if (isNative) {
+    const currentBytes = await estimateNativeOfflineBytes(profileKey);
+    if (currentBytes + pendingBytes + OFFLINE_STORAGE_HEADROOM_BYTES > NATIVE_OFFLINE_SOFT_LIMIT_BYTES) {
+      throw new Error("Offline copies are above the native storage budget");
+    }
+    return;
+  }
+  if (typeof navigator === "undefined" || !navigator.storage?.estimate) return;
   const estimate = await navigator.storage.estimate();
   const quota = Number(estimate.quota || 0);
   const usage = Number(estimate.usage || 0);
@@ -691,6 +712,75 @@ export async function ensureOfflineStorageBudget(
   if (pendingBytes + OFFLINE_STORAGE_HEADROOM_BYTES > available) {
     throw new Error("Not enough browser storage available for offline copy");
   }
+}
+
+interface NativeOfflineDownloadTarget {
+  streamUrl: string;
+  extension: string;
+  expectedBytes: number | null;
+  effectivePolicy: string;
+}
+
+function nativePlaybackPathForTrack(track: OfflineManifestTrack): string | null {
+  if (track.entity_uid) {
+    return `/api/tracks/by-entity/${encodeURIComponent(track.entity_uid)}/playback?delivery=${ANDROID_OFFLINE_DELIVERY_POLICY}`;
+  }
+  if (track.track_id) {
+    return `/api/tracks/${encodeURIComponent(String(track.track_id))}/playback?delivery=${ANDROID_OFFLINE_DELIVERY_POLICY}`;
+  }
+  return null;
+}
+
+function sourceNeedsMobileVariant(track: OfflineManifestTrack, resolution?: PlaybackResolution | null): boolean {
+  const sourceFormat = normalizeAudioExtension(resolution?.source?.format || track.format);
+  const sourceBitrate = Number(resolution?.source?.bitrate || track.bitrate || 0);
+  const sourceSampleRate = Number(resolution?.source?.sample_rate || track.sample_rate || 0);
+  if (resolution?.source?.lossless) return true;
+  if (!sourceFormat) return false;
+  if (["flac", "wav", "alac", "aiff", "aif"].includes(sourceFormat)) return true;
+  if (["m4a", "mp3", "opus", "ogg"].includes(sourceFormat)) {
+    return sourceBitrate > 256 || sourceSampleRate > 48_000;
+  }
+  return false;
+}
+
+async function resolveNativeOfflineDownloadTarget(track: OfflineManifestTrack): Promise<NativeOfflineDownloadTarget> {
+  const fallback = {
+    streamUrl: track.stream_url,
+    extension: inferOfflineFileExtension(track),
+    expectedBytes: expectedTrackBytes(track) || null,
+    effectivePolicy: "original",
+  };
+  if (!isAndroidNative) return fallback;
+
+  const playbackPath = nativePlaybackPathForTrack(track);
+  if (!playbackPath) return fallback;
+
+  let resolution: PlaybackResolution;
+  try {
+    resolution = await api<PlaybackResolution>(playbackPath);
+  } catch {
+    if (sourceNeedsMobileVariant(track)) {
+      throw new Error("Could not prepare the Android offline copy");
+    }
+    return fallback;
+  }
+
+  if (resolution.preparing && sourceNeedsMobileVariant(track, resolution)) {
+    throw new Error("Preparing the Android offline copy. Try again shortly.");
+  }
+
+  if (resolution.effective_policy === "original") {
+    return fallback;
+  }
+
+  const deliveryFormat = resolution.delivery?.format || resolution.delivery?.codec;
+  return {
+    streamUrl: resolution.stream_url || track.stream_url,
+    extension: inferOfflineFileExtension(track, deliveryFormat),
+    expectedBytes: Number(resolution.delivery?.bytes || 0) || null,
+    effectivePolicy: resolution.effective_policy,
+  };
 }
 
 export async function cacheTrackAsset(profileKey: string, track: OfflineManifestTrack): Promise<void> {
@@ -703,8 +793,9 @@ export async function cacheTrackAsset(profileKey: string, track: OfflineManifest
     const existing = getOfflineTrackAssetAliases(track).map((alias) => existingAssets[alias]).find(Boolean);
     if (existing) return;
 
+    const downloadTarget = await resolveNativeOfflineDownloadTarget(track);
     const dirPath = `offline-media/${profileKey}`;
-    const filePath = `${dirPath}/${safeOfflineFileStem(assetKey)}.${inferOfflineFileExtension(track)}`;
+    const filePath = `${dirPath}/${safeOfflineFileStem(assetKey)}.${downloadTarget.extension}`;
 
     await Filesystem.mkdir({
       path: dirPath,
@@ -715,14 +806,14 @@ export async function cacheTrackAsset(profileKey: string, track: OfflineManifest
     });
 
     await Filesystem.downloadFile({
-      url: apiUrl(track.stream_url),
+      url: apiUrl(downloadTarget.streamUrl),
       path: filePath,
       directory: Directory.Data,
       recursive: true,
       headers: getApiAuthHeaders(),
     });
 
-    const { uri, size } = await assertNativeTrackIntegrity(filePath, track);
+    const { uri, size } = await assertNativeTrackIntegrity(filePath, downloadTarget.expectedBytes);
 
     const nextAssets = loadOfflineNativeAssetIndex(profileKey);
     nextAssets[assetKey] = {
@@ -732,7 +823,7 @@ export async function cacheTrackAsset(profileKey: string, track: OfflineManifest
       path: filePath,
       uri,
       playbackUrl: Capacitor.convertFileSrc(uri),
-      byteLength: expectedTrackBytes(track) || size,
+      byteLength: downloadTarget.expectedBytes || size,
       updatedAt: track.updated_at ?? null,
     };
     saveOfflineNativeAssetIndex(profileKey, nextAssets);

@@ -24,6 +24,13 @@ def get_artist_core_track_rows(*, artist_id: int, artist_name: str, limit: int) 
             t.bitrate,
             t.sample_rate,
             t.bit_depth,
+            t.bpm,
+            t.audio_key,
+            t.audio_scale,
+            t.energy,
+            t.danceability,
+            t.valence,
+            t.bliss_vector,
             COALESCE(t.lastfm_playcount, 0) AS popularity,
             COALESCE(alb.year, '') AS album_year,
             COALESCE(t.track_number, 9999) AS track_number

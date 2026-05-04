@@ -8,10 +8,15 @@ import type { PlaySource, Track } from "./player-types";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 import { setPlaybackDeliveryPolicyPreference } from "@/lib/player-playback-prefs";
 import {
+  ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS,
   getEffectiveCrossfadeSeconds,
   getStoredQueue,
   getStreamUrl,
   saveQueue,
+  SMART_TRANSITION_BALANCED_SECONDS,
+  SMART_TRANSITION_LONG_SECONDS,
+  SMART_TRANSITION_MIXED_QUEUE_SECONDS,
+  SMART_TRANSITION_SHORT_SECONDS,
   STORAGE_KEY,
 } from "./player-utils";
 
@@ -20,6 +25,42 @@ const TRACK_B: Track = { id: "b", title: "B", artist: "Y" };
 const ALBUM_TRACK_A: Track = { id: "album-a", title: "A", artist: "Dredg", album: "El Cielo" };
 const ALBUM_TRACK_B: Track = { id: "album-b", title: "B", artist: "Dredg", album: "El Cielo" };
 const OTHER_TRACK: Track = { id: "other-a", title: "A", artist: "Quicksand", album: "Slip" };
+const COMPATIBLE_TRACK_A: Track = {
+  id: "compatible-a",
+  title: "A",
+  artist: "X",
+  bpm: 120,
+  audioKey: "C",
+  audioScale: "major",
+  energy: 0.72,
+  danceability: 0.48,
+  valence: 0.34,
+  blissVector: [0.2, 0.4, 0.6, 0.8],
+};
+const COMPATIBLE_TRACK_B: Track = {
+  id: "compatible-b",
+  title: "B",
+  artist: "Y",
+  bpm: 124,
+  audioKey: "G",
+  audioScale: "major",
+  energy: 0.76,
+  danceability: 0.52,
+  valence: 0.38,
+  blissVector: [0.21, 0.39, 0.62, 0.79],
+};
+const CLASHING_TRACK: Track = {
+  id: "clashing",
+  title: "C",
+  artist: "Z",
+  bpm: 176,
+  audioKey: "F#",
+  audioScale: "minor",
+  energy: 0.12,
+  danceability: 0.15,
+  valence: 0.92,
+  blissVector: [-0.8, -0.6, -0.4, -0.2],
+};
 const ALBUM_SOURCE: PlaySource = { type: "album", name: "El Cielo", id: 1 };
 const PLAYLIST_SOURCE: PlaySource = { type: "playlist", name: "Post-hardcore forever", id: 1 };
 
@@ -163,22 +204,66 @@ describe("getEffectiveCrossfadeSeconds", () => {
     ).toBe(0);
   });
 
-  it("keeps crossfade for album playback when shuffle is on", () => {
+  it("uses a short Android mask for continuous album playback when WebAudio gapless is unavailable", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(
+        ALBUM_TRACK_A,
+        ALBUM_TRACK_B,
+        ALBUM_SOURCE,
+        false,
+        6,
+        true,
+        { androidNative: true },
+      ),
+    ).toBe(ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS);
+  });
+
+  it("uses the context fallback for album playback when shuffle is on and analysis is missing", () => {
     expect(
       getEffectiveCrossfadeSeconds(ALBUM_TRACK_A, ALBUM_TRACK_B, ALBUM_SOURCE, true, 6, true),
-    ).toBe(6);
+    ).toBe(SMART_TRANSITION_BALANCED_SECONDS);
   });
 
-  it("keeps crossfade for playlist playback", () => {
+  it("uses the playlist fallback when analysis is missing", () => {
     expect(
       getEffectiveCrossfadeSeconds(ALBUM_TRACK_A, ALBUM_TRACK_B, PLAYLIST_SOURCE, false, 6, true),
-    ).toBe(6);
+    ).toBe(SMART_TRANSITION_BALANCED_SECONDS);
   });
 
-  it("keeps crossfade when the next track is not from the same album", () => {
+  it("uses the mixed queue fallback when the next album track is unrelated and analysis is missing", () => {
     expect(
       getEffectiveCrossfadeSeconds(ALBUM_TRACK_A, OTHER_TRACK, ALBUM_SOURCE, false, 6, true),
-    ).toBe(6);
+    ).toBe(SMART_TRANSITION_MIXED_QUEUE_SECONDS);
+  });
+
+  it("uses a longer transition for strongly compatible analysed tracks", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(COMPATIBLE_TRACK_A, COMPATIBLE_TRACK_B, PLAYLIST_SOURCE, false, 8, true),
+    ).toBe(SMART_TRANSITION_LONG_SECONDS);
+  });
+
+  it("uses a short transition for clashing analysed tracks", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(COMPATIBLE_TRACK_A, CLASHING_TRACK, PLAYLIST_SOURCE, false, 8, true),
+    ).toBe(SMART_TRANSITION_SHORT_SECONDS);
+  });
+
+  it("respects the configured crossfade as the ceiling", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(COMPATIBLE_TRACK_A, COMPATIBLE_TRACK_B, PLAYLIST_SOURCE, false, 3, true),
+    ).toBe(3);
+  });
+
+  it("falls back cleanly when only one track has analysis", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(COMPATIBLE_TRACK_A, TRACK_B, PLAYLIST_SOURCE, false, 6, true),
+    ).toBe(SMART_TRANSITION_BALANCED_SECONDS);
+  });
+
+  it("returns zero when no next track is predictable", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(COMPATIBLE_TRACK_A, null, PLAYLIST_SOURCE, false, 6, true),
+    ).toBe(0);
   });
 
   it("returns zero when the configured crossfade is off", () => {

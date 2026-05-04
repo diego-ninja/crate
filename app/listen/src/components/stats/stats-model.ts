@@ -44,6 +44,13 @@ export interface StatsTrack {
   album: string;
   album_id?: number | null;
   album_slug?: string | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
