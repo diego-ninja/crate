@@ -1,8 +1,10 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", () => ({
   api: vi.fn(),
+  getApiBase: vi.fn(() => ""),
+  getAuthToken: vi.fn(() => null),
 }));
 
 import { api } from "@/lib/api";
@@ -10,12 +12,9 @@ import { TopBarSearch } from "@/components/layout/topbar/TopBarSearch";
 import { renderWithListenProviders } from "@/test/render-with-listen-providers";
 
 describe("TopBarSearch", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
   afterEach(() => {
     localStorage.clear();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.useRealTimers();
   });
@@ -82,22 +81,38 @@ describe("TopBarSearch", () => {
   });
 
   it("renders fetched results after typing a query", async () => {
+    vi.useFakeTimers();
     vi.mocked(api).mockResolvedValue({
       artists: [{ id: 52, slug: "high-vis", name: "High Vis" }],
       albums: [],
       tracks: [],
     });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 320,
+      bottom: 44,
+      width: 320,
+      height: 44,
+      toJSON: () => ({}),
+    });
 
     renderWithListenProviders(<TopBarSearch />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
-
-    const input = await screen.findByPlaceholderText("Search artists, albums, tracks...");
+    const input = screen.getByPlaceholderText("Search artists, albums, tracks...");
+    fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "high" } });
 
-    vi.advanceTimersByTime(250);
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+    vi.useRealTimers();
 
     await waitFor(() => {
+      expect(api).toHaveBeenCalledWith("/api/search?q=high&limit=10");
       expect(screen.getByText("High Vis")).toBeTruthy();
     });
   });

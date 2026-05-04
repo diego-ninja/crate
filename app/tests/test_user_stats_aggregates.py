@@ -60,6 +60,13 @@ class TestUserListeningAggregates:
 
         with pg_db.get_db_ctx() as cur:
             cur.execute(
+                "SELECT track_entity_uid::text AS track_entity_uid FROM user_play_events WHERE id = %s",
+                (event_id,),
+            )
+            event_row = cur.fetchone()
+            assert event_row["track_entity_uid"] == track["entity_uid"]
+
+            cur.execute(
                 "SELECT * FROM user_daily_listening WHERE user_id = %s AND day = %s",
                 (1, "2026-04-01"),
             )

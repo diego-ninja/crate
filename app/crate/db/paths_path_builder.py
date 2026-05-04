@@ -52,15 +52,18 @@ def compute_path(
         recent_artists.append(track["artist"])
         if len(recent_artists) > 3:
             recent_artists.pop(0)
+        entity_uid = str(track["entity_uid"]) if track.get("entity_uid") else None
         return {
             "step": step,
             "progress": round(progress, 4),
             "track_id": track["id"],
-            "storage_id": str(track["storage_id"]) if track.get("storage_id") else None,
+            "entity_uid": entity_uid,
             "title": track["title"],
             "artist": track["artist"],
+            "artist_entity_uid": track.get("artist_entity_uid"),
             "album": track.get("album"),
             "album_id": track.get("album_id"),
+            "album_entity_uid": track.get("album_entity_uid"),
             "distance": round(track["distance"], 6),
         }
 

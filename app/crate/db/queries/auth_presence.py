@@ -43,7 +43,7 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
                 SELECT DISTINCT ON (upe.user_id)
                     upe.user_id,
                     COALESCE(lt.id, upe.track_id) AS track_id,
-                    lt.storage_id AS track_storage_id,
+                    lt.entity_uid AS track_entity_uid,
                     COALESCE(lt.title, upe.title) AS title,
                     COALESCE(lt.artist, upe.artist) AS artist,
                     ar.id AS artist_id,
@@ -55,6 +55,7 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
                 FROM user_play_events upe
                 LEFT JOIN library_tracks lt
                   ON lt.id = upe.track_id
+                  OR (upe.track_id IS NULL AND upe.track_entity_uid IS NOT NULL AND lt.entity_uid = upe.track_entity_uid)
                   OR (upe.track_id IS NULL AND lt.path = upe.track_path)
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
                 LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, upe.artist)
@@ -122,7 +123,7 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
         current_track = (
             {
                 "track_id": row.get("track_id"),
-                "track_storage_id": row.get("track_storage_id"),
+                "track_entity_uid": row.get("track_entity_uid"),
                 "title": row.get("title"),
                 "artist": row.get("artist"),
                 "artist_id": None,
@@ -152,7 +153,7 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
         current_track = (
             {
                 "track_id": row.get("track_id"),
-                "track_storage_id": str(row.get("track_storage_id")) if row.get("track_storage_id") is not None else None,
+                "track_entity_uid": str(row.get("track_entity_uid")) if row.get("track_entity_uid") is not None else None,
                 "title": row.get("title"),
                 "artist": row.get("artist"),
                 "artist_id": row.get("artist_id"),

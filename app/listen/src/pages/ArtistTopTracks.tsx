@@ -10,9 +10,12 @@ import { albumCoverApiUrl, artistApiPath, artistPagePath, artistPhotoApiUrl, art
 
 interface ArtistTopTrack {
   id: string;
+  track_entity_uid?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   title: string;
   artist: string;
@@ -27,14 +30,29 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
     title: track.title || "Unknown",
     artist: track.artist,
     artistId: track.artist_id,
+    artistEntityUid: track.artist_entity_uid,
     artistSlug: track.artist_slug,
     album: track.album,
     albumId: track.album_id,
+    albumEntityUid: track.album_entity_uid,
     albumSlug: track.album_slug,
     albumCover: track.artist && track.album
-      ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
-      : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist }),
+      ? albumCoverApiUrl({
+          albumId: track.album_id,
+          albumEntityUid: track.album_entity_uid,
+          artistEntityUid: track.artist_entity_uid,
+          albumSlug: track.album_slug,
+          artistName: track.artist,
+          albumName: track.album,
+        })
+      : artistPhotoApiUrl({
+          artistId: track.artist_id,
+          artistEntityUid: track.artist_entity_uid,
+          artistSlug: track.artist_slug,
+          artistName: track.artist,
+        }),
     path: track.id.includes("/") ? track.id : undefined,
+    entityUid: track.track_entity_uid,
   }));
 }
 
@@ -45,12 +63,18 @@ export function ArtistTopTracks() {
   const { playAll } = usePlayerActions();
   const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
     routeArtistSlug ? artistApiPath({ artistSlug: routeArtistSlug }) : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
     routeArtistSlug
       ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/top-tracks?count=50`
       : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
 
   useEffect(() => {
@@ -79,9 +103,11 @@ export function ArtistTopTracks() {
     title: track.title,
     artist: track.artist,
     artist_id: track.artist_id,
+    artist_entity_uid: track.artist_entity_uid,
     artist_slug: track.artist_slug,
     album: track.album,
     album_id: track.album_id,
+    album_entity_uid: track.album_entity_uid,
     album_slug: track.album_slug,
     duration: track.duration,
     path: track.id.includes("/") ? track.id : undefined,
@@ -96,7 +122,7 @@ export function ArtistTopTracks() {
   }
 
   return (
-    <div className="space-y-6 pt-16">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
@@ -128,8 +154,20 @@ export function ArtistTopTracks() {
             index={track.track || index + 1}
             showAlbum
             albumCover={track.artist && track.album
-              ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
-              : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist })}
+              ? albumCoverApiUrl({
+                  albumId: track.album_id,
+                  albumEntityUid: track.album_entity_uid,
+                  artistEntityUid: track.artist_entity_uid,
+                  albumSlug: track.album_slug,
+                  artistName: track.artist,
+                  albumName: track.album,
+                })
+              : artistPhotoApiUrl({
+                  artistId: track.artist_id,
+                  artistEntityUid: track.artist_entity_uid,
+                  artistSlug: track.artist_slug,
+                  artistName: track.artist,
+                })}
             showCoverThumb
             queueTracks={trackRows}
           />

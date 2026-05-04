@@ -1,8 +1,10 @@
 from pathlib import Path
+import shutil
 
 import mutagen
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
 
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
@@ -14,14 +16,17 @@ from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
 from crate.db.repositories.library import (
     get_library_album_by_id,
+    get_library_album_by_entity_uid,
     get_library_albums,
     get_library_artist,
     get_library_artist_by_slug,
     get_library_tracks,
 )
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
+from crate.db.queries.lyrics import get_album_track_lyrics_status
 from crate.db.repositories.tasks import create_task
 from crate.slugs import build_public_album_slug
+from crate.db.queries.streaming_admin import get_track_variant_summaries
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -72,6 +77,19 @@ _ZIP_RESPONSES = merge_responses(
 )
 def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
     album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_related_albums(request, album["artist"], album["name"], limit)
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/related",
+    response_model=list[RelatedAlbumResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List albums related to a given album by entity UID",
+)
+def api_related_albums_by_entity_uid(request: Request, album_entity_uid: str, limit: int = 15):
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_related_albums(request, album["artist"], album["name"], limit)
@@ -134,12 +152,17 @@ def api_album(request: Request, artist: str, album: str):
                 cover_file = cover_name
                 break
 
+    track_ids = [track["id"] for track in tracks_data if track.get("id")]
+    variant_map = get_track_variant_summaries(track_ids)
+    lyrics_map = get_album_track_lyrics_status(album_data["id"])
     track_list = []
     album_tags = {}
     for track in tracks_data:
+        entity_uid = track.get("entity_uid")
         track_list.append(
             {
                 "id": track["id"],
+                "entity_uid": entity_uid,
                 "storage_id": track.get("storage_id"),
                 "filename": track["filename"],
                 "format": track.get("format", ""),
@@ -152,6 +175,18 @@ def api_album(request: Request, artist: str, album: str):
                 "popularity_score": track.get("popularity_score"),
                 "popularity_confidence": track.get("popularity_confidence"),
                 "rating": track.get("rating", 0) or 0,
+                "stream_variants": variant_map.get(track["id"], []),
+                "lyrics": lyrics_map.get(
+                    track["id"],
+                    {
+                        "status": "none",
+                        "found": False,
+                        "has_plain": False,
+                        "has_synced": False,
+                        "provider": "lrclib",
+                        "updated_at": None,
+                    },
+                ),
                 "tags": {
                     "title": track.get("title", ""),
                     "artist": track.get("artist", ""),
@@ -192,8 +227,10 @@ def api_album(request: Request, artist: str, album: str):
 
     return {
         "id": album_data["id"],
+        "entity_uid": album_data.get("entity_uid"),
         "slug": album_data.get("slug"),
         "artist_id": artist_row["id"] if (artist_row := get_library_artist(artist)) else None,
+        "artist_entity_uid": artist_row.get("entity_uid") if artist_row else None,
         "artist_slug": artist_row["slug"] if artist_row else None,
         "artist": artist,
         "name": album,
@@ -238,6 +275,19 @@ def api_album_by_artist_slug(request: Request, artist_slug: str, album_slug: str
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_album(request, artist["name"], album["name"])
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information by entity UID",
+)
+def api_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_album(request, album["artist"], album["name"])
 
 
 @router.get(
@@ -368,6 +418,19 @@ def api_enrich_album(request: Request, album_id: int):
 
 
 @router.post(
+    "/api/albums/by-entity/{album_entity_uid}/enrich",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue album enrichment by entity UID",
+)
+def api_enrich_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_enrich_album(request, album["id"])
+
+
+@router.post(
     "/api/albums/{album_id}/fetch-cover",
     response_model=TaskEnqueueResponse,
     responses=_BROWSE_RESPONSES,
@@ -389,6 +452,19 @@ def api_fetch_cover(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
+@router.post(
+    "/api/albums/by-entity/{album_entity_uid}/fetch-cover",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artwork fetching for an album by entity UID",
+)
+def api_fetch_cover_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    return api_fetch_cover(request, album["id"])
+
+
 @router.get(
     "/api/albums/{album_id}/cover",
     responses=_IMAGE_RESPONSES,
@@ -403,8 +479,22 @@ def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024
     return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
 
 
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/cover",
+    responses=_IMAGE_RESPONSES,
+    summary="Get album artwork by entity UID",
+)
+def api_cover_by_entity_uid(album_entity_uid: str, size: int | None = Query(None, ge=32, le=1024)):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return _placeholder_cover("?")
+    artist = get_library_artist(album["artist"])
+    album_dir = resolve_album_dir(library_path(), album, artist=artist)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
+
+
 def api_download_album(request: Request, artist: str, album: str):
-    """Download an entire album as a ZIP file."""
+    """Download an entire album as a rich ZIP package."""
     _require_auth(request)
     import tempfile
     import zipfile
@@ -416,20 +506,89 @@ def api_download_album(request: Request, artist: str, album: str):
     if not album_dir:
         return Response(status_code=404)
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-    tmp.close()
+    tmp_dir = Path(tempfile.mkdtemp(prefix="crate-album-download."))
+    zip_path = tmp_dir / "album.zip"
 
     exts = extensions()
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zip_file:
-        for file_path in sorted(album_dir.iterdir()):
-            if file_path.is_file() and (
-                file_path.suffix.lower() in exts
-                or file_path.name.lower() in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg")
-            ):
-                zip_file.write(str(file_path), file_path.name)
+    album_row = find_album_row(artist, album)
+    export_dir: Path | None = None
+    cached_zip: Path | None = None
+    cache_key: str | None = None
+    if album_row:
+        try:
+            from crate.download_cache import (
+                album_cache_ttl_seconds,
+                album_download_cache_key,
+                download_cache_lock,
+                get_cached_download,
+                safe_download_filename,
+                store_cached_download,
+            )
+            from crate.db.queries.portable_metadata import get_portable_album_payload
+            from crate.portable_metadata import export_album_rich_metadata, find_album_artwork_file
+
+            payload = get_portable_album_payload(int(album_row["id"]))
+            if payload:
+                album_payload = payload.get("album") or {}
+                artwork_path = find_album_artwork_file(album_payload.get("path") or "")
+                cache_key = album_download_cache_key(payload, artwork_path=artwork_path)
+                cache_filename = safe_download_filename(f"{artist} - {album}.zip", "album.zip")
+                cached = get_cached_download("album", cache_key, cache_filename, ttl_seconds=album_cache_ttl_seconds())
+                if cached is None:
+                    with download_cache_lock("album", cache_key):
+                        cached = get_cached_download("album", cache_key, cache_filename, ttl_seconds=album_cache_ttl_seconds())
+                        if cached is None:
+                            export_result = export_album_rich_metadata(
+                                payload,
+                                export_root=tmp_dir / "rich",
+                                include_audio=True,
+                                write_rich_tags=True,
+                            )
+                            export_dir = Path(str(export_result["export_path"]))
+                            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
+                                for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
+                                    zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
+                            cached = store_cached_download(
+                                "album",
+                                cache_key,
+                                cache_filename,
+                                zip_path,
+                                metadata={
+                                    "album_id": album_row["id"],
+                                    "album_entity_uid": album_payload.get("entity_uid"),
+                                    "tracks": export_result.get("tracks"),
+                                    "artwork_files": export_result.get("artwork_files"),
+                                },
+                            )
+                if cached is not None:
+                    cached_zip = cached.path
+        except Exception:
+            export_dir = None
+
+    if cached_zip is not None:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        safe_name = f"{artist} - {album}.zip".replace("/", "-")
+        return FileResponse(path=str(cached_zip), filename=safe_name, media_type="application/zip")
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
+        if export_dir and export_dir.is_dir():
+            for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
+                zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
+        else:
+            for file_path in sorted(album_dir.iterdir()):
+                if file_path.is_file() and (
+                    file_path.suffix.lower() in exts
+                    or file_path.name.lower() in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg")
+                ):
+                    zip_file.write(str(file_path), file_path.name)
 
     safe_name = f"{artist} - {album}.zip".replace("/", "-")
-    return FileResponse(path=tmp.name, filename=safe_name, media_type="application/zip", background=None)
+    return FileResponse(
+        path=str(zip_path),
+        filename=safe_name,
+        media_type="application/zip",
+        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+    )
 
 
 @router.get(
@@ -439,6 +598,18 @@ def api_download_album(request: Request, artist: str, album: str):
 )
 def api_download_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
+    if not album:
+        return Response(status_code=404)
+    return api_download_album(request, album["artist"], album["name"])
+
+
+@router.get(
+    "/api/albums/by-entity/{album_entity_uid}/download",
+    responses=_ZIP_RESPONSES,
+    summary="Download an album as a zip archive by entity UID",
+)
+def api_download_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return Response(status_code=404)
     return api_download_album(request, album["artist"], album["name"])

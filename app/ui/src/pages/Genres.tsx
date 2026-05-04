@@ -559,9 +559,15 @@ function GenreView({ slug }: { slug: string }) {
     (genre.mapped
       ? "Curated genre node inside your taxonomy graph."
       : "Raw library tag detected in your collection but not yet linked into the curated taxonomy.");
+  const hasCanonicalTaxonomyNode = Boolean(genre.canonical_slug);
   const aliasNote =
     genre.canonical_name && genre.canonical_name !== genre.name
       ? `${genre.name} is currently treated as an alias of ${genre.canonical_name}.`
+      : null;
+  const taxonomyActionNote = !hasCanonicalTaxonomyNode
+    ? "Map this raw tag into the taxonomy first to enable MusicBrainz sync and external description enrichment."
+    : aliasNote
+      ? `MusicBrainz sync and description enrichment currently operate on ${genre.canonical_name}.`
       : null;
   const externalDescription = genre.external_description?.trim();
   const externalSource = genre.external_description_source?.trim();
@@ -581,33 +587,41 @@ function GenreView({ slug }: { slug: string }) {
         description={description}
         actions={
           <div className="flex flex-wrap gap-2">
-          <TaskButton
-            label="Sync MusicBrainz"
-            busy={isBusy("mb-sync")}
-            onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", {
-              focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
-            }, {
-              successMessage: (r) => `MusicBrainz sync: ${r.edges_synced ?? 0} edges`,
-              errorMessage: "MusicBrainz sync failed",
-              pollTimeout: 60 * 60 * 1000,
-            })}
-          />
-          <TaskButton
-            label="Enrich Description"
-            busy={isBusy("enrich")}
-            onClick={() => run("enrich", "/api/genres/descriptions/enrich", {
-              focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
-            }, {
-              successMessage: (r) => `Enrichment: ${r.updated ?? 0} updated`,
-              errorMessage: "Description enrichment failed",
-              pollTimeout: 45 * 60 * 1000,
-            })}
-          />
+          {hasCanonicalTaxonomyNode ? (
+            <>
+              <TaskButton
+                label="Sync MusicBrainz"
+                busy={isBusy("mb-sync")}
+                onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", {
+                  focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
+                }, {
+                  successMessage: (r) => r.reason === "focus_slug_not_taxonomy_node"
+                    ? "Map this raw tag into the taxonomy before syncing MusicBrainz"
+                    : `MusicBrainz sync: ${r.edges_synced ?? 0} edges`,
+                  errorMessage: "MusicBrainz sync failed",
+                  pollTimeout: 60 * 60 * 1000,
+                })}
+              />
+              <TaskButton
+                label="Enrich Description"
+                busy={isBusy("enrich")}
+                onClick={() => run("enrich", "/api/genres/descriptions/enrich", {
+                  focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
+                }, {
+                  successMessage: (r) => r.reason === "focus_slug_not_taxonomy_node"
+                    ? "Map this raw tag into the taxonomy before enriching descriptions"
+                    : `Enrichment: ${r.updated ?? 0} updated`,
+                  errorMessage: "Description enrichment failed",
+                  pollTimeout: 45 * 60 * 1000,
+                })}
+              />
+            </>
+          ) : null}
           <TaskButton
             label="Infer Taxonomy"
             busy={isBusy("infer")}
             onClick={() => run("infer", "/api/genres/infer", {
-              focus_slug: genre.mapped ? null : genre.slug, limit: 160, aggressive: true, include_external: true,
+              focus_slug: genre.slug, limit: 1, aggressive: true, include_external: true,
             }, {
               successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
               errorMessage: "Taxonomy inference failed",
@@ -652,6 +666,7 @@ function GenreView({ slug }: { slug: string }) {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
           <div>
             {aliasNote ? <p className="mb-2 text-xs italic text-white/50">{aliasNote}</p> : null}
+            {taxonomyActionNote ? <p className="mb-2 text-xs text-white/45">{taxonomyActionNote}</p> : null}
             {externalDescription ? (
               <div className="mt-3 rounded-md border border-white/8 bg-black/20 p-3 shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
                 <p className="text-xs leading-5 text-white/60">{externalDescription}</p>
@@ -727,7 +742,7 @@ function GenreView({ slug }: { slug: string }) {
             {genre.artists.map((a) => (
               <button
                 key={a.artist_name}
-                onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug }))}
+                onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug, artistName: a.artist_name }))}
                 className="rounded-md border border-white/8 bg-black/20 p-3 text-left shadow-[0_16px_36px_rgba(0,0,0,0.16)] transition-colors hover:border-primary"
               >
                 <div className="w-full aspect-square rounded-md mb-2 overflow-hidden bg-secondary">
@@ -764,7 +779,7 @@ function GenreView({ slug }: { slug: string }) {
             {genre.albums.map((a) => (
               <button
                 key={a.album_id}
-                onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug }))}
+                onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug, artistName: a.artist, albumName: a.name }))}
                 className="overflow-hidden rounded-md border border-white/8 bg-black/20 text-left shadow-[0_16px_36px_rgba(0,0,0,0.16)] transition-colors hover:border-primary"
               >
                 <div className="w-full aspect-square bg-secondary">

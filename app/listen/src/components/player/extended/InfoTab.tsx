@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 import { useTrackInfo } from "@/hooks/use-track-info";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { extractPalette } from "@/lib/palette";
@@ -171,7 +171,7 @@ function formatKey(audioKey: string | null | undefined, audioScale: string | nul
 
 export function InfoTab({ className }: { className?: string }) {
   const navigate = useNavigate();
-  const { currentTrack } = usePlayer();
+  const { currentTrack } = usePlayerActions();
   const { info, loading } = useTrackInfo(currentTrack);
   const [palette, setPalette] = useState<{
     primary: PaletteTriplet;

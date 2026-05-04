@@ -5,6 +5,7 @@ import type { Track } from "@/contexts/player-types";
 import { api } from "@/lib/api";
 import { getTrackCacheKey } from "@/contexts/player-utils";
 import { flushQueue as flushPlayEventQueue } from "@/lib/play-event-queue";
+import { toTrackReferencePayload } from "@/lib/track-reference";
 
 export function usePlayerAuthSync({
   authUser,
@@ -62,11 +63,12 @@ export function usePlayerAuthSync({
     }
 
     const sendNowPlaying = () => {
+      const ref = toTrackReferencePayload(activeTrack);
       void api("/api/me/now-playing", "POST", {
         playing: true,
-        track_id: activeTrack.libraryTrackId ?? null,
-        track_storage_id: activeTrack.storageId ?? null,
-        track_path: activeTrack.path || activeTrack.id,
+        track_id: ref.track_id ?? null,
+        track_entity_uid: ref.entity_uid ?? null,
+        track_path: ref.path || activeTrack.id,
         title: activeTrack.title,
         artist: activeTrack.artist,
         album: activeTrack.album || "",

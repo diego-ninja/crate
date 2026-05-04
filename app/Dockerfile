@@ -2,6 +2,7 @@ FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    libchromaprint-tools \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 

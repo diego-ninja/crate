@@ -36,9 +36,10 @@ def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dic
     with transaction_scope() as session:
         rows = session.execute(
             text(
-                f"""SELECT t.id, t.storage_id::text, t.title, t.artist, a.name AS album, t.path, t.duration,
-                           ar.id AS artist_id, ar.slug AS artist_slug,
-                           a.id AS album_id, a.slug AS album_slug,
+                f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
+                           t.entity_uid::text AS entity_uid,
+                           ar.id AS artist_id, ar.entity_uid::text AS artist_entity_uid, ar.slug AS artist_slug,
+                           a.id AS album_id, a.entity_uid::text AS album_entity_uid, a.slug AS album_slug,
                            t.bpm, t.energy, t.danceability, t.valence
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
@@ -48,7 +49,19 @@ def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dic
             ),
             named_params,
         ).mappings().all()
-        return [dict(row) for row in rows]
+        items: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            entity_uid = str(item["entity_uid"]) if item.get("entity_uid") is not None else None
+            item["entity_uid"] = entity_uid
+            item["artist_entity_uid"] = (
+                str(item["artist_entity_uid"]) if item.get("artist_entity_uid") is not None else None
+            )
+            item["album_entity_uid"] = (
+                str(item["album_entity_uid"]) if item.get("album_entity_uid") is not None else None
+            )
+            items.append(item)
+        return items
 
 
 __all__ = [

@@ -1,7 +1,9 @@
+import uuid
 from typing import Optional
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from crate.db.engine import Base
@@ -11,6 +13,7 @@ class GenreTaxonomyNode(Base):
     __tablename__ = "genre_taxonomy_nodes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_uid: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     slug: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")

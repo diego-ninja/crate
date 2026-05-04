@@ -6,6 +6,7 @@ from crate.db.jobs.repair_artist_jobs import (
     update_artist_has_photo,
 )
 from crate.db.jobs.repair_media_jobs import (
+    get_tracks_by_paths,
     merge_album_folder,
     reassign_album_artist,
     update_album_path_and_name,
@@ -17,6 +18,7 @@ __all__ = [
     "count_artist_tracks",
     "find_artist_canonical",
     "find_canonical_artist_by_folder",
+    "get_tracks_by_paths",
     "merge_album_folder",
     "reassign_album_artist",
     "rename_artist",

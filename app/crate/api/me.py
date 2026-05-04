@@ -115,6 +115,8 @@ from crate.db.repositories.user_library import (
     unlike_track,
     unsave_album,
 )
+from crate.db.repositories.user_library_shared import resolve_track_reference
+from crate.db.tx import read_scope
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -201,6 +203,10 @@ def _is_home_discovery_invalidation(scope: str, user_id: int) -> bool:
 
 async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_initial: bool = True):
     heartbeat_counter = 0
+
+    def heartbeat_payload() -> str:
+        return f"event: heartbeat\ndata: {json_dumps({'ts': time.time()})}\n\n: heartbeat\n\n"
+
     if include_initial:
         yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
 
@@ -219,7 +225,7 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
             heartbeat_counter += 1
             if heartbeat_counter >= 30:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield heartbeat_payload()
     except Exception:
         while True:
             await asyncio.sleep(1)
@@ -237,7 +243,7 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
                 heartbeat_counter = 0
             elif heartbeat_counter >= 30:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield heartbeat_payload()
 
 
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
@@ -582,8 +588,8 @@ def like(request: Request, body: LikeTrackRequest):
     added = like_track(
         user["id"],
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
     )
     if added is None:
         raise HTTPException(status_code=404, detail="Track not found")
@@ -600,8 +606,8 @@ def unlike(request: Request, body: LikeTrackRequest):
     removed = unlike_track(
         user["id"],
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
     )
     return {"ok": True, "removed": removed}
 
@@ -635,7 +641,7 @@ def record(request: Request, body: RecordPlayRequest):
         artist=body.artist,
         album=body.album,
         track_id=body.track_id,
-        track_storage_id=body.track_storage_id,
+        track_entity_uid=body.track_entity_uid,
     )
     return {"ok": True}
 
@@ -653,10 +659,21 @@ def update_now_playing(request: Request, body: NowPlayingRequest):
         delete_cache(cache_key)
         return {"ok": True}
 
+    resolved_track = None
+    if any((body.track_id, body.track_entity_uid, body.track_path)):
+        with read_scope() as session:
+            resolved_track = resolve_track_reference(
+                session,
+                track_id=body.track_id,
+                track_entity_uid=body.track_entity_uid,
+                track_path=body.track_path,
+            )
+
+    track_entity_uid = body.track_entity_uid or (resolved_track or {}).get("track_entity_uid")
     payload = {
-        "track_id": body.track_id,
-        "track_storage_id": body.track_storage_id,
-        "track_path": body.track_path,
+        "track_id": body.track_id if body.track_id is not None else (resolved_track or {}).get("track_id"),
+        "track_entity_uid": track_entity_uid,
+        "track_path": body.track_path or (resolved_track or {}).get("track_path"),
         "title": body.title,
         "artist": body.artist,
         "album": body.album,
@@ -929,7 +946,7 @@ async def home_discovery_stream(request: Request, initial: bool = Query(True)):
 def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     mix = _get_cached_home_endpoint_response(
-        cache_key=f"home_mix:{user['id']}:{mix_id}:{limit}",
+        cache_key=f"home_mix:v2:{user['id']}:{mix_id}:{limit}",
         max_age_seconds=300,
         ttl=300,
         compute=lambda: get_home_playlist(user["id"], mix_id, limit=limit),
@@ -948,7 +965,7 @@ def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, 
 def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     playlist = _get_cached_home_endpoint_response(
-        cache_key=f"home_playlist:{user['id']}:{playlist_id}:{limit}",
+        cache_key=f"home_playlist:v2:{user['id']}:{playlist_id}:{limit}",
         max_age_seconds=300,
         ttl=300,
         compute=lambda: get_home_playlist(user["id"], playlist_id, limit=limit),
@@ -989,8 +1006,8 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         user["id"],
         client_event_id=body.client_event_id,
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
         title=body.title,
         artist=body.artist,
         album=body.album,

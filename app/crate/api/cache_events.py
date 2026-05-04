@@ -215,6 +215,11 @@ def _format_invalidation_sse(event: dict) -> str:
     return f"id: {event['id']}\ndata: {event['scope']}\n\n"
 
 
+def _format_heartbeat_sse() -> str:
+    payload = json.dumps({"ts": time()})
+    return f"event: heartbeat\ndata: {payload}\n\n: heartbeat\n\n"
+
+
 async def _open_live_invalidation_pubsub():
     import redis.asyncio as aioredis
 
@@ -282,7 +287,7 @@ async def _invalidation_stream(last_event_id: int) -> AsyncIterator[str]:
             heartbeat_counter += 1
             if heartbeat_counter >= _HEARTBEAT_INTERVAL:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield _format_heartbeat_sse()
     except Exception:
         heartbeat_counter = 0
         while True:
@@ -296,7 +301,7 @@ async def _invalidation_stream(last_event_id: int) -> AsyncIterator[str]:
 
             if heartbeat_counter >= _HEARTBEAT_INTERVAL:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield _format_heartbeat_sse()
     finally:
         if redis is not None and pubsub is not None:
             await _close_live_invalidation_pubsub(redis, pubsub)

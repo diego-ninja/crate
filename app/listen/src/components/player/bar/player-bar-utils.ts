@@ -25,6 +25,15 @@ export interface QualityBadge {
   tier: QualityTier;
 }
 
+interface QualityBadgeInput {
+  id?: string;
+  path?: string | null;
+  format?: string | null;
+  bitrate?: number | null;
+  sampleRate?: number | null;
+  bitDepth?: number | null;
+}
+
 function inferFormatFromId(id: string): string {
   const lower = id.toLowerCase();
   if (lower.endsWith(".flac")) return "flac";
@@ -51,25 +60,48 @@ function classifyTier(fmt: string, bitDepth?: number | null, sampleRate?: number
 }
 
 export function getTrackQualityBadge(track: Track): QualityBadge | null {
-  const fmt = (track.format || "").toLowerCase()
-    || inferFormatFromId(track.path || "")
-    || inferFormatFromId(track.id);
+  return getQualityBadge(track);
+}
+
+export function shouldFetchTrackQualityInfo(track: Pick<Track, "format" | "bitrate" | "sampleRate" | "bitDepth"> | undefined): boolean {
+  if (!track) return false;
+  const format = (track.format || "").toLowerCase();
+  const lossless = format === "flac" || format === "wav" || format === "alac";
+  return !track.format || track.bitrate == null || track.sampleRate == null || (lossless && track.bitDepth == null);
+}
+
+export function getQualityBadge(input: QualityBadgeInput): QualityBadge | null {
+  const fmt = (input.format || "").toLowerCase()
+    || inferFormatFromId(input.path || "")
+    || inferFormatFromId(input.id || "");
   if (!fmt) return null;
 
-  const sr = track.sampleRate;
-  const bd = track.bitDepth;
-  const br = track.bitrate;
+  const sr = input.sampleRate;
+  const bd = input.bitDepth;
+  const br = input.bitrate;
   const tier = classifyTier(fmt, bd, sr, br);
 
   const lossless = fmt === "flac" || fmt === "wav" || fmt === "alac";
   const fmtLabel = fmt === "m4a" || fmt === "aac" ? "AAC" : fmt.toUpperCase();
 
   if (lossless) {
-    const detail = bd && sr ? `${bd}-bit / ${formatSampleRate(sr)} kHz` : sr ? `${formatSampleRate(sr)} kHz` : "";
+    const detail = bd && sr
+      ? `${bd}-bit / ${formatSampleRate(sr)} kHz`
+      : bd
+        ? `${bd}-bit`
+        : sr
+          ? `${formatSampleRate(sr)} kHz`
+          : "";
     if (tier === "hi-res" && bd && sr) {
       return { label: `Hi-Res ${bd}/${formatSampleRate(sr)}`, detail, tier };
     }
-    const label = bd && sr ? `${fmtLabel} ${bd}/${formatSampleRate(sr)}` : fmtLabel;
+    const label = bd && sr
+      ? `${fmtLabel} ${bd}/${formatSampleRate(sr)}`
+      : bd
+        ? `${fmtLabel} ${bd}-bit`
+        : sr
+          ? `${fmtLabel} ${formatSampleRate(sr)}`
+          : fmtLabel;
     return { label, detail, tier };
   }
 

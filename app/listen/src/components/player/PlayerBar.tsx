@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -7,10 +7,13 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import type { PlaySource } from "@/contexts/player-types";
 import { artistPagePath, albumPagePath } from "@/lib/library-routes";
-import { getTrackQualityFallback, getTrackQualityFromInfo } from "@/lib/track-info";
+import { getTrackQualityFallback, getTrackQualityFromInfo, mergeTrackQualityParts } from "@/lib/track-info";
+import { getTrackQualityFromPlaybackQuality } from "@/lib/track-playback";
+import { getPlaybackDeliveryPolicyPreference, PLAYER_PLAYBACK_PREFS_EVENT, type PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { useTrackPlayback } from "@/hooks/use-track-playback";
 import { useTrackInfo } from "@/hooks/use-track-info";
 import { cn } from "@crate/ui/lib/cn";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
@@ -35,7 +38,8 @@ import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
 import { getPlaySourceLabel } from "@/components/player/player-source";
 import {
   formatPlayerTime,
-  getTrackQualityBadge,
+  getQualityBadge,
+  shouldFetchTrackQualityInfo,
 } from "@/components/player/bar/player-bar-utils";
 import { QualityBadge } from "@/components/player/bar/QualityBadge";
 
@@ -119,6 +123,8 @@ export function PlayerBar() {
     pause, resume, next, prev, seek, setVolume,
     toggleShuffle, cycleRepeat,
   } = usePlayerActions();
+  const isDesktop = useIsDesktop();
+  const showPlayerBarAnalyzer = SHOW_PLAYER_BAR_ANALYZER && isDesktop;
 
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Crossfade still animates visual elements like artwork/title, but
@@ -131,18 +137,18 @@ export function PlayerBar() {
   );
 
   const { frequenciesDb, sampleRate } = useAudioVisualizer(
-    SHOW_PLAYER_BAR_ANALYZER && isPlaying,
+    showPlayerBarAnalyzer && isPlaying,
     `${currentTrack?.id ?? "none"}:${analyserVersion}`,
   );
 
   const [seekHover, setSeekHover] = useState<{ pct: number; time: string } | null>(null);
 
-  const isDesktop = useIsDesktop();
   const [extendedOpen, setExtendedOpen] = useState(false);
   const [fsOpen, setFsOpenRaw] = useState(getStoredFsOpen);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
+  const [playbackDeliveryPolicy, setPlaybackDeliveryPolicy] = useState<PlaybackDeliveryPolicy>(getPlaybackDeliveryPolicyPreference);
   const [shouldRenderQueuePanel, setShouldRenderQueuePanel] = useState(false);
   const [shouldRenderLyricsPanel, setShouldRenderLyricsPanel] = useState(false);
   const [shouldRenderEqualizerPopover, setShouldRenderEqualizerPopover] = useState(false);
@@ -170,6 +176,17 @@ export function PlayerBar() {
   const touchStartX = useRef<number>(0);
   const touchStartY = useRef<number>(0);
 
+  useEffect(() => {
+    const onPrefsChanged = (event: Event) => {
+      const nextPolicy = (event as CustomEvent<{ playbackDeliveryPolicy?: PlaybackDeliveryPolicy }>).detail?.playbackDeliveryPolicy;
+      setPlaybackDeliveryPolicy(nextPolicy ?? getPlaybackDeliveryPolicyPreference());
+    };
+    window.addEventListener(PLAYER_PLAYBACK_PREFS_EVENT, onPrefsChanged as EventListener);
+    return () => {
+      window.removeEventListener(PLAYER_PLAYBACK_PREFS_EVENT, onPrefsChanged as EventListener);
+    };
+  }, []);
+
   function handleTouchStart(e: React.TouchEvent) {
     const t = e.touches[0];
     if (!t) return;
@@ -191,20 +208,32 @@ export function PlayerBar() {
     }
   }
 
-  const shouldResolveTrackInfo = !!currentTrack && !currentTrack.format && !currentTrack.sampleRate;
+  const shouldResolveTrackInfo = shouldFetchTrackQualityInfo(currentTrack);
   const { info: currentTrackInfo } = useTrackInfo(currentTrack, { enabled: shouldResolveTrackInfo });
-  const trackQuality = currentTrack
-    ? {
-        ...getTrackQualityFallback(currentTrack),
-        ...getTrackQualityFromInfo(currentTrackInfo),
-      }
+  const { resolution: currentTrackPlayback } = useTrackPlayback(currentTrack, playbackDeliveryPolicy, {
+    enabled: !!currentTrack,
+  });
+  const sourceTrackQuality = currentTrack
+    ? mergeTrackQualityParts(
+        getTrackQualityFallback(currentTrack),
+        getTrackQualityFromInfo(currentTrackInfo),
+        getTrackQualityFromPlaybackQuality(currentTrackPlayback?.source),
+      )
     : null;
-
-  const qualityTrack = {
-    ...currentTrack ?? { id: "", title: "", artist: "" },
-    ...trackQuality,
-  };
-  const qualityBadge = getTrackQualityBadge(qualityTrack);
+  const activeTrackQuality = currentTrackPlayback && currentTrackPlayback.effective_policy !== "original"
+    ? mergeTrackQualityParts(
+        sourceTrackQuality,
+        getTrackQualityFromPlaybackQuality(currentTrackPlayback.delivery, { preferCodec: true }),
+      )
+    : sourceTrackQuality;
+  const qualityBadge = currentTrack
+    ? getQualityBadge({
+        id: currentTrack.id,
+        path: currentTrack.path,
+        ...(activeTrackQuality ?? {}),
+      })
+    : null;
+  const showsDeliveryQuality = Boolean(currentTrackPlayback && currentTrackPlayback.effective_policy !== "original");
   const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
   const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
   const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
@@ -213,7 +242,11 @@ export function PlayerBar() {
 
   if (!currentTrack) return null;
 
-  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
+  const liked = isLiked(
+    currentTrack.libraryTrackId ?? null,
+    currentTrack.entityUid ?? null,
+    currentTrack.path || currentTrack.id,
+  );
 
   function prepareQueuePanel() {
     setShouldRenderQueuePanel(true);
@@ -248,13 +281,13 @@ export function PlayerBar() {
   async function toggleLike() {
     if (!currentTrack) return;
     const trackId = currentTrack.libraryTrackId ?? null;
-    const trackStorageId = currentTrack.storageId ?? null;
+    const trackEntityUid = currentTrack.entityUid ?? null;
     const trackPath = currentTrack.path || currentTrack.id;
     try {
       if (liked) {
-        await unlikeTrack(trackId, trackStorageId, trackPath);
+        await unlikeTrack(trackId, trackEntityUid, trackPath);
       } else {
-        await likeTrack(trackId, trackStorageId, trackPath);
+        await likeTrack(trackId, trackEntityUid, trackPath);
       }
     } catch { /* ignore */ }
   }
@@ -262,7 +295,11 @@ export function PlayerBar() {
   async function handleAddToCollection() {
     if (!currentTrack) return;
     try {
-      await likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
+      await likeTrack(
+        currentTrack.libraryTrackId ?? null,
+        currentTrack.entityUid ?? null,
+        currentTrack.path || currentTrack.id,
+      );
       toast.success("Added to collection");
     } catch { /* ignore */ }
   }
@@ -442,7 +479,7 @@ export function PlayerBar() {
           {/* ── Block 2: Controls + Progress ── */}
           <div className="mx-auto hidden max-w-[640px] flex-1 md:flex md:items-center md:justify-center">
             <div className="relative w-full overflow-visible px-4 py-2">
-              {SHOW_PLAYER_BAR_ANALYZER ? (
+              {showPlayerBarAnalyzer ? (
                 <div className="pointer-events-none absolute -inset-y-2 -inset-x-10 opacity-26 [mask-image:radial-gradient(ellipse_at_center,rgba(0,0,0,0.96)_18%,rgba(0,0,0,0.9)_44%,rgba(0,0,0,0.34)_74%,transparent_100%)] [mask-repeat:no-repeat]">
                   <WaveformCanvas
                     frequenciesDb={frequenciesDb}
@@ -580,90 +617,95 @@ export function PlayerBar() {
             )}
           </div>
 
-          {/* ── Block 3: Action Buttons (lg+) ── */}
-          <div className="hidden w-[200px] shrink-0 items-center justify-end gap-1 lg:flex xl:w-[280px]">
-            {/* Quality badge */}
-            {qualityBadge && (
-              <span className="mr-1">
-                <QualityBadge badge={qualityBadge} />
-              </span>
-            )}
+          {/* ── Block 3: Action Buttons ── */}
+          <div className="hidden shrink-0 items-center justify-end md:flex md:w-[260px] lg:w-[340px] xl:w-[min(34vw,520px)] 2xl:w-[min(38vw,680px)]">
+            <div className="hidden items-center justify-end gap-1 lg:flex">
+              {/* Quality badge */}
+              {qualityBadge && (
+                <span className="mr-1 inline-flex items-center">
+                  <QualityBadge
+                    badge={qualityBadge}
+                    origin={showsDeliveryQuality ? "stream" : "source"}
+                  />
+                </span>
+              )}
 
-            {/* Volume */}
-            <PlayerVolumeControl
-              volume={volume}
-              onVolumeChange={setVolume}
-              onOverlayChange={setHasFloatingOverlayOpen}
-            />
+              {/* Volume */}
+              <PlayerVolumeControl
+                volume={volume}
+                onVolumeChange={setVolume}
+                onOverlayChange={setHasFloatingOverlayOpen}
+              />
 
-            {/* Device (placeholder) */}
-            <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60 hidden xl:block" aria-label="Connect device">
-              <Airplay size={16} />
-            </button>
+              {/* Device (placeholder) */}
+              <button className="hidden rounded-md p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60 xl:block" aria-label="Connect device">
+                <Airplay size={16} />
+              </button>
 
-            {/* Equalizer (hidden when extended player is open) */}
-            {!extendedOpen && (
+              {/* Equalizer (hidden when extended player is open) */}
+              {!extendedOpen && (
+                <button
+                  onClick={() => {
+                    prepareEqualizerPopover();
+                    setShowEqualizer((v) => !v);
+                    setShowQueue(false);
+                    setShowLyrics(false);
+                  }}
+                  onMouseEnter={prepareEqualizerPopover}
+                  onFocus={prepareEqualizerPopover}
+                  aria-label="Equalizer"
+                  className={`rounded-md p-1.5 transition-colors hover:bg-white/5 ${showEqualizer ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+              )}
+
+              {/* Queue (hidden when extended player is open) */}
+              {!extendedOpen && (
+                <button
+                  onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
+                  onMouseEnter={prepareQueuePanel}
+                  onFocus={prepareQueuePanel}
+                  className={`relative rounded-md p-1.5 transition-colors hover:bg-white/5 ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                  aria-label="Queue"
+                >
+                  <ListMusic size={16} />
+                  {queue.length > 1 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
+                      {queue.length - currentIndex - 1}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Lyrics (hidden when extended player is open) */}
+              {!extendedOpen && (
+                <button
+                  onClick={() => { prepareLyricsPanel(); setShowLyrics(!showLyrics); setShowQueue(false); }}
+                  onMouseEnter={prepareLyricsPanel}
+                  onFocus={prepareLyricsPanel}
+                  className={`hidden rounded-md p-1.5 transition-colors hover:bg-white/5 xl:block ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                  aria-label="Lyrics"
+                >
+                  <Mic2 size={16} />
+                </button>
+              )}
+
+              {/* Extended / Full player */}
               <button
                 onClick={() => {
-                  prepareEqualizerPopover();
-                  setShowEqualizer((v) => !v);
-                  setShowQueue(false);
-                  setShowLyrics(false);
+                  prepareExtendedPlayer();
+                  setExtendedOpen(!extendedOpen);
+                  if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
                 }}
-                onMouseEnter={prepareEqualizerPopover}
-                onFocus={prepareEqualizerPopover}
-                aria-label="Equalizer"
-                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showEqualizer ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                onMouseEnter={prepareExtendedPlayer}
+                onFocus={prepareExtendedPlayer}
+                className={`rounded-md p-1.5 transition-colors hover:bg-white/5 ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                aria-label="Expand player"
               >
-                <SlidersHorizontal size={16} />
+                <Maximize2 size={16} />
               </button>
-            )}
-
-            {/* Queue (hidden when extended player is open) */}
-            {!extendedOpen && (
-              <button
-                onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
-                onMouseEnter={prepareQueuePanel}
-                onFocus={prepareQueuePanel}
-                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-                aria-label="Queue"
-              >
-                <ListMusic size={16} />
-                {queue.length > 1 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-primary text-[8px] font-bold text-primary-foreground rounded-full flex items-center justify-center">
-                    {queue.length - currentIndex - 1}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Lyrics (hidden when extended player is open) */}
-            {!extendedOpen && (
-              <button
-                onClick={() => { prepareLyricsPanel(); setShowLyrics(!showLyrics); setShowQueue(false); }}
-                onMouseEnter={prepareLyricsPanel}
-                onFocus={prepareLyricsPanel}
-                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors hidden xl:block ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-                aria-label="Lyrics"
-              >
-                <Mic2 size={16} />
-              </button>
-            )}
-
-            {/* Extended / Full player */}
-            <button
-              onClick={() => {
-                prepareExtendedPlayer();
-                setExtendedOpen(!extendedOpen);
-                if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
-              }}
-              onMouseEnter={prepareExtendedPlayer}
-              onFocus={prepareExtendedPlayer}
-              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              aria-label="Expand player"
-            >
-              <Maximize2 size={16} />
-            </button>
+            </div>
           </div>
 
           {/* ── Compact action buttons (md only, no lg) ── */}

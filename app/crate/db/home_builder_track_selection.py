@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crate.track_versions import dedupe_track_variants
+
 
 def _select_diverse_tracks(
     rows: list[dict],
@@ -8,6 +10,7 @@ def _select_diverse_tracks(
     max_per_artist: int = 2,
     max_per_album: int = 2,
 ) -> list[dict]:
+    rows = dedupe_track_variants(rows)
     selected: list[dict] = []
     seen_tracks: set[object] = set()
     artist_counts: dict[str, int] = {}
@@ -61,6 +64,7 @@ def _select_diverse_tracks_with_backfill(
     if limit <= 0:
         return []
 
+    rows = dedupe_track_variants(rows)
     selected: list[dict] = []
     seen_tracks: set[object] = set()
     artist_counts: dict[str, int] = {}

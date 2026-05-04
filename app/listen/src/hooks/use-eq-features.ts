@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { Track } from "@/contexts/player-types";
 import { api } from "@/lib/api";
+import { trackEqFeaturesApiPath } from "@/lib/library-routes";
 
 /**
  * EQ-relevant audio features persisted by the analysis pipeline. All
@@ -33,9 +34,7 @@ export type EqFeaturesState =
 const cache = new Map<string, EqFeaturesState>();
 
 function endpointFor(track: Track): string | null {
-  if (track.libraryTrackId != null) return `/api/tracks/${track.libraryTrackId}/eq-features`;
-  if (track.storageId) return `/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/eq-features`;
-  return null;
+  return trackEqFeaturesApiPath(track) || null;
 }
 
 /**
@@ -95,7 +94,7 @@ export function useEqFeatures(track: Track | undefined): EqFeaturesState {
       });
 
     return () => { cancelled = true; };
-  }, [track, track?.id, track?.libraryTrackId, track?.storageId]);
+  }, [track, track?.id, track?.entityUid, track?.libraryTrackId]);
 
   return state;
 }

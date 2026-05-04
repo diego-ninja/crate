@@ -10,6 +10,7 @@ const MODES: { id: PlayerSurfaceMode; icon: typeof Disc3; label: string }[] = [
 ];
 
 interface PlayerSurfaceModeSwitchProps {
+  allowVisualizer?: boolean;
   className?: string;
   mode: PlayerSurfaceMode;
   onChange: (mode: PlayerSurfaceMode) => void;
@@ -18,6 +19,7 @@ interface PlayerSurfaceModeSwitchProps {
 }
 
 export function PlayerSurfaceModeSwitch({
+  allowVisualizer = true,
   className,
   mode,
   onChange,
@@ -26,6 +28,7 @@ export function PlayerSurfaceModeSwitch({
 }: PlayerSurfaceModeSwitchProps) {
   const buttonClass = size === "md" ? "h-10 w-10" : "h-9 w-9";
   const iconSize = size === "md" ? 17 : 15;
+  const modes = allowVisualizer ? MODES : MODES.filter((item) => item.id !== "visualizer");
 
   return (
     <div
@@ -37,7 +40,7 @@ export function PlayerSurfaceModeSwitch({
       role="tablist"
       aria-label="Player display mode"
     >
-      {MODES.map(({ id, icon: Icon, label }) => {
+      {modes.map(({ id, icon: Icon, label }) => {
         const active = mode === id;
         return (
           <button

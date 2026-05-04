@@ -57,10 +57,11 @@ export function useTaskEvents(taskId: string | null) {
 
     // All event types tasks can emit
     const eventTypes = [
-      "info", "progress", "warning", "error",
+      "info", "progress", "warning", "warn", "error", "item",
       "cover_found", "cover_applied",
       "artist_enriched", "artist_skipped", "artist_analyzed",
       "track_analyzed", "album_matched",
+      "lyrics_track",
       "step_done", "new_release_found",
       "item_processed", "match_found",
     ];

@@ -101,17 +101,24 @@ def delete_old_finished_tasks(cutoff_iso: str, *, session=None) -> int:
         return result.rowcount
 
 
-def cleanup_orphaned_tasks(*, session=None) -> int:
+def cleanup_orphaned_tasks(*, pools: list[str] | None = None, session=None) -> int:
+    pool_filter = ""
+    params: dict[str, object] = {}
+    if pools:
+        pool_filter = "AND COALESCE(pool, 'default') = ANY(:pools)"
+        params["pools"] = pools
     with optional_scope(session) as s:
         register_tasks_surface_signal(s)
         result = s.execute(
             text(
-                """
+                f"""
                 UPDATE tasks
                 SET status = 'failed', error = 'Orphaned: worker restarted'
                 WHERE status = 'running'
+                  {pool_filter}
                 """
-            )
+            ),
+            params,
         )
     count = result.rowcount
     if count > 0:

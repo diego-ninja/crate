@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from crate.db.cache_store import get_cache, set_cache
 from crate.db.repositories.tasks import create_task_dedup
-from crate.db.repositories.user_library_shared import emit_user_domain_event, resolve_track_id, utc_now_iso
+from crate.db.repositories.user_library_shared import emit_user_domain_event, resolve_track_reference, utc_now_iso
 from crate.db.tx import register_after_commit, transaction_scope
 
 _STATS_REFRESH_DEBOUNCE_SECONDS = 300
@@ -79,27 +79,31 @@ def record_play(
     artist: str = "",
     album: str = "",
     track_id: int | None = None,
-    track_storage_id: str | None = None,
+    track_entity_uid: str | None = None,
 ):
     now = utc_now_iso()
     with transaction_scope() as session:
-        resolved_track_id = resolve_track_id(
+        resolved_track = resolve_track_reference(
             session,
             track_id=track_id,
+            track_entity_uid=track_entity_uid,
             track_path=track_path,
-            track_storage_id=track_storage_id,
         )
+        resolved_track_id = resolved_track["track_id"] if resolved_track else None
+        resolved_track_entity_uid = (resolved_track or {}).get("track_entity_uid") or track_entity_uid
+        resolved_track_path = track_path or (resolved_track or {}).get("track_path") or ""
         session.execute(
             text(
                 """
-                INSERT INTO play_history (user_id, track_id, track_path, title, artist, album, played_at)
-                VALUES (:user_id, :track_id, :track_path, :title, :artist, :album, :played_at)
+                INSERT INTO play_history (user_id, track_id, track_entity_uid, track_path, title, artist, album, played_at)
+                VALUES (:user_id, :track_id, :track_entity_uid, :track_path, :title, :artist, :album, :played_at)
                 """
             ),
             {
                 "user_id": user_id,
                 "track_id": resolved_track_id,
-                "track_path": track_path,
+                "track_entity_uid": resolved_track_entity_uid,
+                "track_path": resolved_track_path,
                 "title": title,
                 "artist": artist,
                 "album": album,
@@ -110,7 +114,13 @@ def record_play(
             session,
             event_type="user.history.changed",
             user_id=user_id,
-            payload={"track_id": resolved_track_id, "artist": artist, "album": album, "title": title},
+            payload={
+                "track_id": resolved_track_id,
+                "track_entity_uid": resolved_track_entity_uid,
+                "artist": artist,
+                "album": album,
+                "title": title,
+            },
         )
 
 
@@ -119,8 +129,8 @@ def record_play_event(
     *,
     client_event_id: str | None = None,
     track_id: int | None = None,
+    track_entity_uid: str | None = None,
     track_path: str | None = None,
-    track_storage_id: str | None = None,
     title: str = "",
     artist: str = "",
     album: str = "",
@@ -158,12 +168,15 @@ def record_play_event(
             if existing:
                 return int(existing["id"])
 
-        resolved_track_id = resolve_track_id(
+        resolved_track = resolve_track_reference(
             session,
             track_id=track_id,
+            track_entity_uid=track_entity_uid,
             track_path=track_path,
-            track_storage_id=track_storage_id,
         )
+        resolved_track_id = resolved_track["track_id"] if resolved_track else None
+        resolved_track_entity_uid = (resolved_track or {}).get("track_entity_uid") or track_entity_uid
+        resolved_track_path = track_path or (resolved_track or {}).get("track_path")
         row = session.execute(
             text(
                 """
@@ -171,6 +184,7 @@ def record_play_event(
                     user_id,
                     client_event_id,
                     track_id,
+                    track_entity_uid,
                     track_path,
                     title,
                     artist,
@@ -193,7 +207,7 @@ def record_play_event(
                     created_at
                 )
                 VALUES (
-                    :user_id, :client_event_id, :track_id, :track_path, :title, :artist, :album,
+                    :user_id, :client_event_id, :track_id, :track_entity_uid, :track_path, :title, :artist, :album,
                     :started_at, :ended_at, :played_seconds, :track_duration_seconds,
                     :completion_ratio, :was_skipped, :was_completed,
                     :play_source_type, :play_source_id, :play_source_name,
@@ -207,7 +221,8 @@ def record_play_event(
                 "user_id": user_id,
                 "client_event_id": client_event_id,
                 "track_id": resolved_track_id,
-                "track_path": track_path,
+                "track_entity_uid": resolved_track_entity_uid,
+                "track_path": resolved_track_path,
                 "title": title,
                 "artist": artist,
                 "album": album,
@@ -239,6 +254,7 @@ def record_play_event(
                 "event_id": event_id,
                 "client_event_id": client_event_id,
                 "track_id": resolved_track_id,
+                "track_entity_uid": resolved_track_entity_uid,
                 "title": title,
                 "artist": artist,
                 "album": album,

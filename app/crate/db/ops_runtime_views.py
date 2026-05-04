@@ -7,8 +7,8 @@ from crate.db.ops_runtime import get_ops_runtime_state
 
 DEFAULT_MAX_WORKERS = 3
 DEFAULT_QUEUE_BREAKDOWN = {
-    "running": {"fast": 0, "default": 0, "heavy": 0},
-    "pending": {"fast": 0, "default": 0, "heavy": 0},
+    "running": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
+    "pending": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
 }
 DEFAULT_DB_HEAVY_GATE = {"active": 0, "pending": 0, "blocking": False}
 

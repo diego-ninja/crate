@@ -13,8 +13,9 @@ def get_artist_all_tracks(artist_name: str) -> list[dict]:
                 SELECT
                     t.id, t.title, t.artist, t.album, t.path, t.duration,
                     t.track_number, t.format,
-                    a.id as album_id, a.slug as album_slug, a.year,
-                    ar.id as artist_id, ar.slug as artist_slug
+                    t.entity_uid::text AS track_entity_uid,
+                    a.id as album_id, a.entity_uid::text AS album_entity_uid, a.slug as album_slug, a.year,
+                    ar.id as artist_id, ar.entity_uid::text AS artist_entity_uid, ar.slug as artist_slug
                 FROM library_tracks t
                 LEFT JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = t.artist
@@ -46,7 +47,7 @@ def get_artist_setlist_tracks(artist_name: str) -> list[dict]:
                 """
                 SELECT
                     t.id,
-                    t.storage_id::text AS track_storage_id,
+                    t.entity_uid::text AS track_entity_uid,
                     t.title,
                     t.path,
                     t.album,

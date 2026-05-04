@@ -117,13 +117,17 @@ export function useVisualizerConfig(
   currentTrack: Track | undefined,
   isOpen: boolean,
   crossfadeTransition: CrossfadeTransition | null = null,
+  visualizerAllowed = true,
 ): VisualizerConfigState {
-  const [surfaceMode, setSurfaceModeState] = useState(getPlayerSurfaceModePreference);
+  const [surfaceModePreference, setSurfaceModeState] = useState(getPlayerSurfaceModePreference);
   const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
   const [trackAdaptiveViz, setTrackAdaptiveViz] = useState(getTrackAdaptiveVisualizerPreference);
   const [vizConfig, setVizConfig] = useState(getVisualizerSettingsPreference);
-  const trackVizProfile = useTrackVisualizerProfile(currentTrack, trackAdaptiveViz);
-  const vizEnabled = surfaceMode === "visualizer";
+  const surfaceMode = visualizerAllowed || surfaceModePreference !== "visualizer"
+    ? surfaceModePreference
+    : "cover";
+  const trackVizProfile = useTrackVisualizerProfile(currentTrack, visualizerAllowed && trackAdaptiveViz);
+  const vizEnabled = visualizerAllowed && surfaceMode === "visualizer";
 
   const effectiveVizDelta = trackAdaptiveViz ? trackVizProfile.settingsDelta : ZERO_VIZ_DELTA;
   const effectiveVizConfig = {
@@ -274,6 +278,8 @@ export function useVisualizerConfig(
 
   // Apply config to visualizer
   useEffect(() => {
+    if (!isOpen || !vizEnabled) return;
+
     const timers: number[] = [];
 
     const apply = (attempt = 0) => {
@@ -307,7 +313,7 @@ export function useVisualizerConfig(
     apply();
     timers.push(window.setTimeout(() => apply(), 300));
     return () => { for (const t of timers) window.clearTimeout(t); };
-  }, [currentTrack?.id, effectiveVizConfig, isOpen, trackAdaptiveViz, trackVizProfile, vizRef]);
+  }, [currentTrack?.id, effectiveVizConfig, isOpen, trackAdaptiveViz, trackVizProfile, vizEnabled, vizRef]);
 
   // Accent on track change
   useEffect(() => {
@@ -327,8 +333,9 @@ export function useVisualizerConfig(
   }, [currentTrack?.id, isOpen, trackAdaptiveViz, vizEnabled, vizRef]);
 
   const setSurfaceMode = (mode: PlayerSurfaceMode) => {
-    setSurfaceModeState(mode);
-    setPlayerSurfaceModePreference(mode);
+    const next = !visualizerAllowed && mode === "visualizer" ? "cover" : mode;
+    setSurfaceModeState(next);
+    setPlayerSurfaceModePreference(next);
   };
 
   const toggleAlbumPalette = () => {

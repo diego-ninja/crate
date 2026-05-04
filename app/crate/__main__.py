@@ -56,6 +56,15 @@ def main():
 
     worker_cmd = sub.add_parser("worker", help="Run Dramatiq workers + scheduler/watcher")
     worker_cmd.add_argument("--processes", type=int, default=_env_int("CRATE_WORKER_PROCESSES", 2), help="Number of Dramatiq worker processes")
+    worker_cmd.add_argument(
+        "--queues",
+        default=os.environ.get("CRATE_WORKER_QUEUES", "fast,heavy,default"),
+        help="Comma-separated Dramatiq queues to consume",
+    )
+    worker_cmd.add_argument("--no-service-loop", action="store_true", help="Disable scheduler/watcher/zombie cleanup loop")
+    worker_cmd.add_argument("--no-daemons", action="store_true", help="Disable analysis/bliss background daemons")
+    worker_cmd.add_argument("--no-projector", action="store_true", help="Disable snapshot projector loop")
+    worker_cmd.add_argument("--no-telegram", action="store_true", help="Disable Telegram bot loop")
     worker_cmd.add_argument("--legacy", action="store_true", help="Use legacy orchestrator (pre-Dramatiq)")
 
     args = parser.parse_args()
@@ -105,6 +114,11 @@ def main():
             orch.run()
         else:
             config["worker_processes"] = args.processes
+            config["worker_queues"] = args.queues
+            config["worker_service_loop"] = not args.no_service_loop
+            config["worker_analysis_daemons"] = not args.no_daemons
+            config["worker_projector"] = not args.no_projector
+            config["worker_telegram"] = not args.no_telegram
             from crate.worker import run_worker
             run_worker(config)
 

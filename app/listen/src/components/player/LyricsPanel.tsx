@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { X, Loader2 } from "lucide-react";
-import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerProgress } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 
 interface LyricLine {
   time: number;
@@ -34,7 +35,7 @@ interface LyricsPanelProps {
 }
 
 export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
-  const { currentTime } = usePlayer();
+  const { currentTime } = usePlayerProgress();
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,13 +48,9 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
     setLyrics(null);
     setLoading(true);
 
-    const params = new URLSearchParams({
-      artist_name: currentTrack.artist,
-      track_name: currentTrack.title,
-    });
-
-    fetch(`https://lrclib.net/api/get?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
+    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(
+      `/api/lyrics?artist=${encodeURIComponent(currentTrack.artist)}&title=${encodeURIComponent(currentTrack.title)}`,
+    )
       .then((data) => {
         if (!data) {
           setLyrics({ synced: null, plain: null });

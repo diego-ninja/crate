@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getTrackQualityBadge } from "@/components/player/bar/player-bar-utils";
+import { getTrackQualityBadge, shouldFetchTrackQualityInfo } from "@/components/player/bar/player-bar-utils";
 
 describe("player quality badge mapping", () => {
   it("classifies AAC 320 tracks as high quality", () => {
@@ -31,6 +31,31 @@ describe("player quality badge mapping", () => {
       label: "Hi-Res 24/96",
       detail: "24-bit / 96 kHz",
       tier: "hi-res",
+    }));
+  });
+
+  it("requests extra source info when a lossless track is missing bit depth", () => {
+    expect(shouldFetchTrackQualityInfo({
+      format: "flac",
+      bitrate: 1411,
+      sampleRate: 44100,
+      bitDepth: null,
+    })).toBe(true);
+  });
+
+  it("still shows partial lossless quality when only the sample rate is known", () => {
+    expect(getTrackQualityBadge({
+      id: "storage-3",
+      title: "Track Three",
+      artist: "Artist",
+      format: "flac",
+      bitrate: 1411,
+      sampleRate: 44100,
+      bitDepth: null,
+    })).toEqual(expect.objectContaining({
+      label: "FLAC 44.1",
+      detail: "44.1 kHz",
+      tier: "lossless",
     }));
   });
 });

@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 
 import type { Track } from "@/contexts/player-types";
 import { api } from "@/lib/api";
+import { trackGenreApiPath } from "@/lib/library-routes";
 
 /**
- * Shape returned by GET /api/tracks/{id}/genre (and the by-storage
- * variant). `primary.canonical = false` means the slug is a raw tag
+ * Shape returned by the track genre endpoints (`/api/tracks/.../genre`).
+ * `primary.canonical = false` means the slug is a raw tag
  * that couldn't be resolved against the genre taxonomy — the UI should
  * still display it, but preset lookup should be skipped.
  *
@@ -41,9 +42,7 @@ export type TrackGenreState =
 const cache = new Map<string, TrackGenreState>();
 
 function endpointFor(track: Track): string | null {
-  if (track.libraryTrackId != null) return `/api/tracks/${track.libraryTrackId}/genre`;
-  if (track.storageId) return `/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/genre`;
-  return null;
+  return trackGenreApiPath(track) || null;
 }
 
 /**
@@ -99,7 +98,7 @@ export function useTrackGenre(track: Track | undefined): TrackGenreState {
       });
 
     return () => { cancelled = true; };
-  }, [track, track?.id, track?.libraryTrackId, track?.storageId]);
+  }, [track, track?.id, track?.entityUid, track?.libraryTrackId]);
 
   return state;
 }

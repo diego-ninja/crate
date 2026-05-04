@@ -10,6 +10,7 @@ import {
   Disc3,
   Gauge,
   HardDrive,
+  Headphones,
   Radio,
   RefreshCw,
   Zap,
@@ -37,6 +38,9 @@ interface MetricsSummaryResponse {
   stream_requests: MetricSummary;
   stream_latency: MetricSummary;
   stream_concurrent: MetricSummary;
+  stream_transcode_duration: MetricSummary;
+  stream_transcode_completed: MetricSummary;
+  stream_transcode_failed: MetricSummary;
   home_cache_hit: MetricSummary;
   home_cache_miss: MetricSummary;
   home_cache_waited: MetricSummary;
@@ -61,6 +65,7 @@ interface SystemHealthDashboardResponse {
   summary: MetricsSummaryResponse;
   system: SystemMetrics;
   tasks: ActiveTask[];
+  playback_delivery?: PlaybackDeliverySnapshot;
   timeseries: Record<string, TimeseriesPoint[]>;
 }
 
@@ -107,6 +112,62 @@ interface SystemMetrics {
 }
 
 type Period = "minute" | "hour";
+
+interface PlaybackDeliveryStats {
+  tracks: number;
+  lossless_tracks: number;
+  hires_tracks: number;
+  variants: number;
+  variant_tracks: number;
+  ready: number;
+  pending: number;
+  running: number;
+  failed: number;
+  missing: number;
+  ready_tracks: number;
+  cached_bytes: number;
+  ready_source_bytes: number;
+  estimated_saved_bytes: number;
+  coverage_percent: number;
+  avg_prepare_seconds: number | null;
+}
+
+interface PlaybackTranscodeRuntime {
+  active: number;
+  limit: number;
+}
+
+interface PlaybackVariant {
+  id: string;
+  status: string;
+  preset: string;
+  delivery_format: string;
+  delivery_bitrate: number;
+  bytes: number | null;
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  updated_at?: string | null;
+}
+
+interface PlaybackDeliverySnapshot {
+  stats: PlaybackDeliveryStats;
+  runtime: PlaybackTranscodeRuntime;
+  recent_variants: PlaybackVariant[];
+}
+
+function formatBytes(bytes: number | null | undefined) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
 
 function ChartTooltip({
   title,
@@ -324,6 +385,144 @@ function MetricChart({
   );
 }
 
+function PlaybackTranscodingOverview({
+  delivery,
+  durationSummary,
+  completedSummary,
+  failedSummary,
+}: {
+  delivery: PlaybackDeliverySnapshot | undefined;
+  durationSummary: MetricSummary | undefined;
+  completedSummary: MetricSummary | undefined;
+  failedSummary: MetricSummary | undefined;
+}) {
+  const stats = delivery?.stats;
+  const runtime = delivery?.runtime;
+  const variantsTotal = Math.max(1, stats?.variants ?? 0);
+  const statuses = [
+    { label: "Ready", value: stats?.ready ?? 0, color: "bg-emerald-400" },
+    { label: "Running", value: stats?.running ?? 0, color: "bg-cyan-400" },
+    { label: "Pending", value: stats?.pending ?? 0, color: "bg-amber-400" },
+    { label: "Failed", value: stats?.failed ?? 0, color: "bg-red-400" },
+    { label: "Missing", value: stats?.missing ?? 0, color: "bg-white/35" },
+  ];
+  const completed = completedSummary?.count ?? 0;
+  const failed = failedSummary?.count ?? 0;
+  const failRate = completed + failed > 0 ? (failed / (completed + failed)) * 100 : 0;
+  const avgTranscode = durationSummary && durationSummary.count > 0 ? `${durationSummary.avg.toFixed(1)}s` : "—";
+  const avgPrepare = stats?.avg_prepare_seconds != null ? `${stats.avg_prepare_seconds.toFixed(1)}s` : "—";
+
+  return (
+    <OpsPanel
+      icon={Headphones}
+      title="Playback Transcoding"
+      description="Cached AAC delivery coverage, playback worker slots and recent transcode health for Listen."
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <OpsStatTile
+            icon={Headphones}
+            label="Lossless Coverage"
+            value={stats ? `${stats.coverage_percent}%` : "—"}
+            caption={stats ? `${stats.ready_tracks.toLocaleString()} / ${stats.lossless_tracks.toLocaleString()} tracks` : "Waiting for cache stats"}
+            tone={stats && stats.coverage_percent > 0 ? "success" : "default"}
+          />
+          <OpsStatTile
+            icon={Activity}
+            label="Transcode Slots"
+            value={`${runtime?.active ?? 0}/${runtime?.limit ?? 1}`}
+            caption="Active playback worker capacity"
+            tone={(runtime?.active ?? 0) > 0 ? "primary" : "default"}
+          />
+          <OpsStatTile
+            icon={HardDrive}
+            label="Cache Size"
+            value={formatBytes(stats?.cached_bytes)}
+            caption={`${formatBytes(stats?.estimated_saved_bytes)} avoided vs source`}
+          />
+          <OpsStatTile
+            icon={Clock}
+            label="Avg Prepare"
+            value={avgPrepare}
+            caption={`${avgTranscode} worker avg in current metrics window`}
+          />
+          <OpsStatTile
+            icon={AlertTriangle}
+            label="Transcode Failures"
+            value={`${failRate.toFixed(0)}%`}
+            caption={`${failed} failed / ${completed} completed samples`}
+            tone={failRate > 5 || (stats?.failed ?? 0) > 0 ? "warning" : "default"}
+          />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="rounded-md border border-white/8 bg-black/20 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-white">Variant Status</div>
+                <div className="mt-1 text-xs text-white/35">{(stats?.variants ?? 0).toLocaleString()} cached variant records</div>
+              </div>
+              <CrateChip>{(stats?.variant_tracks ?? 0).toLocaleString()} tracks</CrateChip>
+            </div>
+            <div className="space-y-3">
+              {statuses.map((status) => (
+                <ProgressBar
+                  key={status.label}
+                  value={status.value}
+                  max={variantsTotal}
+                  color={status.color}
+                  label={`${status.label} ${status.value.toLocaleString()}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-white/8 bg-black/20 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-white">Recent Variants</div>
+                <div className="mt-1 text-xs text-white/35">Latest playback cache writes and retries.</div>
+              </div>
+              <CrateChip>{(stats?.hires_tracks ?? 0).toLocaleString()} hi-res sources</CrateChip>
+            </div>
+            <div className="space-y-2">
+              {(delivery?.recent_variants ?? []).length > 0 ? (
+                delivery?.recent_variants.map((variant) => (
+                  <div key={variant.id} className="flex items-center gap-3 rounded-md border border-white/6 bg-white/[0.03] px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm text-white/80">
+                        {[variant.artist, variant.title].filter(Boolean).join(" - ") || variant.id}
+                      </div>
+                      <div className="mt-0.5 text-xs text-white/35">
+                        {variant.preset} · {variant.delivery_format} {variant.delivery_bitrate}k · {formatBytes(variant.bytes)}
+                      </div>
+                    </div>
+                    <CrateChip
+                      className={
+                        variant.status === "ready"
+                          ? "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-100"
+                          : variant.status === "failed"
+                            ? "border-red-500/20 bg-red-500/[0.08] text-red-100"
+                            : "border-amber-500/20 bg-amber-500/[0.06] text-amber-100"
+                      }
+                    >
+                      {variant.status}
+                    </CrateChip>
+                  </div>
+                ))
+              ) : (
+                <div className="flex min-h-[118px] items-center justify-center text-sm text-white/30">
+                  No playback variants prepared yet
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </OpsPanel>
+  );
+}
+
 export function SystemHealth() {
   const [period, setPeriod] = useState<Period>("minute");
   const minutes = period === "minute" ? 60 : 1440;
@@ -340,11 +539,13 @@ export function SystemHealth() {
   const errorsTs = dashboard?.timeseries?.["api.errors"] ?? [];
   const apiSlowTs = dashboard?.timeseries?.["api.slow"] ?? [];
   const streamTs = dashboard?.timeseries?.["stream.requests"] ?? [];
+  const transcodeDurationTs = dashboard?.timeseries?.["stream.transcode.duration"] ?? [];
   const homeComputeTs = dashboard?.timeseries?.["home.compute.ms"] ?? [];
   const homeEndpointComputeTs = dashboard?.timeseries?.["home.endpoint_compute.ms"] ?? [];
   const queueTs = dashboard?.timeseries?.["worker.queue.depth"] ?? [];
   const taskDurationTs = dashboard?.timeseries?.["worker.task.duration"] ?? [];
   const queueWaitTs = dashboard?.timeseries?.["worker.queue.wait"] ?? [];
+  const playbackDelivery = dashboard?.playback_delivery;
 
   const score = useMemo(() => {
     if (!summary) return 100;
@@ -429,6 +630,9 @@ export function SystemHealth() {
         {summary && homeEndpointCacheTotal > 0 ? (
           <CrateChip>{homeEndpointCacheHitRate.toFixed(0)}% home endpoint hit</CrateChip>
         ) : null}
+        {playbackDelivery?.stats ? (
+          <CrateChip icon={Headphones}>{playbackDelivery.stats.coverage_percent}% playback coverage</CrateChip>
+        ) : null}
       </OpsPageHero>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_repeat(6,minmax(0,1fr))]">
@@ -492,6 +696,13 @@ export function SystemHealth() {
           tone={system?.load && system.load.load_percent > 80 ? "warning" : "default"}
         />
       </div>
+
+      <PlaybackTranscodingOverview
+        delivery={playbackDelivery}
+        durationSummary={summary?.stream_transcode_duration}
+        completedSummary={summary?.stream_transcode_completed}
+        failedSummary={summary?.stream_transcode_failed}
+      />
 
       {system ? (
         <OpsPanel
@@ -612,6 +823,7 @@ export function SystemHealth() {
             series={[{ id: "slow", field: "count" }]}
           />
           <MetricChart title="Stream Activity" data={streamTs} yLabel="streams" />
+          <MetricChart title="Transcode Duration" data={transcodeDurationTs} yLabel="sec" />
           <MetricChart title="Home Core Compute" data={homeComputeTs} yLabel="ms" />
           <MetricChart title="Home Endpoint Compute" data={homeEndpointComputeTs} yLabel="ms" />
           <MetricChart title="Task Duration" data={taskDurationTs} yLabel="sec" />

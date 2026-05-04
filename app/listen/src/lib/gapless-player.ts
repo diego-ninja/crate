@@ -252,7 +252,11 @@ export function destroyPlayer(): void {
 
 // ── Convenience methods ──────────────────────────────────────────
 
-export function loadQueue(urls: string[], startIndex = 0): void {
+export function loadQueue(
+  urls: string[],
+  startIndex = 0,
+  options: { restartIfSameIndex?: boolean } = {},
+): void {
   if (!instance) return;
 
   // Idempotent: if the incoming URL list is identical to what the engine
@@ -265,6 +269,8 @@ export function loadQueue(urls: string[], startIndex = 0): void {
   if (same) {
     if (urls.length > 0 && instance.getIndex() !== startIndex) {
       instance.gotoTrack(startIndex);
+    } else if (urls.length > 0 && options.restartIfSameIndex) {
+      instance.gotoTrack(startIndex, true);
     }
     return;
   }

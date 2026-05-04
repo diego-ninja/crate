@@ -18,7 +18,7 @@ describe("album model", () => {
       ...BASE_ALBUM,
       tracks: [{
         id: 1,
-        storage_id: "storage-1",
+        entity_uid: "track-entity-1",
         filename: "01-track.m4a",
         format: "m4a",
         bitrate: 320,
@@ -31,8 +31,8 @@ describe("album model", () => {
 
     expect(tracks).toEqual([
       expect.objectContaining({
-        id: "storage-1",
-        storageId: "storage-1",
+        id: "track-entity-1",
+        entityUid: "track-entity-1",
         title: "Track One",
         artist: "Artist Name",
         album: "Album Name",
@@ -48,7 +48,7 @@ describe("album model", () => {
     const badges = buildAlbumQualityBadges([
       {
         id: 1,
-        storage_id: "storage-aac-low",
+        entity_uid: "track-aac-low",
         filename: "01-track.m4a",
         format: "m4a",
         bitrate: 256,
@@ -59,7 +59,7 @@ describe("album model", () => {
       },
       {
         id: 2,
-        storage_id: "storage-aac-high",
+        entity_uid: "track-aac-high",
         filename: "02-track.m4a",
         format: "m4a",
         bitrate: 320,
@@ -70,7 +70,7 @@ describe("album model", () => {
       },
       {
         id: 3,
-        storage_id: "storage-flac",
+        entity_uid: "track-flac",
         filename: "03-track.flac",
         format: "flac",
         bitrate: 1411,

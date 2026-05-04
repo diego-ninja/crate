@@ -21,6 +21,7 @@ from crate.db.home_context import (
     merged_artists_from_context,
     recent_releases_from_context,
 )
+from crate.track_versions import dedupe_track_variants
 
 
 def get_home_mix(user_id: int, mix_id: str, limit: int = 40) -> dict | None:
@@ -37,6 +38,7 @@ def get_home_mix(user_id: int, mix_id: str, limit: int = 40) -> dict | None:
     )
     if not name or not rows:
         return None
+    rows = dedupe_track_variants(rows)
 
     return {
         "id": mix_id,
@@ -73,6 +75,7 @@ def get_home_playlist(user_id: int, playlist_id: str, limit: int = 40) -> dict |
     rows = _build_artist_core_rows(user_id, artist_id=artist_id, artist_name=artist["name"], limit=limit)
     if not rows:
         return None
+    rows = dedupe_track_variants(rows)
 
     return {
         "id": playlist_id,

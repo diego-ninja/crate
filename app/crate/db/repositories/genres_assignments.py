@@ -2,7 +2,9 @@ import re
 
 from sqlalchemy import text
 
+from crate.db.repositories.entity_identity_keys import upsert_entity_identity_key
 from crate.db.tx import transaction_scope
+from crate.entity_ids import genre_entity_uid
 from crate.genre_taxonomy import slugify_genre
 
 
@@ -25,9 +27,21 @@ def get_or_create_genre(name: str, *, session=None) -> int:
     if row:
         return row["id"]
     row = session.execute(
-        text("INSERT INTO genres (name, slug) VALUES (:name, :slug) ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name RETURNING id"),
-        {"name": name, "slug": slug},
+        text(
+            """
+            INSERT INTO genres (entity_uid, name, slug)
+            VALUES (:entity_uid, :name, :slug)
+            ON CONFLICT(slug) DO UPDATE
+            SET entity_uid = COALESCE(genres.entity_uid, EXCLUDED.entity_uid),
+                name = EXCLUDED.name
+            RETURNING id
+            """
+        ),
+        {"entity_uid": str(genre_entity_uid(name=name, slug=slug)), "name": name, "slug": slug},
     ).mappings().first()
+    if row:
+        upsert_entity_identity_key(session, entity_type="genre", entity_uid=str(genre_entity_uid(name=name, slug=slug)), key_type="slug", key_value=slug, is_primary=True)
+        upsert_entity_identity_key(session, entity_type="genre", entity_uid=str(genre_entity_uid(name=name, slug=slug)), key_type="name", key_value=name, is_primary=True)
     return row["id"]
 
 

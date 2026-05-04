@@ -13,6 +13,7 @@ def get_all_genres() -> list[dict]:
                 """
                 SELECT
                     g.id,
+                    g.entity_uid::text AS entity_uid,
                     g.name,
                     g.slug,
                     COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
@@ -32,6 +33,7 @@ def get_all_genres() -> list[dict]:
                 LEFT JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
                 GROUP BY
                     g.id,
+                    g.entity_uid,
                     g.name,
                     g.slug,
                     tn.slug,
@@ -57,6 +59,7 @@ def get_unmapped_genres(limit: int = 24) -> list[dict]:
                 """
                 SELECT
                     g.id,
+                    g.entity_uid::text AS entity_uid,
                     g.name,
                     g.slug,
                     COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
@@ -66,7 +69,12 @@ def get_unmapped_genres(limit: int = 24) -> list[dict]:
                 LEFT JOIN album_genres alg ON g.id = alg.genre_id
                 LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
                 WHERE gta.alias_slug IS NULL
-                GROUP BY g.id, g.name, g.slug
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM genre_taxonomy_aliases gta_name
+                      WHERE LOWER(TRIM(gta_name.alias_name)) = LOWER(TRIM(g.name))
+                  )
+                GROUP BY g.id, g.entity_uid, g.name, g.slug
                 HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
                 ORDER BY COUNT(DISTINCT ag.artist_name) DESC, COUNT(DISTINCT alg.album_id) DESC, g.name ASC
                 LIMIT :lim
@@ -107,6 +115,7 @@ def list_unmapped_genres_for_inference(limit: int, focus_slug: str | None = None
                     """
                     SELECT
                         g.id,
+                        g.entity_uid::text AS entity_uid,
                         g.name,
                         g.slug,
                         COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
@@ -114,10 +123,8 @@ def list_unmapped_genres_for_inference(limit: int, focus_slug: str | None = None
                     FROM genres g
                     LEFT JOIN artist_genres ag ON g.id = ag.genre_id
                     LEFT JOIN album_genres alg ON g.id = alg.genre_id
-                    LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-                    WHERE gta.alias_slug IS NULL
-                      AND g.slug = :focus_slug
-                    GROUP BY g.id, g.name, g.slug
+                    WHERE g.slug = :focus_slug
+                    GROUP BY g.id, g.entity_uid, g.name, g.slug
                     """
                 ),
                 {"focus_slug": focus_slug},
@@ -132,6 +139,7 @@ def list_unmapped_genres_for_inference(limit: int, focus_slug: str | None = None
                     """
                     SELECT
                         g.id,
+                        g.entity_uid::text AS entity_uid,
                         g.name,
                         g.slug,
                         COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
@@ -141,8 +149,13 @@ def list_unmapped_genres_for_inference(limit: int, focus_slug: str | None = None
                     LEFT JOIN album_genres alg ON g.id = alg.genre_id
                     LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
                     WHERE gta.alias_slug IS NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM genre_taxonomy_aliases gta_name
+                          WHERE LOWER(TRIM(gta_name.alias_name)) = LOWER(TRIM(g.name))
+                      )
                       AND (:focus_slug IS NULL OR g.slug <> :focus_slug)
-                    GROUP BY g.id, g.name, g.slug
+                    GROUP BY g.id, g.entity_uid, g.name, g.slug
                     HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
                     ORDER BY COUNT(DISTINCT ag.artist_name) DESC, COUNT(DISTINCT alg.album_id) DESC, g.name ASC
                     LIMIT :remaining_limit
@@ -163,6 +176,11 @@ def get_unmapped_genre_count() -> int:
                 FROM genres g
                 LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
                 WHERE gta.alias_slug IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM genre_taxonomy_aliases gta_name
+                      WHERE LOWER(TRIM(gta_name.alias_name)) = LOWER(TRIM(g.name))
+                  )
                 """
             )
         ).mappings().first()

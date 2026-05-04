@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from crate.api.auth import _require_admin
-from crate.api._deps import album_names_from_id, library_path, safe_path
+from crate.api._deps import album_names_from_entity_uid, album_names_from_id, library_path, safe_path
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.api.schemas.utility import AlbumTagsUpdate, TrackTagsUpdate
@@ -49,6 +49,19 @@ def _update_album_tags(request: Request, artist: str, album: str, data: AlbumTag
 )
 def api_update_tags_by_id(request: Request, album_id: int, data: AlbumTagsUpdate):
     names = album_names_from_id(album_id)
+    if not names:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _update_album_tags(request, names[0], names[1], data)
+
+
+@router.put(
+    "/api/albums/by-entity/{album_entity_uid}/tags",
+    response_model=TaskEnqueueResponse,
+    responses=_TAG_RESPONSES,
+    summary="Queue an album-tag update by entity UID",
+)
+def api_update_tags_by_entity_uid(request: Request, album_entity_uid: str, data: AlbumTagsUpdate):
+    names = album_names_from_entity_uid(album_entity_uid)
     if not names:
         raise HTTPException(status_code=404, detail="Not found")
     return _update_album_tags(request, names[0], names[1], data)

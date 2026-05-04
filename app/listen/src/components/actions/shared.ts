@@ -24,7 +24,7 @@ export interface MenuActionConfig {
 
 export interface TrackMenuData {
   id?: string | number;
-  storage_id?: string;
+  entity_uid?: string;
   title: string;
   artist: string;
   artist_id?: number;
@@ -48,6 +48,7 @@ export interface AlbumMenuData {
   artistSlug?: string;
   album: string;
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   cover?: string;
 }
@@ -75,7 +76,7 @@ export interface PlaylistMenuData {
 export function trackToMenuData(track: Track): TrackMenuData {
   return {
     id: track.id,
-    storage_id: track.storageId,
+    entity_uid: track.entityUid,
     title: track.title,
     artist: track.artist,
     artist_id: track.artistId,
@@ -143,7 +144,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     display_name: string;
     tracks: Array<{
       id: number;
-      storage_id?: string;
+      entity_uid?: string;
       filename: string;
       path: string;
       length_sec: number;
@@ -155,6 +156,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     }>;
   }>(albumApiPath({
     albumId: data.albumId,
+    albumEntityUid: data.albumEntityUid,
     albumSlug: data.albumSlug,
     artistSlug: data.artistSlug,
     artistName: data.artist,
@@ -163,6 +165,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 
   const coverUrl = data.cover || albumCoverApiUrl({
     albumId: data.albumId,
+    albumEntityUid: data.albumEntityUid,
     albumSlug: data.albumSlug,
     artistName: data.artist,
     albumName: data.album,
@@ -170,11 +173,12 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 
   return (response.tracks || []).map((track) => toPlayableTrack({
     id: track.id,
-    storage_id: track.storage_id,
+    entity_uid: track.entity_uid,
     title: track.tags?.title || track.filename || "Unknown",
     artist: response.artist,
     album: response.display_name || response.name,
     album_id: data.albumId,
+    album_entity_uid: data.albumEntityUid,
     album_slug: data.albumSlug,
     path: track.path,
     format: track.format || undefined,

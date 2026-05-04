@@ -107,6 +107,7 @@ services:
       - GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY:-}
     volumes:
       - ./app/crate:/app/crate:ro
+      - ./app/tests:/app/tests:ro
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music:ro
       - dev_data:/data
@@ -153,6 +154,7 @@ services:
       # SCRAPE_PROXY_URL not set in dev — VPN image is x86_64 only, scrapes go direct
     volumes:
       - ./app/crate:/app/crate:ro
+      - ./app/tests:/app/tests:ro
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music
       - ./data/slskd/downloads/complete:/downloads/soulseek
@@ -164,6 +166,40 @@ services:
       - redis
       - slskd
     command: ["worker"]
+
+  playback-worker:
+    build: ./app
+    container_name: crate-dev-playback-worker
+    environment:
+      - TZ=Europe/Madrid
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
+      - CRATE_RUNTIME=worker
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
+      - JWT_SECRET=dev-secret-not-for-production
+      - DEFAULT_ADMIN_PASSWORD=admin
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://redis:6379/0
+      - CRATE_STREAM_TRANSCODE_MAX_CONCURRENT=${STREAM_TRANSCODE_MAX_CONCURRENT:-1}
+    volumes:
+      - ./app/crate:/app/crate:ro
+      - ./app/tests:/app/tests:ro
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music:ro
+      - dev_data:/data
+    networks:
+      - crate-dev
+    depends_on:
+      - postgres
+      - redis
+    command: ["worker", "--queues", "playback", "--processes", "${PLAYBACK_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
 
   caddy:
     image: caddy:2-alpine

@@ -5,7 +5,7 @@ import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItem
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
 import type { Track } from "@/contexts/PlayerContext";
-import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerState } from "@/contexts/PlayerContext";
 
 interface QueuePanelProps {
   open: boolean;
@@ -99,7 +99,7 @@ function QueuePanelRow({
 }
 
 export function QueuePanel({ open, onClose }: QueuePanelProps) {
-  const { isPlaying } = usePlayer();
+  const { isPlaying } = usePlayerState();
   const { queue, currentIndex, jumpTo, removeFromQueue, currentTrack } = usePlayerActions();
 
   if (!open) return null;

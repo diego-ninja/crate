@@ -93,7 +93,10 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
+    from crate.health_check import LibraryHealthCheck
     from crate.repair import LibraryRepair
+    from crate.db.admin_health_surface import publish_health_surface_signal
+    from crate.db.domain_events import append_domain_event
 
     dry_run = params.get("dry_run", True)
     auto_only = params.get("auto_only", True)
@@ -138,6 +141,36 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             p_repair.item = data.get("action", p_repair.item)
             emit_progress(task_id, p_repair)
 
+        def _repair_event(data: dict):
+            level = str(data.get("level") or "info").lower()
+            explicit_event_type = str(data.get("event_type") or "").strip().lower()
+            event_type = (
+                explicit_event_type
+                or ("warning" if level in {"warn", "warning"} else "error" if level == "error" else "info")
+            )
+            payload = {k: v for k, v in data.items() if k not in {"level", "event_type"}}
+            payload.setdefault("category", "repair")
+            emit_task_event(task_id, event_type, payload)
+            if dry_run or event_type != "item":
+                return
+            outcome = str(payload.get("outcome") or "").strip().lower()
+            if outcome not in {"started", "applied", "skipped", "failed", "unsupported"}:
+                return
+            append_domain_event(
+                f"library.repair.item.{outcome}",
+                {
+                    "task_id": task_id,
+                    "check_type": payload.get("check_type") or payload.get("check"),
+                    "item_key": payload.get("item_key"),
+                    "target": payload.get("target"),
+                    "action": payload.get("action"),
+                    "outcome": outcome,
+                    "fs_write": payload.get("fs_write"),
+                },
+                scope="repair",
+                subject_key=task_id,
+            )
+
         repairer = LibraryRepair(config)
         result = repairer.repair(
             report,
@@ -145,10 +178,18 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             auto_only=auto_only,
             task_id=task_id,
             progress_callback=_repair_progress,
+            event_callback=_repair_event,
         )
 
         action_count = len(result.get("actions", []))
         resolved_ids = result.get("resolved_ids", [])
+        repair_summary = result.get("summary") or {}
+        applied_check_types = sorted({
+            str(item.get("check_type"))
+            for item in result.get("item_results", [])
+            if item.get("outcome") == "applied" and item.get("check_type")
+        })
+        revalidation_result = None
 
         # Mark resolved issues as fixed in the DB
         if not dry_run and resolved_ids:
@@ -157,6 +198,7 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                     resolve_issue(issue_id)
                 except Exception:
                     log.debug("Failed to mark issue %s as resolved", issue_id, exc_info=True)
+            publish_health_surface_signal()
 
         # Collect unique artists that need re-enrichment from repair actions
         # (e.g. unindexed_files that just got synced). Queue one
@@ -185,23 +227,123 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                 except Exception:
                     log.debug("Failed to queue enrichment for %s", artist, exc_info=True)
 
+        if not dry_run and applied_check_types:
+            p_revalidate = TaskProgress(phase="revalidate", phase_count=1)
+
+            def _revalidate_progress(data):
+                p_revalidate.done = data.get("done", p_revalidate.done)
+                p_revalidate.total = data.get("total", p_revalidate.total)
+                p_revalidate.item = data.get("check", p_revalidate.item)
+                emit_progress(task_id, p_revalidate)
+
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "category": "repair",
+                    "message": f"Revalidating {len(applied_check_types)} repaired check type(s)…",
+                    "checks": applied_check_types,
+                },
+            )
+            checker = LibraryHealthCheck(config)
+            revalidation_result = checker.run_selected(
+                set(applied_check_types),
+                progress_callback=_revalidate_progress,
+                persist=True,
+            )
+            publish_health_surface_signal()
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "category": "repair",
+                    "message": (
+                        f"Revalidation complete: "
+                        f"{len(revalidation_result.get('issues', []))} open issue(s) remain across "
+                        f"{len(applied_check_types)} repaired check type(s)"
+                    ),
+                    "checks": applied_check_types,
+                    "summary": revalidation_result.get("summary", {}),
+                    "issue_count": len(revalidation_result.get("issues", [])),
+                },
+            )
+
         emit_task_event(
             task_id,
             "info",
             {
                 "message": (
-                    f"Repair complete: {action_count} actions, "
+                    f"Repair complete: "
+                    f"{repair_summary.get('applied', 0)} applied, "
+                    f"{repair_summary.get('skipped', 0)} skipped, "
+                    f"{repair_summary.get('failed', 0)} failed, "
+                    f"{repair_summary.get('unsupported', 0)} manual, "
                     f"{len(resolved_ids)} resolved, "
                     f"{enqueued_enrich} enrichments queued"
+                    + (
+                        f", {len(revalidation_result.get('issues', []))} issue(s) remain after revalidation"
+                        if revalidation_result is not None
+                        else ""
+                    )
                 ),
+                "summary": repair_summary,
+                "action_count": action_count,
                 "fs_changed": result.get("fs_changed"),
                 "db_changed": result.get("db_changed"),
+                "unsupported_checks": result.get("unsupported_checks", []),
+                "revalidated_checks": applied_check_types,
+                "revalidation": {
+                    "issue_count": len(revalidation_result.get("issues", [])),
+                    "summary": revalidation_result.get("summary", {}),
+                    "duration_ms": revalidation_result.get("duration_ms"),
+                } if revalidation_result is not None else None,
             },
         )
+        if not dry_run:
+            append_domain_event(
+                "library.repair.completed",
+                {
+                    "task_id": task_id,
+                    "summary": repair_summary,
+                    "action_count": action_count,
+                    "fs_changed": result.get("fs_changed"),
+                    "db_changed": result.get("db_changed"),
+                    "resolved_ids": resolved_ids,
+                    "unsupported_checks": result.get("unsupported_checks", []),
+                    "revalidated_checks": applied_check_types,
+                    "revalidation": {
+                        "issue_count": len(revalidation_result.get("issues", [])),
+                        "summary": revalidation_result.get("summary", {}),
+                        "duration_ms": revalidation_result.get("duration_ms"),
+                    } if revalidation_result is not None else None,
+                },
+                scope="ops",
+                subject_key=task_id,
+            )
         if not dry_run and result.get("fs_changed"):
             start_scan()
 
         result["enrich_queued"] = enqueued_enrich
+        result["revalidated_checks"] = applied_check_types
+        result["revalidation"] = (
+            {
+                "issue_count": len(revalidation_result.get("issues", [])),
+                "summary": revalidation_result.get("summary", {}),
+                "duration_ms": revalidation_result.get("duration_ms"),
+            }
+            if revalidation_result is not None
+            else None
+        )
+        result["message"] = (
+            f"{repair_summary.get('applied', 0)} applied, "
+            f"{repair_summary.get('skipped', 0)} skipped, "
+            f"{repair_summary.get('failed', 0)} failed"
+            + (
+                f", {len(revalidation_result.get('issues', []))} open after revalidation"
+                if revalidation_result is not None
+                else ""
+            )
+        )
         return result
     finally:
         if not dry_run:
@@ -620,7 +762,7 @@ def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -
         tracks = execute_smart_rules(rules)
         track_dicts = [
             {"track_path": t.get("path", ""), "track_id": t.get("id"),
-             "track_storage_id": t.get("storage_id"),
+             "track_entity_uid": t.get("entity_uid"),
              "title": t.get("title", ""), "artist": t.get("artist", ""),
              "album": t.get("album", ""), "duration": t.get("duration")}
             for t in tracks
@@ -709,6 +851,281 @@ def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> 
     return {"cover_path": str(cover_path)}
 
 
+def _handle_write_portable_metadata(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.queries.portable_metadata import get_portable_album_payload, list_portable_album_ids
+    from crate.db.repositories.portable_metadata import mark_album_portable_metadata
+    from crate.portable_metadata import write_album_portable_metadata
+
+    album_id = params.get("album_id")
+    album_entity_uid = params.get("album_entity_uid")
+    artist = params.get("artist")
+    limit = params.get("limit")
+    write_audio_tags = bool(params.get("write_audio_tags", True))
+    write_sidecars = bool(params.get("write_sidecars", True))
+
+    album_ids = list_portable_album_ids(
+        album_id=album_id,
+        album_entity_uid=str(album_entity_uid) if album_entity_uid else None,
+        artist=artist,
+        limit=limit,
+    )
+    progress = TaskProgress(phase="portable_metadata", phase_count=1, total=len(album_ids))
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Writing portable metadata for {len(album_ids)} albums",
+            "write_audio_tags": write_audio_tags,
+            "write_sidecars": write_sidecars,
+        },
+    )
+
+    results: list[dict] = []
+    missing = 0
+    tag_errors = 0
+    for index, current_album_id in enumerate(album_ids, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Portable metadata task cancelled"})
+            break
+
+        payload = get_portable_album_payload(current_album_id)
+        if not payload:
+            missing += 1
+            progress.warnings += 1
+            progress.done = index
+            progress.item = f"album:{current_album_id}"
+            emit_progress(task_id, progress)
+            continue
+
+        album = payload.get("album") or {}
+        progress.item = f"{album.get('artist', '')} - {album.get('name', '')}".strip(" -")
+        try:
+            result = write_album_portable_metadata(
+                payload,
+                write_audio_tags=write_audio_tags,
+                write_sidecars=write_sidecars,
+            )
+            mark_album_portable_metadata(
+                album_id=result.get("album_id"),
+                album_entity_uid=result.get("album_entity_uid"),
+                sidecar_path=result.get("sidecar_path"),
+                tracks=result.get("tracks") or 0,
+                tags_written=result.get("tags_written") or 0,
+                tag_errors=len(result.get("tag_errors") or []),
+                wrote_sidecar=write_sidecars and bool(result.get("sidecar_path")),
+                wrote_audio_tags=write_audio_tags,
+            )
+        except Exception as exc:
+            progress.errors += 1
+            result = {
+                "album_id": current_album_id,
+                "error": str(exc)[:500],
+            }
+            emit_task_event(
+                task_id,
+                "error",
+                {"message": f"Failed to write portable metadata for album {current_album_id}: {exc}"},
+            )
+
+        tag_errors += len(result.get("tag_errors") or [])
+        if result.get("tag_errors"):
+            progress.warnings += len(result["tag_errors"])
+        results.append(result)
+        progress.done = index
+        emit_progress(task_id, progress)
+
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Portable metadata write complete",
+            "albums": len(results),
+            "missing": missing,
+            "tag_errors": tag_errors,
+        },
+    )
+    return {
+        "albums": len(results),
+        "missing": missing,
+        "tag_errors": tag_errors,
+        "results": results[-20:],
+    }
+
+
+def _handle_rehydrate_portable_metadata(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.repositories.portable_metadata import rehydrate_album_payload
+    from crate.portable_metadata import iter_album_sidecars, load_album_sidecar
+
+    root_path = params.get("root_path") or config.get("library_path")
+    limit = params.get("limit")
+    safe_limit = int(limit) if limit is not None else None
+    sidecars = iter_album_sidecars(root_path, limit=safe_limit)
+    progress = TaskProgress(phase="rehydrate_portable_metadata", phase_count=1, total=len(sidecars))
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Rehydrating {len(sidecars)} portable metadata sidecars",
+            "root_path": str(root_path),
+        },
+    )
+
+    restored = 0
+    features = 0
+    lyrics = 0
+    errors: list[dict] = []
+    for index, sidecar_path in enumerate(sidecars, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Portable metadata rehydrate task cancelled"})
+            break
+        progress.item = str(sidecar_path)
+        try:
+            payload = load_album_sidecar(sidecar_path)
+            result = rehydrate_album_payload(payload)
+            restored += 1
+            features += int(result.get("features") or 0)
+            lyrics += int(result.get("lyrics") or 0)
+        except Exception as exc:
+            progress.errors += 1
+            errors.append({"sidecar": str(sidecar_path), "error": str(exc)[:500]})
+            emit_task_event(
+                task_id,
+                "error",
+                {"message": f"Failed to rehydrate {sidecar_path}: {exc}"},
+            )
+        progress.done = index
+        emit_progress(task_id, progress)
+
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Portable metadata rehydrate complete",
+            "albums": restored,
+            "features": features,
+            "lyrics": lyrics,
+            "errors": len(errors),
+        },
+    )
+    return {
+        "albums": restored,
+        "features": features,
+        "lyrics": lyrics,
+        "errors": errors[-20:],
+    }
+
+
+def _handle_export_rich_metadata(task_id: str, params: dict, config: dict) -> dict:
+    from datetime import datetime
+
+    from crate.db.queries.portable_metadata import get_portable_album_payload, list_portable_album_ids
+    from crate.db.repositories.portable_metadata import mark_album_rich_export
+    from crate.portable_metadata import export_album_rich_metadata
+
+    album_id = params.get("album_id")
+    album_entity_uid = params.get("album_entity_uid")
+    artist = params.get("artist")
+    limit = params.get("limit")
+    include_audio = bool(params.get("include_audio", False))
+    write_rich_tags = bool(params.get("write_rich_tags", True))
+    default_root = Path(config.get("data_path") or "/data") / "portable-exports" / datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    export_root = Path(str(params.get("export_root") or default_root))
+
+    album_ids = list_portable_album_ids(
+        album_id=album_id,
+        album_entity_uid=str(album_entity_uid) if album_entity_uid else None,
+        artist=artist,
+        limit=limit,
+    )
+    progress = TaskProgress(phase="export_rich_metadata", phase_count=1, total=len(album_ids))
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Exporting rich metadata for {len(album_ids)} albums",
+            "export_root": str(export_root),
+            "include_audio": include_audio,
+            "write_rich_tags": write_rich_tags,
+        },
+    )
+
+    exported = 0
+    tracks = 0
+    tag_errors = 0
+    errors: list[dict] = []
+    results: list[dict] = []
+    for index, current_album_id in enumerate(album_ids, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Rich metadata export task cancelled"})
+            break
+
+        payload = get_portable_album_payload(current_album_id)
+        if not payload:
+            progress.warnings += 1
+            errors.append({"album_id": current_album_id, "error": "album not found"})
+            progress.done = index
+            emit_progress(task_id, progress)
+            continue
+
+        album = payload.get("album") or {}
+        progress.item = f"{album.get('artist', '')} - {album.get('name', '')}".strip(" -")
+        try:
+            result = export_album_rich_metadata(
+                payload,
+                export_root=export_root,
+                include_audio=include_audio,
+                write_rich_tags=write_rich_tags,
+            )
+            mark_album_rich_export(
+                album_id=result.get("album_id"),
+                album_entity_uid=result.get("album_entity_uid"),
+                export_path=result.get("export_path"),
+                tracks=result.get("tracks") or 0,
+            )
+            exported += 1
+            tracks += int(result.get("tracks") or 0)
+            tag_errors += len(result.get("tag_errors") or [])
+            if result.get("tag_errors"):
+                progress.warnings += len(result["tag_errors"])
+            results.append(result)
+        except Exception as exc:
+            progress.errors += 1
+            errors.append({"album_id": current_album_id, "error": str(exc)[:500]})
+            emit_task_event(
+                task_id,
+                "error",
+                {"message": f"Failed to export rich metadata for album {current_album_id}: {exc}"},
+            )
+        progress.done = index
+        emit_progress(task_id, progress)
+
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Rich metadata export complete",
+            "albums": exported,
+            "tracks": tracks,
+            "tag_errors": tag_errors,
+            "export_root": str(export_root),
+        },
+    )
+    return {
+        "albums": exported,
+        "tracks": tracks,
+        "tag_errors": tag_errors,
+        "export_root": str(export_root),
+        "errors": errors[-20:],
+        "results": results[-20:],
+    }
+
+
 MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "health_check": _handle_health_check,
     "repair": _handle_repair,
@@ -725,4 +1142,7 @@ MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "generate_system_playlist": _handle_generate_system_playlist,
     "refresh_system_smart_playlists": _handle_refresh_system_smart_playlists,
     "persist_playlist_cover": _handle_persist_playlist_cover,
+    "write_portable_metadata": _handle_write_portable_metadata,
+    "rehydrate_portable_metadata": _handle_rehydrate_portable_metadata,
+    "export_rich_metadata": _handle_export_rich_metadata,
 }

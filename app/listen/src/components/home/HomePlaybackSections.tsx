@@ -225,6 +225,8 @@ function replayCoverUrl(item: ReplayTrack): string | undefined {
   if (item.album_id == null) return undefined;
   return albumCoverApiUrl({
     albumId: item.album_id,
+    albumEntityUid: item.album_entity_uid ?? undefined,
+    artistEntityUid: item.artist_entity_uid ?? undefined,
     albumSlug: item.album_slug ?? undefined,
     artistName: item.artist,
     albumName: item.album,

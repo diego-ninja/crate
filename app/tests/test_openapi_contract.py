@@ -54,6 +54,7 @@ def test_openapi_marks_radio_routes_as_authenticated_and_typed(test_app):
 
     assert operation["tags"] == ["radio"]
     assert operation["summary"] == "Build track radio"
+    assert {parameter["name"] for parameter in operation["parameters"]} == {"track_id", "entity_uid", "path", "limit"}
     assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/RadioResponse")
     assert operation["responses"]["404"]["content"]["application/json"]["schema"]["$ref"].endswith("/ApiErrorResponse")
@@ -283,14 +284,14 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
 
 def test_openapi_types_offline_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
-    track_operation = data["paths"]["/api/offline/tracks/by-storage/{storage_id}/manifest"]["get"]
+    track_by_entity_operation = data["paths"]["/api/offline/tracks/by-entity/{entity_uid}/manifest"]["get"]
     track_by_id_operation = data["paths"]["/api/offline/tracks/{track_id}/manifest"]["get"]
     track_by_path_operation = data["paths"]["/api/offline/tracks/by-path/{path}/manifest"]["get"]
     album_operation = data["paths"]["/api/offline/albums/{album_id}/manifest"]["get"]
     playlist_operation = data["paths"]["/api/offline/playlists/{playlist_id}/manifest"]["get"]
 
     for operation in (
-        track_operation,
+        track_by_entity_operation,
         track_by_id_operation,
         track_by_path_operation,
         album_operation,
@@ -299,7 +300,8 @@ def test_openapi_types_offline_routes_and_marks_them_authenticated(test_app):
         assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
         assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/OfflineManifestResponse")
 
-    assert track_operation["summary"] == "Get an offline manifest for a track by storage ID"
+    assert track_by_entity_operation["summary"] == "Get an offline manifest for a track by entity UID"
+    assert "/api/offline/tracks/by-storage/{storage_id}/manifest" not in data["paths"]
     assert playlist_operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"].endswith("/ApiErrorResponse")
 
 
@@ -726,16 +728,17 @@ def test_openapi_types_browse_media_routes_and_query_token_streams(test_app):
     favorites_operation = data["paths"]["/api/favorites"]["get"]
     rate_operation = data["paths"]["/api/track/rate"]["post"]
     track_info_operation = data["paths"]["/api/tracks/{track_id}/info"]["get"]
+    track_info_by_entity_operation = data["paths"]["/api/tracks/by-entity/{entity_uid}/info"]["get"]
     genre_operation = data["paths"]["/api/tracks/{track_id}/genre"]["get"]
     completeness_operation = data["paths"]["/api/discover/completeness"]["get"]
     similar_operation = data["paths"]["/api/similar-tracks"]["get"]
     moods_operation = data["paths"]["/api/browse/moods"]["get"]
     mood_tracks_operation = data["paths"]["/api/browse/mood/{mood}"]["get"]
     stream_by_id_operation = data["paths"]["/api/tracks/{track_id}/stream"]["get"]
-    stream_by_storage_operation = data["paths"]["/api/tracks/by-storage/{storage_id}/stream"]["get"]
+    stream_by_entity_operation = data["paths"]["/api/tracks/by-entity/{entity_uid}/stream"]["get"]
     stream_operation = data["paths"]["/api/stream/{filepath}"]["get"]
     download_by_id_operation = data["paths"]["/api/tracks/{track_id}/download"]["get"]
-    download_by_storage_operation = data["paths"]["/api/tracks/by-storage/{storage_id}/download"]["get"]
+    download_by_entity_operation = data["paths"]["/api/tracks/by-entity/{entity_uid}/download"]["get"]
     download_operation = data["paths"]["/api/download/track/{filepath}"]["get"]
 
     assert search_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
@@ -750,6 +753,13 @@ def test_openapi_types_browse_media_routes_and_query_token_streams(test_app):
 
     assert track_info_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert track_info_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TrackInfoResponse")
+    assert track_info_by_entity_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert track_info_by_entity_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TrackInfoResponse")
+    assert "/api/tracks/by-storage/{storage_id}/info" not in data["paths"]
+    assert "/api/tracks/by-storage/{storage_id}/eq-features" not in data["paths"]
+    assert "/api/tracks/by-storage/{storage_id}/genre" not in data["paths"]
+    assert "/api/tracks/by-storage/{storage_id}/stream" not in data["paths"]
+    assert "/api/tracks/by-storage/{storage_id}/download" not in data["paths"]
 
     assert genre_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert genre_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TrackGenreResponse")
@@ -766,11 +776,11 @@ def test_openapi_types_browse_media_routes_and_query_token_streams(test_app):
     assert mood_tracks_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert mood_tracks_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/MoodTracksResponse")
 
-    for operation in (stream_by_id_operation, stream_by_storage_operation, stream_operation):
+    for operation in (stream_by_id_operation, stream_by_entity_operation, stream_operation):
         assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}, {"queryTokenAuth": []}]
         assert operation["responses"]["200"]["content"]["audio/flac"]["schema"]["format"] == "binary"
 
-    for operation in (download_by_id_operation, download_by_storage_operation, download_operation):
+    for operation in (download_by_id_operation, download_by_entity_operation, download_operation):
         assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}, {"queryTokenAuth": []}]
         assert operation["responses"]["200"]["content"]["application/octet-stream"]["schema"]["format"] == "binary"
 
@@ -830,6 +840,10 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     analysis_status_operation = data["paths"]["/api/manage/analysis-status"]["get"]
     audit_log_operation = data["paths"]["/api/manage/audit-log"]["get"]
     storage_status_operation = data["paths"]["/api/manage/storage-v2-status"]["get"]
+    portable_metadata_operation = data["paths"]["/api/manage/portable-metadata"]["post"]
+    portable_rehydrate_operation = data["paths"]["/api/manage/portable-metadata/rehydrate"]["post"]
+    rich_export_operation = data["paths"]["/api/manage/portable-metadata/export-rich"]["post"]
+    sync_lyrics_operation = data["paths"]["/api/manage/sync-lyrics"]["post"]
 
     assert admin_health_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert admin_health_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminHealthSnapshotResponse")
@@ -857,3 +871,19 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
 
     assert storage_status_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert storage_status_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StorageV2StatusResponse")
+
+    assert portable_metadata_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert portable_metadata_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/PortableMetadataRequest")
+    assert portable_metadata_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert portable_rehydrate_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert portable_rehydrate_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/PortableRehydrateRequest")
+    assert portable_rehydrate_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert rich_export_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert rich_export_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/RichMetadataExportRequest")
+    assert rich_export_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert sync_lyrics_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert sync_lyrics_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/LyricsSyncRequest")
+    assert sync_lyrics_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")

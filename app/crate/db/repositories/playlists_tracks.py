@@ -8,8 +8,58 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from crate.db.orm.playlist import Playlist, PlaylistTrack
+from crate.db.repositories.library_track_reads import (
+    resolve_library_track_reference,
+)
 from crate.db.repositories.playlists_shared import emit_playlist_domain_event
 from crate.db.tx import optional_scope
+
+
+def _resolve_playlist_track(track: dict, *, session: Session) -> dict:
+    track_id = track.get("track_id") or track.get("libraryTrackId")
+    track_entity_uid = (
+        track.get("track_entity_uid")
+        or track.get("entity_uid")
+        or track.get("trackEntityUid")
+        or track.get("entityUid")
+    )
+    track_storage_id = (
+        track.get("track_storage_id")
+        or track.get("trackStorageId")
+    )
+    track_path = track.get("track_path") or track.get("path") or ""
+
+    library_track = resolve_library_track_reference(
+        track_id=int(track_id) if track_id is not None else None,
+        track_entity_uid=str(track_entity_uid) if track_entity_uid else None,
+        track_storage_id=str(track_storage_id) if track_storage_id else None,
+        track_path=track_path or None,
+        session=session,
+    )
+
+    if library_track:
+        resolved_entity_uid = library_track.get("entity_uid") or track_entity_uid
+        return {
+            "track_id": library_track.get("id"),
+            "track_entity_uid": resolved_entity_uid,
+            "track_storage_id": None if resolved_entity_uid else (library_track.get("storage_id") or track_storage_id),
+            "track_path": library_track.get("path") or track_path,
+            "title": track.get("title") or library_track.get("title") or library_track.get("filename") or "",
+            "artist": track.get("artist") or library_track.get("artist") or "",
+            "album": track.get("album") or library_track.get("album") or "",
+            "duration": float(track.get("duration") or library_track.get("duration") or 0),
+        }
+
+    return {
+        "track_id": track_id,
+        "track_entity_uid": track_entity_uid,
+        "track_storage_id": None if track_entity_uid else track_storage_id,
+        "track_path": track_path,
+        "title": track.get("title", ""),
+        "artist": track.get("artist", ""),
+        "album": track.get("album", ""),
+        "duration": float(track.get("duration") or 0),
+    }
 
 
 def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Session | None = None) -> None:
@@ -22,15 +72,18 @@ def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Sessio
         position = max_position
         for track in tracks:
             position += 1
+            resolved = _resolve_playlist_track(track, session=s)
             s.add(
                 PlaylistTrack(
                     playlist_id=playlist_id,
-                    track_id=track.get("track_id") or track.get("libraryTrackId"),
-                    track_path=track.get("path") or "",
-                    title=track.get("title", ""),
-                    artist=track.get("artist", ""),
-                    album=track.get("album", ""),
-                    duration=track.get("duration", 0),
+                    track_id=resolved["track_id"],
+                    track_entity_uid=resolved["track_entity_uid"],
+                    track_storage_id=resolved["track_storage_id"],
+                    track_path=resolved["track_path"],
+                    title=resolved["title"],
+                    artist=resolved["artist"],
+                    album=resolved["album"],
+                    duration=resolved["duration"],
                     position=position,
                     added_at=now,
                 )
@@ -125,15 +178,18 @@ def replace_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Se
         position = 0
         for track in tracks:
             position += 1
+            resolved = _resolve_playlist_track(track, session=s)
             s.add(
                 PlaylistTrack(
                     playlist_id=playlist_id,
-                    track_id=track.get("track_id") or track.get("libraryTrackId"),
-                    track_path=track.get("path") or "",
-                    title=track.get("title", ""),
-                    artist=track.get("artist", ""),
-                    album=track.get("album", ""),
-                    duration=track.get("duration", 0),
+                    track_id=resolved["track_id"],
+                    track_entity_uid=resolved["track_entity_uid"],
+                    track_storage_id=resolved["track_storage_id"],
+                    track_path=resolved["track_path"],
+                    title=resolved["title"],
+                    artist=resolved["artist"],
+                    album=resolved["album"],
+                    duration=resolved["duration"],
                     position=position,
                     added_at=now,
                 )

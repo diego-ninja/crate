@@ -24,11 +24,23 @@ import {
   Sparkles,
   Compass,
   FolderSync,
+  Archive,
+  FileInput,
+  FileJson,
+  Tags,
 } from "lucide-react";
 
 interface SearchResults {
-  artists: { id?: number; slug?: string; name: string }[];
-  albums: { id?: number; slug?: string; artist: string; name: string }[];
+  artists: { id?: number; entity_uid?: string; slug?: string; name: string }[];
+  albums: {
+    id?: number;
+    entity_uid?: string;
+    slug?: string;
+    artist: string;
+    artist_id?: number;
+    artist_entity_uid?: string;
+    name: string;
+  }[];
 }
 
 export function CommandPalette() {
@@ -220,6 +232,66 @@ export function CommandPalette() {
                 <Command.Item
                   onSelect={() =>
                     action(
+                      () => api("/api/tasks/backfill-track-fingerprints", "POST"),
+                      "Backfill audio fingerprints",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <BrainCircuit size={14} className="text-muted-foreground" />
+                  Backfill Audio Fingerprints (Chromaprint)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/sync-lyrics", "POST", { limit: 1000 }),
+                      "Sync Lyrics",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <FileJson size={14} className="text-muted-foreground" />
+                  Sync Missing Lyrics
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata", "POST", { write_audio_tags: true, write_sidecars: true }),
+                      "Portable Metadata",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Tags size={14} className="text-muted-foreground" />
+                  Write Portable Metadata
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata/rehydrate", "POST"),
+                      "Portable Metadata Rehydrate",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <FileInput size={14} className="text-muted-foreground" />
+                  Rehydrate From Portable Metadata
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata/export-rich", "POST", { include_audio: false, write_rich_tags: false }),
+                      "Rich Metadata Export",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Archive size={14} className="text-muted-foreground" />
+                  Export Rich Metadata Index
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
                       () => api("/api/tasks/backfill-similarities", "POST"),
                       "Backfill Similarities",
                     )
@@ -306,7 +378,7 @@ export function CommandPalette() {
                 {searchResults.albums.slice(0, 5).map((a) => (
                   <Command.Item
                     key={`${a.artist}-${a.name}`}
-                    onSelect={() => go(albumPagePath({ albumId: a.id, albumSlug: a.slug, albumName: a.name }))}
+                    onSelect={() => go(albumPagePath({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }))}
                     className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
                   >
                     <Disc3 size={14} className="text-muted-foreground" />

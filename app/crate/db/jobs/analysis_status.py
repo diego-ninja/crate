@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+
 from sqlalchemy import text
 
+from crate.db.repositories.portable_metadata import get_portable_metadata_status
 from crate.db.tx import transaction_scope
 
 
@@ -108,6 +111,29 @@ def get_analysis_status() -> dict:
                 for state in counts["bliss"]:
                     counts["bliss"][state] += int(missing[state] or 0)
 
+        fingerprint_counts = session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE audio_fingerprint IS NOT NULL) AS done,
+                    COUNT(*) FILTER (WHERE audio_fingerprint IS NULL) AS pending,
+                    COUNT(*) FILTER (WHERE audio_fingerprint_source = 'chromaprint-v1') AS chromaprint,
+                    COUNT(*) FILTER (WHERE audio_fingerprint_source = 'pcm16-md5-v1') AS pcm
+                FROM library_tracks
+                """
+            )
+        ).mappings().first() or {}
+
+        chromaprint_available = shutil.which("fpcalc") is not None
+        ffmpeg_available = shutil.which("ffmpeg") is not None
+        fingerprint_strategy = (
+            "chromaprint-v1"
+            if chromaprint_available
+            else "pcm16-md5-v1"
+            if ffmpeg_available
+            else "unavailable"
+        )
+
         return {
             "total": total,
             "analysis_done": counts["analysis"]["done"],
@@ -118,6 +144,13 @@ def get_analysis_status() -> dict:
             "bliss_pending": counts["bliss"]["pending"],
             "bliss_active": counts["bliss"]["analyzing"],
             "bliss_failed": counts["bliss"]["failed"],
+            "fingerprint_done": int(fingerprint_counts.get("done") or 0),
+            "fingerprint_pending": int(fingerprint_counts.get("pending") or 0),
+            "fingerprint_chromaprint": int(fingerprint_counts.get("chromaprint") or 0),
+            "fingerprint_pcm": int(fingerprint_counts.get("pcm") or 0),
+            "chromaprint_available": chromaprint_available,
+            "fingerprint_strategy": fingerprint_strategy,
+            **get_portable_metadata_status(),
         }
 
 

@@ -1,14 +1,17 @@
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getPlaybackDeliveryPolicyPreference,
   getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
+  setPlaybackDeliveryPolicyPreference,
   setInfinitePlaybackPreference,
   setCrossfadeDurationPreference,
   setSmartCrossfadePreference,
   setSmartPlaylistSuggestionsCadencePreference,
   setSmartPlaylistSuggestionsPreference,
+  type PlaybackDeliveryPolicy,
 } from "@/lib/player-playback-prefs";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -165,6 +168,12 @@ function ToggleRow({
   );
 }
 
+const PLAYBACK_DELIVERY_OPTIONS: { value: PlaybackDeliveryPolicy; label: string; description: string }[] = [
+  { value: "balanced", label: "Balanced", description: "AAC 192 when useful" },
+  { value: "original", label: "Original", description: "Library file" },
+  { value: "data_saver", label: "Data Saver", description: "AAC 128 when useful" },
+];
+
 export function Settings() {
   const { user, logout } = useAuth();
   const {
@@ -183,6 +192,7 @@ export function Settings() {
   const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
     getSmartPlaylistSuggestionsCadencePreference,
   );
+  const [playbackDeliveryPolicy, setPlaybackDeliveryPolicy] = useState(getPlaybackDeliveryPolicyPreference);
   const publicProfilePath = useMemo(() => {
     return user?.username ? `/users/${user.username}` : "/people";
   }, [user?.username]);
@@ -200,6 +210,39 @@ export function Settings() {
         title="Playback"
         description="These preferences shape how the player behaves between tracks."
       >
+        <div className="space-y-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Stream quality</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Choose whether this device asks the server for the original file or a lighter cached playback variant.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Stream quality">
+            {PLAYBACK_DELIVERY_OPTIONS.map((option) => {
+              const selected = playbackDeliveryPolicy === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => {
+                    setPlaybackDeliveryPolicy(option.value);
+                    setPlaybackDeliveryPolicyPreference(option.value);
+                  }}
+                  className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
+                    selected
+                      ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-50"
+                      : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <ToggleRow
           label="Infinite playback"
           description="When an album or playlist ends, keep the session going with context-aware continuation."

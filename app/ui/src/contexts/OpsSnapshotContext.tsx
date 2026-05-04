@@ -59,8 +59,8 @@ export interface OpsAnalyticsSnapshot {
 export interface OpsLiveActivity {
   engine?: string;
   queue_breakdown: {
-    running: { fast: number; default: number; heavy: number };
-    pending: { fast: number; default: number; heavy: number };
+    running: { fast: number; default: number; heavy: number; playback: number };
+    pending: { fast: number; default: number; heavy: number; playback: number };
   };
   db_heavy_gate: {
     active: number;
@@ -105,6 +105,22 @@ export interface AnalysisStatusSnapshot {
   bliss_pending: number;
   bliss_active: number;
   bliss_failed: number;
+  fingerprint_done: number;
+  fingerprint_pending: number;
+  fingerprint_chromaprint: number;
+  fingerprint_pcm: number;
+  chromaprint_available: boolean;
+  fingerprint_strategy: string;
+  total_albums: number;
+  lyrics_cached: number;
+  lyrics_found: number;
+  lyrics_missing: number;
+  portable_sidecar_albums: number;
+  portable_audio_tag_albums: number;
+  portable_audio_tag_tracks: number;
+  portable_tag_errors: number;
+  rich_export_albums: number;
+  rich_export_tracks: number;
   last_analyzed: {
     title?: string;
     artist?: string;

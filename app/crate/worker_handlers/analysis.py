@@ -3,13 +3,16 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from crate.audio_fingerprint import compute_audio_fingerprint_with_source
 from crate.db.cache_store import set_cache
 from crate.db.genres import cleanup_invalid_genre_taxonomy_nodes
 from crate.db.jobs.analysis import (
     get_albums_needing_popularity,
     get_artists_needing_analysis,
     get_artists_needing_bliss,
+    list_tracks_missing_audio_fingerprints,
     requeue_tracks,
+    store_track_audio_fingerprint,
     update_album_popularity as _db_update_album_popularity,
 )
 from crate.db.events import emit_task_event
@@ -733,6 +736,74 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     return {"requeued": count, "what": what}
 
 
+def _handle_backfill_track_audio_fingerprints(task_id: str, params: dict, config: dict) -> dict:
+    limit = max(1, min(int(params.get("limit") or 5000), 50_000))
+    tracks = list_tracks_missing_audio_fingerprints(limit=limit)
+    total = len(tracks)
+    processed = 0
+    fingerprinted = 0
+    failed = 0
+
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Backfilling track audio fingerprints...",
+            "limit": limit,
+            "selected": total,
+        },
+    )
+    progress = TaskProgress(phase="fingerprints", phase_count=1, total=total)
+    emit_progress(task_id, progress, force=True)
+
+    for index, track in enumerate(tracks, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Fingerprint backfill cancelled"})
+            break
+
+        progress.done = index - 1
+        progress.item = entity_label(
+            artist=track.get("artist", ""),
+            album=track.get("album", ""),
+            title=track.get("title", ""),
+            path=track.get("path", ""),
+        )
+        emit_progress(task_id, progress)
+
+        fingerprint_payload = compute_audio_fingerprint_with_source(track["path"])
+        processed += 1
+        if fingerprint_payload is None:
+            failed += 1
+            continue
+
+        fingerprint, fingerprint_source = fingerprint_payload
+        store_track_audio_fingerprint(
+            int(track["id"]),
+            fingerprint=fingerprint,
+            fingerprint_source=fingerprint_source,
+        )
+        fingerprinted += 1
+
+    progress.done = processed
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": (
+                f"Track fingerprint backfill complete: {fingerprinted} stored, "
+                f"{failed} failed, {processed} processed"
+            )
+        },
+    )
+    return {
+        "processed": processed,
+        "fingerprinted": fingerprinted,
+        "failed": failed,
+        "remaining": max(total - processed, 0),
+    }
+
+
 # Populate finalizers now that handler functions are defined
 _PARENT_FINALIZERS["compute_popularity"] = _popularity_finalize
 
@@ -745,6 +816,7 @@ ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "sync_musicbrainz_genre_graph": _handle_sync_musicbrainz_genre_graph,
     "cleanup_invalid_genre_taxonomy": _handle_cleanup_invalid_genre_taxonomy,
     "compute_popularity": _handle_compute_popularity,
+    "backfill_track_audio_fingerprints": _handle_backfill_track_audio_fingerprints,
     # Re-analysis: just resets state, background daemons pick up the work
     "analyze_tracks": _handle_requeue_analysis,
     "analyze_all": _handle_requeue_analysis,

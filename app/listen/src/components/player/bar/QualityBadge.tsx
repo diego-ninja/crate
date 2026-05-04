@@ -38,14 +38,30 @@ const tierIcons: Record<QualityBadgeData["tier"], typeof Sparkles | null> = {
   low: null,
 };
 
-export function QualityBadge({ badge }: { badge: QualityBadgeData }) {
+type QualityBadgeOrigin = "source" | "stream";
+
+export function QualityBadge({
+  badge,
+  origin = "source",
+}: {
+  badge: QualityBadgeData;
+  origin?: QualityBadgeOrigin;
+}) {
   const style = tierStyles[badge.tier];
-  const Icon = tierIcons[badge.tier];
+  const Icon = origin === "source" ? tierIcons[badge.tier] : null;
+  const streamTone =
+    origin === "stream"
+      ? "border-white/14 bg-white/[0.03] text-white/68 shadow-none"
+      : "";
+  const title =
+    origin === "stream"
+      ? `Streaming delivery quality · ${badge.detail || badge.label}`
+      : badge.detail || badge.label;
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none whitespace-nowrap border ${style.border} ${style.text} ${style.bg} ${style.glow || ""}`}
-      title={badge.detail || badge.label}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none whitespace-nowrap border ${style.border} ${style.text} ${style.bg} ${style.glow || ""} ${streamTone}`}
+      title={title}
     >
       {Icon && <Icon size={9} />}
       {badge.label}

@@ -46,6 +46,17 @@ export function Artist() {
 
   const { data: pageData, loading, error } = useApi<ArtistPageData>(
     routeArtistSlug ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/page` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
+  );
+  const { data: canonicalTopTracks } = useApi<ArtistTopTrack[]>(
+    routeArtistSlug
+      ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/top-tracks?count=50`
+      : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const data: ArtistData | undefined = pageData?.artist;
 
@@ -90,7 +101,7 @@ export function Artist() {
     }
   }
   const info: ArtistInfo | undefined = pageData?.info;
-  const topTracks: ArtistTopTrack[] | undefined = pageData?.top_tracks;
+  const topTracks: ArtistTopTrack[] = canonicalTopTracks ?? [];
   const showsData: { events: ArtistShowEvent[] } | undefined = pageData?.shows;
   const enrichment: ArtistPageEnrichment | undefined = pageData?.enrichment;
 
@@ -99,7 +110,7 @@ export function Artist() {
     : undefined;
 
   const playerTracks = useMemo<Track[]>(() => {
-    if (!topTracks?.length) return [];
+    if (!topTracks.length) return [];
     return topTracks.map((track) => buildArtistPlayerTrack(track, data?.name || "", coverFallback));
   }, [coverFallback, data?.name, topTracks]);
 
@@ -138,7 +149,7 @@ export function Artist() {
   const following = isFollowing(data?.id);
   const artistShowItems = buildArtistShowItems(showsData?.events ?? []);
   const albumsSorted = sortArtistAlbumsByYear(data?.albums ?? []);
-  const previewTopTracks = (topTracks ?? []).slice(0, 5);
+  const previewTopTracks = topTracks.slice(0, 5);
   const visibleShowItems = [...artistShowItems]
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 5);
@@ -206,7 +217,7 @@ export function Artist() {
         onOpenBio={() => setBioModalOpen(true)}
       />
 
-      <div className="px-4 sm:px-6 pb-8 space-y-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 sm:px-6 pb-8 space-y-8">
         <ArtistTopTracksSection
           artistId={data.id}
           artistSlug={data.slug}

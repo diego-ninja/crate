@@ -3,7 +3,15 @@ import logging
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from crate.api._deps import album_names_from_id, artist_name_from_id, extensions, library_path, safe_path
+from crate.api._deps import (
+    album_names_from_entity_uid,
+    album_names_from_id,
+    artist_name_from_entity_uid,
+    artist_name_from_id,
+    extensions,
+    library_path,
+    safe_path,
+)
 from crate.api.auth import _require_auth, _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.artwork import (
@@ -150,6 +158,19 @@ def api_artwork_fetch_artist_by_id(request: Request, artist_id: int):
 
 
 @router.post(
+    "/api/artwork/artists/by-entity/{artist_entity_uid}/fetch",
+    response_model=ArtworkQueuedResponse,
+    responses=_ARTWORK_RESPONSES,
+    summary="Queue artwork fetches for an artist by entity UID",
+)
+def api_artwork_fetch_artist_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return api_artwork_fetch_artist(request, artist_name)
+
+
+@router.post(
     "/api/artwork/fetch-all",
     response_model=ArtworkQueuedResponse,
     responses=_ARTWORK_RESPONSES,
@@ -188,6 +209,20 @@ async def api_upload_cover_by_id(request: Request, album_id: int, file: UploadFi
     return await api_upload_cover(request, artist, album, file)
 
 
+@router.post(
+    "/api/artwork/albums/by-entity/{album_entity_uid}/upload-cover",
+    response_model=ArtworkQueuedResponse,
+    responses=_ARTWORK_RESPONSES,
+    summary="Upload album artwork by entity UID",
+)
+async def api_upload_cover_by_entity_uid(request: Request, album_entity_uid: str, file: UploadFile = File(...)):
+    album_names = album_names_from_entity_uid(album_entity_uid)
+    if not album_names:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    artist, album = album_names
+    return await api_upload_cover(request, artist, album, file)
+
+
 async def api_upload_artist_photo(request: Request, name: str, file: UploadFile = File(...)):
     """Upload artist photo. Worker saves to artist dir."""
     _require_admin(request)
@@ -213,6 +248,19 @@ async def api_upload_artist_photo_by_id(request: Request, artist_id: int, file: 
     return await api_upload_artist_photo(request, artist_name, file)
 
 
+@router.post(
+    "/api/artwork/artists/by-entity/{artist_entity_uid}/upload-photo",
+    response_model=ArtworkQueuedResponse,
+    responses=_ARTWORK_RESPONSES,
+    summary="Upload an artist photo by entity UID",
+)
+async def api_upload_artist_photo_by_entity_uid(request: Request, artist_entity_uid: str, file: UploadFile = File(...)):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return await api_upload_artist_photo(request, artist_name, file)
+
+
 async def api_upload_background(request: Request, name: str, file: UploadFile = File(...)):
     """Upload artist background. Worker saves to artist dir."""
     _require_admin(request)
@@ -233,6 +281,19 @@ async def api_upload_background(request: Request, name: str, file: UploadFile = 
 )
 async def api_upload_background_by_id(request: Request, artist_id: int, file: UploadFile = File(...)):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return await api_upload_background(request, artist_name, file)
+
+
+@router.post(
+    "/api/artwork/artists/by-entity/{artist_entity_uid}/upload-background",
+    response_model=ArtworkQueuedResponse,
+    responses=_ARTWORK_RESPONSES,
+    summary="Upload an artist background image by entity UID",
+)
+async def api_upload_background_by_entity_uid(request: Request, artist_entity_uid: str, file: UploadFile = File(...)):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         return JSONResponse({"error": "Artist not found"}, status_code=404)
     return await api_upload_background(request, artist_name, file)

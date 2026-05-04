@@ -55,6 +55,8 @@ def create_playlist_schema(cur) -> None:
             id SERIAL PRIMARY KEY,
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
             track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+            track_entity_uid UUID,
+            track_storage_id UUID,
             track_path TEXT NOT NULL,
             title TEXT,
             artist TEXT,
@@ -66,6 +68,8 @@ def create_playlist_schema(cur) -> None:
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
+    cur.execute("ALTER TABLE playlist_tracks ADD COLUMN IF NOT EXISTS track_entity_uid UUID")
+    cur.execute("ALTER TABLE playlist_tracks ADD COLUMN IF NOT EXISTS track_storage_id UUID")
     cur.execute(
         """
         DO $$ BEGIN
@@ -73,6 +77,20 @@ def create_playlist_schema(cur) -> None:
                 EXECUTE 'CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)';
             END IF;
         END $$
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_entity_uid
+        ON playlist_tracks(track_entity_uid)
+        WHERE track_entity_uid IS NOT NULL
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_storage_id
+        ON playlist_tracks(track_storage_id)
+        WHERE track_storage_id IS NOT NULL
         """
     )
 

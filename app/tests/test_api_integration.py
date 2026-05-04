@@ -219,11 +219,184 @@ class TestUserEndpoints:
         assert album_items, data.get("recently_played", [])
         assert album_items[0]["album_id"] == album_id
 
+    def test_home_discovery_recently_played_canonicalizes_artist_case_from_library_album(self, api_client, pg_db):
+        import os
+        test_lib = os.environ["CRATE_TEST_LIB"]
+        canonical_artist = "Dredg"
+        raw_artist = "dredg"
+        album_name = "El Cielo"
+        track_title = "Same Ol' Road"
+
+        pg_db.upsert_artist(
+            {
+                "name": canonical_artist,
+                "folder_name": canonical_artist,
+                "album_count": 1,
+                "track_count": 1,
+                "total_size": 1234,
+                "formats": ["flac"],
+                "primary_format": "flac",
+                "has_photo": 0,
+            }
+        )
+        artist_id = pg_db.get_library_artist(canonical_artist)["id"]
+        album_id = pg_db.upsert_album(
+            {
+                "artist": canonical_artist,
+                "name": album_name,
+                "path": f"{test_lib}/{canonical_artist}/{album_name}",
+                "track_count": 1,
+                "total_size": 1234,
+                "total_duration": 240,
+                "formats": ["flac"],
+                "year": 2002,
+                "genre": "Progressive Rock",
+                "has_cover": 0,
+                "tag_album": album_name,
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": raw_artist,
+                "album": album_name,
+                "filename": "01 - Same Ol' Road.flac",
+                "title": track_title,
+                "track_number": 1,
+                "disc_number": 1,
+                "format": "flac",
+                "duration": 240,
+                "size": 1234,
+                "year": 2002,
+                "genre": "Progressive Rock",
+                "albumartist": canonical_artist,
+                "path": f"{test_lib}/{canonical_artist}/{album_name}/01 - Same Ol' Road.flac",
+            }
+        )
+
+        pg_db.record_play_event(
+            1,
+            client_event_id="evt-dredg-lower",
+            track_path=f"{test_lib}/{canonical_artist}/{album_name}/01 - Same Ol' Road.flac",
+            title=track_title,
+            artist=raw_artist,
+            album=album_name,
+            started_at="2026-04-01T10:00:00+00:00",
+            ended_at="2026-04-01T10:04:00+00:00",
+            played_seconds=240,
+            track_duration_seconds=240,
+            completion_ratio=1.0,
+            was_completed=True,
+        )
+
+        resp = api_client.get("/api/me/home/discovery?fresh=1")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        artist_items = [
+            item
+            for item in data.get("recently_played", [])
+            if item.get("type") == "artist"
+        ]
+        assert any(
+            item.get("artist_id") == artist_id
+            and item.get("artist_name") == canonical_artist
+            for item in artist_items
+        ), artist_items
+        assert not any(item.get("artist_name") == raw_artist for item in artist_items), artist_items
+
+    def test_home_discovery_recently_played_prefers_canonical_albumartist_for_split_credit_tracks(self, api_client, pg_db):
+        import os
+        test_lib = os.environ["CRATE_TEST_LIB"]
+        canonical_artist = "Converge"
+        raw_artist = "Chelsea Wolfe, Converge"
+        album_name = "Bloodmoon: I"
+        track_title = "Blood Moon"
+
+        pg_db.upsert_artist(
+            {
+                "name": canonical_artist,
+                "folder_name": canonical_artist,
+                "album_count": 1,
+                "track_count": 1,
+                "total_size": 1234,
+                "formats": ["flac"],
+                "primary_format": "flac",
+                "has_photo": 0,
+            }
+        )
+        artist_id = pg_db.get_library_artist(canonical_artist)["id"]
+        album_id = pg_db.upsert_album(
+            {
+                "artist": canonical_artist,
+                "name": album_name,
+                "path": f"{test_lib}/{canonical_artist}/{album_name}",
+                "track_count": 1,
+                "total_size": 1234,
+                "total_duration": 240,
+                "formats": ["flac"],
+                "year": 2021,
+                "genre": "Metalcore",
+                "has_cover": 0,
+                "tag_album": album_name,
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": raw_artist,
+                "album": album_name,
+                "filename": "01 - Blood Moon.flac",
+                "title": track_title,
+                "track_number": 1,
+                "disc_number": 1,
+                "format": "flac",
+                "duration": 240,
+                "size": 1234,
+                "year": 2021,
+                "genre": "Metalcore",
+                "albumartist": canonical_artist,
+                "path": f"{test_lib}/{canonical_artist}/{album_name}/01 - Blood Moon.flac",
+            }
+        )
+
+        pg_db.record_play_event(
+            1,
+            client_event_id="evt-converge-split",
+            track_path=f"{test_lib}/{canonical_artist}/{album_name}/01 - Blood Moon.flac",
+            title=track_title,
+            artist=raw_artist,
+            album=album_name,
+            started_at="2026-04-01T11:00:00+00:00",
+            ended_at="2026-04-01T11:04:00+00:00",
+            played_seconds=240,
+            track_duration_seconds=240,
+            completion_ratio=1.0,
+            was_completed=True,
+        )
+
+        resp = api_client.get("/api/me/home/discovery?fresh=1")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        artist_items = [
+            item
+            for item in data.get("recently_played", [])
+            if item.get("type") == "artist"
+        ]
+        assert any(
+            item.get("artist_id") == artist_id
+            and item.get("artist_name") == canonical_artist
+            for item in artist_items
+        ), artist_items
+        assert not any(item.get("artist_name") == raw_artist for item in artist_items), artist_items
+
     def test_album_detail_serializes_track_storage_ids_as_strings(self, api_client, pg_db):
         import os
         test_lib = os.environ["CRATE_TEST_LIB"]
         artist_name = "Quicksand"
         album_name = "Distant Populations"
+        track_storage_id = "7efb2747-0872-44ec-ad63-511bde64f22d"
 
         pg_db.upsert_artist(
             {
@@ -255,6 +428,7 @@ class TestUserEndpoints:
         pg_db.upsert_track(
             {
                 "album_id": album_id,
+                "storage_id": track_storage_id,
                 "artist": artist_name,
                 "album": album_name,
                 "filename": "01 - Inversion.flac",
@@ -276,7 +450,7 @@ class TestUserEndpoints:
         data = resp.json()
         assert data["id"] == album_id
         assert len(data["tracks"]) == 1
-        assert isinstance(data["tracks"][0]["storage_id"], str)
+        assert data["tracks"][0]["storage_id"] == track_storage_id
 
     def test_stats_replay(self, api_client):
         resp = api_client.get("/api/me/stats/replay?window=30d&limit=5")

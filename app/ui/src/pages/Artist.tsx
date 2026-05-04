@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import {
   useTopTracks,
@@ -7,6 +7,7 @@ import {
   type EnrichmentData,
 } from "@/hooks/use-artist-data";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
+import { ArtistRepairDialog } from "@/components/artist/ArtistRepairDialog";
 import { ArtistDiscographySection } from "@/components/artist/ArtistDiscographySection";
 import { ArtistAboutSection } from "@/components/artist/ArtistAboutSection";
 import { ArtistLoadingState } from "@/components/artist/ArtistLoadingState";
@@ -26,19 +27,29 @@ import {
 } from "@/components/artist/artistPageData";
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
-import { artistApiPath } from "@/lib/library-routes";
+import { artistActionApiPath, artistApiPath, artistManagementApiPath, artistPagePath, tidalDownloadMissingArtistApiPath, tidalMissingArtistApiPath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
+interface ArtistRepairPlanSummary {
+  total: number;
+}
+
+type ArtistMetadataAction = "lyrics" | "portable" | "export" | null;
+
 // ── Main Component ──
 
 export function Artist() {
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
+  const { artistId: artistIdParam, artistSlug } = useParams<{ artistId?: string; artistSlug?: string }>();
+  const navigate = useNavigate();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const { data, loading } = useApi<ArtistData>(
-    artistId != null ? artistApiPath({ artistId }) : null,
+    artistApiPath({
+      artistId,
+      artistSlug,
+    }) || null,
   );
   const [sort, setSort] = useState("name");
   const [photoLoaded, setPhotoLoaded] = useState(false);
@@ -47,9 +58,8 @@ export function Artist() {
   const [bgCacheBust, setBgCacheBust] = useState("");
   const [bgLoaded, setBgLoaded] = useState(false);
   // Data fetching hooks (replace manual useEffect + useState)
-  const topTracks = useTopTracks(data?.id);
+  const topTracks = useTopTracks(data?.id, data?.entity_uid);
   const [enriching, setEnriching] = useState(false);
-  const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [upcomingShows, setUpcomingShows] = useState<ArtistShowEvent[]>([]);
@@ -67,10 +77,22 @@ export function Artist() {
     album_slug?: string;
   }[]>([]);
   const [bioExpanded, setBioExpanded] = useState(false);
-  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id);
+  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id, data?.entity_uid);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
+  const [metadataAction, setMetadataAction] = useState<ArtistMetadataAction>(null);
+  const [issueCountOverride, setIssueCountOverride] = useState<number | null>(null);
   const { isAdmin } = useAuth();
+  const repairPlanEndpoint = isAdmin
+    ? artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "repair-plan") || null
+    : null;
+  const { data: repairPlanSummary } = useApi<ArtistRepairPlanSummary>(repairPlanEndpoint);
+
+  useEffect(() => {
+    if (artistId == null || !data?.slug) return;
+    navigate(artistPagePath({ artistSlug: data.slug, artistName: data.name }), { replace: true });
+  }, [artistId, data?.slug, data?.name, navigate]);
 
   // Sync enrichment from hook (can be overridden by manual enrich)
   useEffect(() => {
@@ -79,37 +101,41 @@ export function Artist() {
 
   // Fetch upcoming shows
   useEffect(() => {
-    if (!data?.id || showsLoaded) return;
-    api<{ events: ArtistShowEvent[]; configured: boolean }>(`/api/artists/${data.id}/shows`)
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "shows");
+    if (!endpoint || showsLoaded) return;
+    api<{ events: ArtistShowEvent[]; configured: boolean }>(endpoint)
       .then((d) => { setUpcomingShows(d.events || []); setShowsLoaded(true); })
       .catch(() => setShowsLoaded(true));
-  }, [data?.id, showsLoaded]);
+  }, [data?.entity_uid, data?.id, showsLoaded]);
 
   // Fetch all track titles for setlist matching (lazy)
   useEffect(() => {
-    if (!data?.id || activeTab !== "setlist" || allTrackTitles.length > 0) return;
-    api<{ title: string; album: string; path: string; album_id?: number; album_slug?: string }[]>(`/api/artists/${data.id}/track-titles`)
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "track-titles");
+    if (!endpoint || activeTab !== "setlist" || allTrackTitles.length > 0) return;
+    api<{ title: string; album: string; path: string; album_id?: number; album_slug?: string }[]>(endpoint)
       .then((d) => { if (Array.isArray(d)) setAllTrackTitles(d); })
       .catch(() => {});
-  }, [data?.id, activeTab, allTrackTitles.length]);
+  }, [data?.entity_uid, data?.id, activeTab, allTrackTitles.length]);
 
   // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.id || activeTab !== "discography" || missingLoaded) return;
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "missing");
+    if (!endpoint || activeTab !== "discography" || missingLoaded) return;
     let cancelled = false;
-    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/artists/${data.id}/missing`)
+    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(endpoint)
       .then((d) => { if (!cancelled) { setMissingAlbums(d.missing ?? []); setMissingLoaded(true); } })
       .catch(() => { if (!cancelled) setMissingLoaded(true); });
     return () => { cancelled = true; };
-  }, [data?.id, activeTab, missingLoaded]);
+  }, [data?.entity_uid, data?.id, activeTab, missingLoaded]);
 
   // Fetch Tidal missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.id || activeTab !== "discography" || tidalMissingLoaded) return;
-    api<{ albums: typeof tidalMissing; authenticated: boolean }>(`/api/tidal/missing/artists/${data.id}`)
+    const endpoint = tidalMissingArtistApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid });
+    if (!endpoint || activeTab !== "discography" || tidalMissingLoaded) return;
+    api<{ albums: typeof tidalMissing; authenticated: boolean }>(endpoint)
       .then((d) => { if (d.albums) setTidalMissing(d.albums); setTidalMissingLoaded(true); })
       .catch(() => setTidalMissingLoaded(true));
-  }, [data?.id, activeTab, tidalMissingLoaded]);
+  }, [data?.entity_uid, data?.id, activeTab, tidalMissingLoaded]);
 
   if (loading) return <ArtistLoadingState />;
 
@@ -119,7 +145,8 @@ export function Artist() {
   const totalTracks = data.total_tracks ?? data.albums.reduce((s, a) => s + a.tracks, 0);
   const totalSize = data.total_size_mb ?? data.albums.reduce((s, a) => s + a.size_mb, 0);
   const letter = artistName.charAt(0).toUpperCase();
-  const issueCount = data.issue_count ?? 0;
+  const issueCount = issueCountOverride ?? repairPlanSummary?.total ?? data.issue_count ?? 0;
+  const showRepairAction = issueCount > 0;
 
   const sortedAlbums = [...data.albums].sort((a, b) => {
     if (sort === "year") return (b.year || "").localeCompare(a.year || "");
@@ -146,9 +173,9 @@ export function Artist() {
   async function enrichArtist() {
     setEnriching(true);
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      const res = await api<{ status: string; task_id: string }>(`/api/artists/${artistId}/enrich`, "POST");
+      const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "enrich");
+      if (!endpoint) throw new Error("artist reference missing");
+      const res = await api<{ status: string; task_id: string }>(endpoint, "POST");
       toast.success("Enrichment started", { description: "This may take a moment..." });
       const task = await waitForTask(res.task_id, 120000);
       setEnriching(false);
@@ -166,9 +193,9 @@ export function Artist() {
 
   async function analyzeArtist() {
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      await api(`/api/artists/${artistId}/analyze`, "POST");
+      const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "reanalyze");
+      if (!endpoint) throw new Error("artist reference missing");
+      await api(endpoint, "POST");
       toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
     } catch {
       toast.error("Failed to queue analysis");
@@ -176,42 +203,15 @@ export function Artist() {
   }
 
   async function repairArtist() {
-    try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      await api(`/api/manage/artists/${artistId}/repair`, "POST");
-      toast.success(`Repair started for ${issueCount} issue${issueCount !== 1 ? "s" : ""}`);
-    } catch {
-      toast.error("Failed to start repair");
-    }
-  }
-
-  async function migrateToV2() {
-    if (!data) return;
-    setMigrating(true);
-    try {
-      const { task_id } = await api<{ task_id: string }>("/api/manage/migrate-storage-v2", "POST", { artist: data.name });
-      toast.success(`V2 migration started for ${data.name}`);
-      const task = await waitForTask(task_id, 300000);
-      setMigrating(false);
-      if (task.status === "completed") {
-        toast.success(`${data.name} migrated to V2`);
-        window.location.reload();
-      } else if (task.status === "failed") {
-        toast.error("V2 migration failed");
-      }
-    } catch {
-      setMigrating(false);
-      toast.error("Failed to start V2 migration");
-    }
+    setShowRepairDialog(true);
   }
 
   async function downloadMissingDiscography() {
     setDownloadingDiscog(true);
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      const res = await api<{ queued: number }>(`/api/tidal/download-missing/artists/${artistId}`, "POST", {
+      const endpoint = tidalDownloadMissingArtistApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid });
+      if (!endpoint) throw new Error("artist reference missing");
+      const res = await api<{ queued: number }>(endpoint, "POST", {
         albums: tidalMissing.map((album) => ({ url: album.url, title: album.title, cover_url: album.cover })),
       });
       toast.success(`Queued ${res.queued} albums for download`);
@@ -223,11 +223,40 @@ export function Artist() {
     }
   }
 
+  async function queueArtistMetadataAction(action: Exclude<ArtistMetadataAction, null>) {
+    setMetadataAction(action);
+    try {
+      if (action === "lyrics") {
+        await api("/api/manage/sync-lyrics", "POST", { artist: artistName, limit: 1000 });
+        toast.success("Lyrics sync queued");
+      } else if (action === "portable") {
+        await api("/api/manage/portable-metadata", "POST", {
+          artist: artistName,
+          write_audio_tags: true,
+          write_sidecars: true,
+        });
+        toast.success("Portable metadata queued");
+      } else {
+        await api("/api/manage/portable-metadata/export-rich", "POST", {
+          artist: artistName,
+          include_audio: false,
+          write_rich_tags: false,
+        });
+        toast.success("Rich metadata export queued");
+      }
+    } catch {
+      toast.error("Failed to queue metadata task");
+    } finally {
+      setMetadataAction(null);
+    }
+  }
+
   return (
     <div className="-mt-16 md:-mt-[6.5rem]">
         <ArtistHeroSection
           artistName={artistName}
           artistId={data.id}
+          artistEntityUid={data.entity_uid}
           artistSlug={data.slug}
           imageVersion={data.updated_at}
           letter={letter}
@@ -235,6 +264,7 @@ export function Artist() {
         totalTracks={totalTracks}
         totalSizeMb={totalSize}
         issueCount={issueCount}
+        showRepairAction={showRepairAction}
         musicbrainz={mb}
         lastfmListeners={lastfm?.listeners}
         upcomingShow={upcomingShows[0]}
@@ -242,9 +272,6 @@ export function Artist() {
         genreProfile={data.genre_profile}
         tags={allTags}
         enriching={enriching}
-        isV2={data?.is_v2}
-        migrating={migrating}
-        onMigrateV2={() => void migrateToV2()}
         isAdmin={isAdmin}
         photoLoaded={photoLoaded}
         photoError={photoError}
@@ -272,13 +299,23 @@ export function Artist() {
         onRepair={() => {
           void repairArtist();
         }}
+        metadataAction={metadataAction}
+        onSyncLyrics={() => {
+          void queueArtistMetadataAction("lyrics");
+        }}
+        onWritePortableMetadata={() => {
+          void queueArtistMetadataAction("portable");
+        }}
+        onExportRichMetadata={() => {
+          void queueArtistMetadataAction("export");
+        }}
         onDelete={() => setShowDeleteConfirm(true)}
       />
 
       <ArtistTabsNav tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* ═══ CONTENT ═══ */}
-      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 pb-12 pt-6 md:px-8">
 
         {/* ── Overview Tab ── */}
         {activeTab === "overview" && (
@@ -311,6 +348,7 @@ export function Artist() {
           <ArtistDiscographySection
             artistName={artistName}
             artistId={data.id}
+            artistEntityUid={data.entity_uid}
             artistSlug={data.slug}
             albums={data.albums}
             sortedAlbums={sortedAlbums}
@@ -332,6 +370,7 @@ export function Artist() {
           <ArtistSetlistSection
             artistName={artistName}
             artistId={data.id}
+            artistEntityUid={data.entity_uid}
             setlistData={setlistData}
             allTrackTitles={allTrackTitles}
             onTrackTitlesLoaded={setAllTrackTitles}
@@ -350,12 +389,12 @@ export function Artist() {
 
         {/* ── Similar Artists Tab ── */}
         {activeTab === "similar" && (
-          <ArtistSimilarSection artistName={artistName} artistId={data.id} artists={mergedSimilar} />
+          <ArtistSimilarSection artistName={artistName} artistId={data.id} artistEntityUid={data.entity_uid} artists={mergedSimilar} />
         )}
 
         {/* ── Stats Tab ── */}
         {activeTab === "stats" && (
-          <ArtistStatsSection artistName={artistName} artistId={data.id} />
+          <ArtistStatsSection artistName={artistName} artistId={data.id} artistEntityUid={data.entity_uid} />
         )}
 
         {/* ── About Tab ── */}
@@ -385,7 +424,9 @@ export function Artist() {
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api<{ task_id: string }>(`/api/manage/artists/${data!.id}/delete`, "POST", { mode: "full" });
+            const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "delete");
+            if (!endpoint) throw new Error("artist reference missing");
+            await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
             toast.success(`Deletion queued for ${data!.name}`, {
               description: "The worker will delete the artist in the background.",
             });
@@ -398,6 +439,14 @@ export function Artist() {
             toast.error(message);
           }
         }}
+      />
+      <ArtistRepairDialog
+        open={showRepairDialog}
+        onOpenChange={setShowRepairDialog}
+        artistName={artistName}
+        artistId={data.id}
+        artistEntityUid={data.entity_uid}
+        onIssueCountChange={setIssueCountOverride}
       />
     </div>
   );

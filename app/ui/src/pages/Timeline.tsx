@@ -8,9 +8,11 @@ import { ErrorState } from "@crate/ui/primitives/ErrorState";
 
 interface TimelineAlbum {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   tracks: number;
@@ -143,12 +145,19 @@ export function Timeline() {
             {expandedData.map((album, i) => (
               <button
                 key={`${album.artist}-${album.album}-${i}`}
-                onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
+                onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.album }))}
                 className="flex-shrink-0 w-[140px] group text-left"
               >
                 <div className="relative w-[140px] h-[140px] rounded-md overflow-hidden bg-secondary mb-2">
                   <img
-                    src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.album })}
+                    src={albumCoverApiUrl({
+                      albumId: album.id,
+                      albumEntityUid: album.entity_uid,
+                      artistEntityUid: album.artist_entity_uid,
+                      albumSlug: album.slug,
+                      artistName: album.artist,
+                      albumName: album.album,
+                    })}
                     alt={album.album}
                     loading="lazy"
                     className="w-full h-full object-cover"

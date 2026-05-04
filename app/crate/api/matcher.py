@@ -8,7 +8,7 @@ from crate.api.schemas.operations import MatchApplyRequest, MatchCandidateRespon
 from crate.matcher import match_album
 from crate.api._deps import library_path, extensions
 from crate.api.browse_shared import find_album_dir
-from crate.db.repositories.library import get_library_album_by_id
+from crate.db.repositories.library import get_library_album_by_entity_uid, get_library_album_by_id
 from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["matcher"])
@@ -47,6 +47,19 @@ def api_match_album_by_id(request: Request, album_id: int):
     return api_match_album(request, album["artist"], album["name"])
 
 
+@router.get(
+    "/api/match/albums/by-entity/{album_entity_uid}",
+    response_model=list[MatchCandidateResponse],
+    responses=_MATCHER_RESPONSES,
+    summary="List MusicBrainz match candidates for an album by entity UID",
+)
+def api_match_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_match_album(request, album["artist"], album["name"])
+
+
 @router.post(
     "/api/match/apply",
     response_model=TaskEnqueueResponse,
@@ -55,7 +68,11 @@ def api_match_album_by_id(request: Request, album_id: int):
 )
 def api_match_apply(request: Request, data: MatchApplyRequest):
     _require_admin(request)
-    album = get_library_album_by_id(data.album_id)
+    album = None
+    if data.album_entity_uid:
+        album = get_library_album_by_entity_uid(data.album_entity_uid)
+    if album is None and data.album_id is not None:
+        album = get_library_album_by_id(data.album_id)
     if not album:
         return JSONResponse({"error": "Album not found"}, status_code=404)
 

@@ -11,7 +11,7 @@ from crate.api.schemas.analytics import (
     AnalyticsOverviewResponse,
     StatsResponse,
 )
-from crate.api.schemas.common import SnapshotMetadataResponse, TaskEnqueueResponse
+from crate.api.schemas.common import IdentityFieldsMixin, SnapshotMetadataResponse, TaskEnqueueResponse
 from crate.api.schemas.management import AnalysisStatusResponse
 
 
@@ -170,8 +170,9 @@ class FixIssuesResponse(BaseModel):
     task_id: str | None = None
 
 
-class MatchApplyRequest(BaseModel):
-    album_id: int
+class MatchApplyRequest(IdentityFieldsMixin):
+    album_id: int | None = None
+    album_entity_uid: str | None = None
     release: dict[str, Any]
 
 

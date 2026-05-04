@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Download, Loader2, Check } from "lucide-react";
 import { api } from "@/lib/api";
+import { tidalDownloadMissingArtistApiPath } from "@/lib/library-routes";
 import { toast } from "sonner";
 
 interface TidalAlbumCardProps {
   artist: string;
   artistId: number;
+  artistEntityUid?: string;
   title: string;
   year: string;
   tracks: number;
@@ -13,7 +15,7 @@ interface TidalAlbumCardProps {
   url: string;
 }
 
-export function TidalAlbumCard({ artist: _artist, artistId, title, year, tracks, cover, url }: TidalAlbumCardProps) {
+export function TidalAlbumCard({ artist: _artist, artistId, artistEntityUid, title, year, tracks, cover, url }: TidalAlbumCardProps) {
   const [status, setStatus] = useState<"idle" | "downloading" | "queued">("idle");
 
   async function handleDownload(e: React.MouseEvent) {
@@ -21,7 +23,7 @@ export function TidalAlbumCard({ artist: _artist, artistId, title, year, tracks,
     if (status !== "idle") return;
     setStatus("downloading");
     try {
-      await api(`/api/tidal/download-missing/artists/${artistId}`, "POST", {
+      await api(tidalDownloadMissingArtistApiPath({ artistId, artistEntityUid }), "POST", {
         albums: [{ url, title, cover_url: cover }],
       });
       setStatus("queued");

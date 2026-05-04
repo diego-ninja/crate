@@ -6,7 +6,7 @@ import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItem
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
 import { getPlaySourceLabel } from "@/components/player/player-source";
-import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerState, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 
 function QueueTabRow({
@@ -90,7 +90,7 @@ function QueueTabRow({
 }
 
 export function QueueTab() {
-  const { isPlaying } = usePlayer();
+  const { isPlaying } = usePlayerState();
   const { queue, currentIndex, playSource, currentTrack, jumpTo, removeFromQueue } = usePlayerActions();
 
   const history = queue.slice(0, currentIndex).reverse();

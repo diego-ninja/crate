@@ -20,6 +20,9 @@ import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { toTrackReferencePayload } from "@/lib/track-reference";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { buildAlbumPlayerTracks, buildAlbumQualityBadges } from "@/pages/album-model";
@@ -34,7 +37,7 @@ function albumGenreSlug(name: string) {
 
 interface AlbumTrack {
   id: number;
-  storage_id?: string;
+  entity_uid?: string;
   filename: string;
   format: string;
   size_mb: number;
@@ -60,8 +63,10 @@ interface AlbumTrack {
 
 interface AlbumData {
   id: number;
+  entity_uid?: string;
   slug?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist: string;
   name: string;
@@ -109,6 +114,9 @@ export function Album() {
       : routeArtistSlug && routeAlbumSlug
         ? albumApiPath({ artistSlug: routeArtistSlug, albumSlug: routeAlbumSlug })
         : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const { playlistOptions: playlists, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
@@ -152,11 +160,23 @@ export function Album() {
   }
 
   const coverUrl = albumCoverApiUrl(
-    { albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name },
+    {
+      albumId: data.id,
+      albumEntityUid: data.entity_uid,
+      artistEntityUid: data.artist_entity_uid,
+      albumSlug: data.slug,
+      artistName: data.artist,
+      albumName: data.name,
+    },
     { size: 768 },
   );
   const artistPhotoUrl = artistPhotoApiUrl(
-    { artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist },
+    {
+      artistId: data.artist_id,
+      artistEntityUid: data.artist_entity_uid,
+      artistSlug: data.artist_slug,
+      artistName: data.artist,
+    },
     { size: 512 },
   );
   const displayName = data.display_name || data.name;
@@ -298,11 +318,16 @@ export function Album() {
   }
 
   const playlistTracksPayload = albumTracks.map((track) => ({
-    path: track.path,
-    title: track.tags.title || track.filename,
-    artist: artistName,
-    album: displayName,
-    duration: track.length_sec,
+    ...toTrackReferencePayload({
+      id: track.id,
+      entity_uid: track.entity_uid,
+      path: track.path,
+      title: track.tags.title || track.filename,
+      artist: artistName,
+      album: displayName,
+      duration: track.length_sec,
+      library_track_id: track.id,
+    }),
   }));
 
   async function handleAddToPlaylist(playlistId: number) {
@@ -319,14 +344,11 @@ export function Album() {
   async function handleAddTrackToPlaylist(playlistId: number, track: TrackRowData) {
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
-        tracks: [{
-          track_id: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-          path: track.path,
-          title: track.title,
-          artist: track.artist,
+        tracks: [toTrackReferencePayload({
+          ...track,
           album: track.album || displayName,
           duration: track.duration || 0,
-        }],
+        })],
       });
       toast.success(`Added "${track.title}" to playlist`);
     } catch {
@@ -337,13 +359,17 @@ export function Album() {
   function handleCreatePlaylistFromAlbum() {
     openCreatePlaylist({
       name: displayName,
-      tracks: albumTracks.map((track) => ({
+      tracks: albumTracks.map((track) => toPlayableTrack({
+        id: track.id,
+        entity_uid: track.entity_uid,
         title: track.tags.title || track.filename,
         artist: artistName,
+        artist_entity_uid: data?.artist_entity_uid,
         album: displayName,
+        album_entity_uid: data?.entity_uid,
         duration: track.length_sec,
         path: track.path,
-        libraryTrackId: track.id,
+        library_track_id: track.id,
       })),
     });
     setMenuOpen(false);
@@ -352,14 +378,11 @@ export function Album() {
 
   function handleCreatePlaylistFromTrack(track: TrackRowData) {
     openCreatePlaylist({
-      tracks: [{
-        title: track.title,
-        artist: track.artist,
+      tracks: [toPlayableTrack({
+        ...track,
         album: track.album || displayName,
-        duration: track.duration,
-        path: track.path,
-        libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-      }],
+        library_track_id: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
+      })],
     });
   }
 
@@ -380,7 +403,7 @@ export function Album() {
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
       {/* Header */}
       <div className="px-4 sm:px-6 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 5rem)" }}>
-        <div className="flex flex-col sm:flex-row gap-6">
+        <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 sm:flex-row">
           {/* Cover */}
           <div className="flex-shrink-0 w-[200px] sm:w-[240px] lg:w-[280px] mx-auto sm:mx-0">
             <div className="aspect-square rounded-lg overflow-hidden bg-white/5 shadow-2xl">
@@ -450,100 +473,76 @@ export function Album() {
       </div>
 
       {/* Action Row */}
-      <div className="flex items-center gap-2 px-4 sm:px-6 pb-4">
-        <button
-          className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
-          onClick={() => handlePlay()}
-          aria-label="Play"
-        >
-          <Play size={16} fill="currentColor" />
-          Play
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={handleShuffle}
-          aria-label="Shuffle"
-        >
-          <Shuffle size={16} />
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={handleAlbumRadio}
-          aria-label="Album Radio"
-        >
-          <Radio size={16} />
-        </button>
-        <button
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-            offlineState === "ready"
-              ? "border border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
-              : offlineBusy
-                ? "border border-primary/25 bg-primary/10 text-primary"
-                : offlineState === "error"
-                  ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
-                  : "border border-white/15 text-foreground hover:bg-white/5"
-          }`}
-          onClick={handleToggleOffline}
-          disabled={!offlineSupported || offlineBusy}
-          aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
-          title={offlineButtonLabel}
-        >
-          {offlineState === "ready" ? (
-            <CheckCircle2 size={16} />
-          ) : offlineBusy ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : offlineState === "error" ? (
-            <AlertCircle size={16} />
-          ) : (
-            <ArrowDownToLine size={16} />
-          )}
-        </button>
-        <button
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-            saved
-              ? "border border-primary/30 bg-primary/15 text-primary"
-              : "border border-white/15 text-foreground hover:bg-white/5"
-          }`}
-          onClick={handleToggleSaved}
-          aria-label={saved ? "Remove from collection" : "Add to collection"}
-        >
-          <Heart size={16} className={saved ? "fill-current" : ""} />
-        </button>
-        <div className="relative" ref={menuRef}>
+      <div className="px-4 sm:px-6 pb-4">
+        <div className="mx-auto flex w-full max-w-[1480px] items-center gap-2">
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label="More"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+            onClick={() => handlePlay()}
+            aria-label="Play"
           >
-            <MoreHorizontal size={16} />
+            <Play size={16} fill="currentColor" />
+            Play
           </button>
-          {menuOpen && isDesktop && (
-            <AppPopover className="absolute top-full right-0 mt-2 w-72 overflow-hidden rounded-2xl">
-              <AlbumMenuContent
-                data={data}
-                coverUrl={coverUrl}
-                displayName={displayName}
-                saved={saved}
-                playlists={playlists}
-                playlistPickerOpen={playlistPickerOpen}
-                onTogglePlaylistPicker={handleTogglePlaylistPicker}
-                onPlay={() => { handlePlay(); setMenuOpen(false); }}
-                onPlayNext={handlePlayNextAlbum}
-                onCreatePlaylist={handleCreatePlaylistFromAlbum}
-                onAddToPlaylist={handleAddToPlaylist}
-                onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
-                offlineSupported={offlineSupported}
-                offlineState={offlineState}
-                offlineLabel={offlineButtonLabel}
-                onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
-                onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
-                onShare={async () => { await handleShare(); setMenuOpen(false); }}
-              />
-            </AppPopover>
-          )}
-          {menuOpen && !isDesktop && (
-            <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
-              <ModalBody className="pb-4">
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={handleShuffle}
+            aria-label="Shuffle"
+          >
+            <Shuffle size={16} />
+          </button>
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={handleAlbumRadio}
+            aria-label="Album Radio"
+          >
+            <Radio size={16} />
+          </button>
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              offlineState === "ready"
+                ? "border border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+                : offlineBusy
+                  ? "border border-primary/25 bg-primary/10 text-primary"
+                  : offlineState === "error"
+                    ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
+                    : "border border-white/15 text-foreground hover:bg-white/5"
+            }`}
+            onClick={handleToggleOffline}
+            disabled={!offlineSupported || offlineBusy}
+            aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
+            title={offlineButtonLabel}
+          >
+            {offlineState === "ready" ? (
+              <CheckCircle2 size={16} />
+            ) : offlineBusy ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : offlineState === "error" ? (
+              <AlertCircle size={16} />
+            ) : (
+              <ArrowDownToLine size={16} />
+            )}
+          </button>
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              saved
+                ? "border border-primary/30 bg-primary/15 text-primary"
+                : "border border-white/15 text-foreground hover:bg-white/5"
+            }`}
+            onClick={handleToggleSaved}
+            aria-label={saved ? "Remove from collection" : "Add to collection"}
+          >
+            <Heart size={16} className={saved ? "fill-current" : ""} />
+          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label="More"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {menuOpen && isDesktop && (
+              <AppPopover className="absolute top-full right-0 mt-2 w-72 overflow-hidden rounded-2xl">
                 <AlbumMenuContent
                   data={data}
                   coverUrl={coverUrl}
@@ -564,22 +563,50 @@ export function Album() {
                   onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
                   onShare={async () => { await handleShare(); setMenuOpen(false); }}
                 />
-              </ModalBody>
-            </AppModal>
-          )}
+              </AppPopover>
+            )}
+            {menuOpen && !isDesktop && (
+              <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
+                <ModalBody className="pb-4">
+                  <AlbumMenuContent
+                    data={data}
+                    coverUrl={coverUrl}
+                    displayName={displayName}
+                    saved={saved}
+                    playlists={playlists}
+                    playlistPickerOpen={playlistPickerOpen}
+                    onTogglePlaylistPicker={handleTogglePlaylistPicker}
+                    onPlay={() => { handlePlay(); setMenuOpen(false); }}
+                    onPlayNext={handlePlayNextAlbum}
+                    onCreatePlaylist={handleCreatePlaylistFromAlbum}
+                    onAddToPlaylist={handleAddToPlaylist}
+                    onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                    offlineSupported={offlineSupported}
+                    offlineState={offlineState}
+                    offlineLabel={offlineButtonLabel}
+                    onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
+                    onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
+                    onShare={async () => { await handleShare(); setMenuOpen(false); }}
+                  />
+                </ModalBody>
+              </AppModal>
+            )}
+          </div>
         </div>
       </div>
 
       {offlineStatusDetail ? (
         <div className="px-4 sm:px-6 pb-4">
-          <p className="text-xs text-muted-foreground">
-            {offlineStatusDetail}
-          </p>
+          <div className="mx-auto w-full max-w-[1480px]">
+            <p className="text-xs text-muted-foreground">
+              {offlineStatusDetail}
+            </p>
+          </div>
         </div>
       ) : null}
 
       {/* Track List */}
-      <div className="px-4 sm:px-6 pb-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 sm:px-6 pb-8">
         {hasMultipleDiscs ? (
           [...tracksByDisc.entries()]
             .sort(([a], [b]) => a - b)
@@ -592,16 +619,18 @@ export function Album() {
                 {tracks.map((t, idx) => (
                   <TrackRow
                     key={t.id}
-                    track={{
-                      id: String(t.id),
+                    track={toTrackRowData({
+                      id: t.id,
+                      entity_uid: t.entity_uid,
                       title: t.tags.title || t.filename,
                       artist: data.artist,
                       artist_id: data.artist_id,
+                      artist_entity_uid: data.artist_entity_uid,
                       artist_slug: data.artist_slug,
                       album: displayName,
                       album_id: data.id,
+                      album_entity_uid: data.entity_uid,
                       album_slug: data.slug,
-                      storage_id: t.storage_id,
                       duration: t.length_sec,
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
@@ -610,7 +639,7 @@ export function Album() {
                       sample_rate: t.sample_rate,
                       bit_depth: t.bit_depth,
                       library_track_id: t.id,
-                    }}
+                    })}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
                     albumCover={coverUrl}
                     playlistOptions={playlists ?? undefined}
@@ -626,17 +655,19 @@ export function Album() {
           data.tracks.map((t, idx) => (
             <TrackRow
               key={t.id}
-                track={{
-                  id: String(t.id),
-                  title: t.tags.title || t.filename,
-                  artist: data.artist,
-                  artist_id: data.artist_id,
-                  artist_slug: data.artist_slug,
-                  album: displayName,
-                  album_id: data.id,
-                  album_slug: data.slug,
-                  storage_id: t.storage_id,
-                  duration: t.length_sec,
+              track={toTrackRowData({
+                id: t.id,
+                entity_uid: t.entity_uid,
+                title: t.tags.title || t.filename,
+                artist: data.artist,
+                artist_id: data.artist_id,
+                artist_entity_uid: data.artist_entity_uid,
+                artist_slug: data.artist_slug,
+                album: displayName,
+                album_id: data.id,
+                album_entity_uid: data.entity_uid,
+                album_slug: data.slug,
+                duration: t.length_sec,
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
@@ -644,7 +675,7 @@ export function Album() {
                 sample_rate: t.sample_rate,
                 bit_depth: t.bit_depth,
                 library_track_id: t.id,
-              }}
+              })}
               index={parseInt(t.tags.tracknumber) || idx + 1}
               albumCover={coverUrl}
               playlistOptions={playlists ?? undefined}

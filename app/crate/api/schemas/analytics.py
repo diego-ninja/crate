@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
+from crate.api.schemas.common import IdentityFieldsMixin
+
 
 class AnalyticsTopArtistResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -106,6 +108,7 @@ class WorkerPoolBreakdownResponse(BaseModel):
     fast: int = 0
     default: int = 0
     heavy: int = 0
+    playback: int = 0
 
 
 class WorkerQueueBreakdownResponse(BaseModel):
@@ -135,13 +138,15 @@ class ActivityLiveResponse(BaseModel):
     systems: ActivitySystemsResponse
 
 
-class TimelineAlbumResponse(BaseModel):
+class TimelineAlbumResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
+    entity_uid: str | None = None
     slug: str | None = None
     artist: str
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str
     tracks: int

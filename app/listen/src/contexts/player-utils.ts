@@ -1,6 +1,8 @@
 import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 import { getApiBase, getAuthToken } from "@/lib/api";
+import { trackStreamApiPath } from "@/lib/library-routes";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
+import { getPlaybackDeliveryPolicyPreference } from "@/lib/player-playback-prefs";
 
 export const STORAGE_KEY = "listen-player-state";
 export const RECENTLY_PLAYED_KEY = "listen-recently-played";
@@ -104,39 +106,36 @@ export function saveRecentlyPlayed(tracks: Track[]) {
 }
 
 export function getStreamUrl(track: Track): string {
-  if (track.storageId) {
-    const localOfflineUrl = getOfflineNativePlaybackUrl(track.storageId);
+  if (track.entityUid || track.path) {
+    const localOfflineUrl = getOfflineNativePlaybackUrl(
+      track.entityUid ? { entityUid: track.entityUid } : (track.path ?? null),
+    );
     if (localOfflineUrl) return localOfflineUrl;
   }
 
   const base = _apiBase();
-  const suffix = _tokenSuffix();
-
-  if (track.storageId) {
-    return `${base}/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/stream${suffix}`;
-  }
-
-  if (track.libraryTrackId != null) {
-    return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
-  }
-
-  const playbackPath = track.path || track.id;
-  if (playbackPath.includes("/")) {
-    return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}${suffix}`;
-  }
-
-  return `${base}/api/tracks/${track.id}/stream${suffix}`;
+  const path = trackStreamApiPath(track);
+  const streamPath = path || `/api/tracks/${track.id}/stream`;
+  return withStreamQuery(`${base}${streamPath}`);
 }
 
-/** Append ?token= for auth. Gapless-5 creates its own Audio elements
- *  that don't inherit browser cookies, so always include token. */
-function _tokenSuffix(): string {
+/** Append playback-delivery policy and auth token. Gapless-5 creates
+ *  its own Audio elements that don't inherit browser cookies, so always
+ *  include token when present. */
+function withStreamQuery(url: string): string {
+  const params = new URLSearchParams();
+  const delivery = getPlaybackDeliveryPolicyPreference();
+  if (delivery !== "original") {
+    params.set("delivery", delivery);
+  }
   try {
     const token = getAuthToken();
-    return token ? `?token=${encodeURIComponent(token)}` : "";
+    if (token) params.set("token", token);
   } catch {
-    return "";
+    // ignore token lookup failures
   }
+  const query = params.toString();
+  return query ? `${url}${url.includes("?") ? "&" : "?"}${query}` : url;
 }
 
 /** Lazy-read API base so server switches in native builds take effect immediately. */
@@ -145,7 +144,12 @@ function _apiBase(): string {
 }
 
 export function getTrackCacheKey(track: Track): string {
-  return [track.libraryTrackId ?? "", track.storageId ?? "", track.path ?? "", track.id].join("::");
+  return [
+    track.libraryTrackId ?? "",
+    track.entityUid ?? "",
+    track.path ?? "",
+    track.id,
+  ].join("::");
 }
 
 export function areTracksFromSameAlbum(currentTrack: Track | undefined, nextTrack: Track | null | undefined): boolean {

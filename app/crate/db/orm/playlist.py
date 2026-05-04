@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, Text
+import uuid
+
+from sqlalchemy import UUID, Boolean, DateTime, Float, ForeignKey, Integer, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from crate.db.engine import Base
@@ -46,6 +48,8 @@ class PlaylistTrack(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     playlist_id: Mapped[int] = mapped_column(Integer, ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False)
     track_id: Mapped[Optional[int]] = mapped_column(Integer)
+    track_entity_uid: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    track_storage_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     track_path: Mapped[Optional[str]] = mapped_column(Text)
     title: Mapped[Optional[str]] = mapped_column(Text)
     artist: Mapped[Optional[str]] = mapped_column(Text)

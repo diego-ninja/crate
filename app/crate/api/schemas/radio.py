@@ -2,12 +2,14 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from crate.api.schemas.common import IdentityFieldsMixin
 
-class RadioTrack(BaseModel):
+
+class RadioTrack(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     path: str | None = None
     title: str | None = None
@@ -17,13 +19,13 @@ class RadioTrack(BaseModel):
     score: float | None = None
 
 
-class RadioSeed(BaseModel):
+class RadioSeed(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     artist_id: int | None = None
     artist_name: str | None = None
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str | None = None
     artist: str | None = None

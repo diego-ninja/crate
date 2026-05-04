@@ -3,6 +3,7 @@ import { Input } from "@crate/ui/shadcn/input";
 import { Button } from "@crate/ui/shadcn/button";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { api } from "@/lib/api";
+import { albumActionApiPath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -16,6 +17,7 @@ interface Track {
 
 interface TagEditorProps {
   albumId: number;
+  albumEntityUid?: string;
   tags: {
     artist?: string;
     album?: string;
@@ -26,7 +28,7 @@ interface TagEditorProps {
   onSaved?: () => void;
 }
 
-export function TagEditor({ albumId, tags, tracks, onSaved }: TagEditorProps) {
+export function TagEditor({ albumId, albumEntityUid, tags, tracks, onSaved }: TagEditorProps) {
   const [values, setValues] = useState({
     artist: tags.artist || "",
     albumartist: tags.artist || "",
@@ -78,7 +80,7 @@ export function TagEditor({ albumId, tags, tracks, onSaved }: TagEditorProps) {
         body.tracks = trackEdits;
       }
       const { task_id } = await api<{ task_id: string }>(
-        `/api/albums/${albumId}/tags`,
+        albumActionApiPath({ albumId, albumEntityUid }, "tags"),
         "PUT",
         body,
       );

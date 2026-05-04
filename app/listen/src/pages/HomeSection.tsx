@@ -26,31 +26,24 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { fetchAlbumRadio, fetchArtistRadio, fetchHomePlaylistRadio } from "@/lib/radio";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { shuffleArray } from "@/lib/utils";
 
 function toPlayerTrack(item: HomeRecommendedTrack): Track {
-  return {
-    id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-    storageId: item.track_storage_id || undefined,
-    title: item.title,
-    artist: item.artist,
-    artistId: item.artist_id || undefined,
-    artistSlug: item.artist_slug || undefined,
-    album: item.album || undefined,
-    albumId: item.album_id || undefined,
-    albumSlug: item.album_slug || undefined,
-    albumCover:
+  return toPlayableTrack(item, {
+    cover:
       item.artist && item.album
         ? albumCoverApiUrl({
             albumId: item.album_id || undefined,
+            albumEntityUid: item.album_entity_uid || undefined,
+            artistEntityUid: item.artist_entity_uid || undefined,
             albumSlug: item.album_slug || undefined,
             artistName: item.artist,
             albumName: item.album,
           }) || undefined
         : undefined,
-    path: item.track_path || undefined,
-    libraryTrackId: item.track_id || undefined,
-  };
+  });
 }
 
 function homePlaylistPath(playlistId: string): string {
@@ -63,27 +56,15 @@ export function HomeSection() {
   const { sectionId } = useParams<{ sectionId: HomeSectionId }>();
   const { data, loading } = useApi<HomeSectionDetailPayload>(
     sectionId ? `/api/me/home/sections/${sectionId}?limit=42` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
 
   const recommendedTracks = useMemo(
     () =>
       data?.id === "recommended-tracks"
-        ? data.items.map(
-            (item): TrackRowData => ({
-              id: item.track_id ?? item.track_storage_id ?? item.track_path ?? item.title,
-              storage_id: item.track_storage_id ?? undefined,
-              title: item.title,
-              artist: item.artist,
-              artist_id: item.artist_id ?? undefined,
-              artist_slug: item.artist_slug ?? undefined,
-              album: item.album ?? undefined,
-              album_id: item.album_id ?? undefined,
-              album_slug: item.album_slug ?? undefined,
-              path: item.track_path ?? undefined,
-              duration: item.duration ?? undefined,
-              library_track_id: item.track_id ?? undefined,
-            }),
-          )
+        ? data.items.map((item): TrackRowData => toTrackRowData(item))
         : [],
     [data],
   );
@@ -239,6 +220,8 @@ export function HomeSection() {
               artist={album.artist_name}
               album={album.album_name}
               albumId={album.album_id}
+              albumEntityUid={album.album_entity_uid}
+              artistEntityUid={album.artist_entity_uid}
               albumSlug={album.album_slug}
               year={album.year}
               layout="grid"
@@ -251,7 +234,7 @@ export function HomeSection() {
         <div className="space-y-2">
           {recommendedTracks.map((track, index) => (
             <TrackRow
-              key={track.library_track_id ?? track.storage_id ?? `${track.path}-${index}`}
+              key={track.id ?? `${track.path}-${index}`}
               track={track}
               showArtist
               showAlbum
@@ -282,6 +265,7 @@ export function HomeSection() {
               key={artist.artist_id ?? artist.artist_name}
               name={artist.artist_name}
               artistId={artist.artist_id}
+              artistEntityUid={artist.artist_entity_uid}
               artistSlug={artist.artist_slug}
               subtitle={`${artist.play_count} plays`}
               layout="grid"

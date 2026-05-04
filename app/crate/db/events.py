@@ -28,11 +28,11 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
     _publish_to_redis(task_id, event_type, safe_data, now)
 
     # Mirror significant events to worker_logs for the Logs page
-    if event_type in ("info", "warn", "error", "item"):
+    if event_type in ("info", "warn", "warning", "error", "item"):
         try:
             from crate.db.worker_logs import insert_log
             message = safe_data.get("message") or safe_data.get("label") or event_type
-            level = safe_data.get("level", event_type if event_type in ("warn", "error") else "info")
+            level = safe_data.get("level", event_type if event_type in ("warn", "warning", "error") else "info")
             insert_log(
                 level=level,
                 message=str(message),

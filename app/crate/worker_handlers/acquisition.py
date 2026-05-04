@@ -30,8 +30,7 @@ from crate.db.repositories.tasks import create_task, create_task_dedup
 from crate.db.tidal import get_tidal_download, update_tidal_download
 from crate.db.repositories.user_library import follow_artist, like_track, save_album
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
-from crate.storage_import import resolve_import_album_target
-from crate.storage_layout import resolve_artist_dir
+from crate.storage_import import resolve_import_album_target, resolve_managed_track_destination
 from crate.worker_handlers import TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
@@ -670,7 +669,14 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         update_tidal_download(download_id, status="downloading", task_id=task_id)
 
     try:
-        return _tidal_download_inner(task_id, params, config, url, quality, download_id, lib)
+        result = _tidal_download_inner(task_id, params, config, url, quality, download_id, lib)
+        if isinstance(result, dict) and result.get("error"):
+            error_message = str(result.get("error") or "Tidal download failed")
+            phase = str(result.get("phase") or "").strip()
+            if phase:
+                error_message = f"{error_message} (phase: {phase})"
+            raise RuntimeError(error_message)
+        return result
     except Exception as exc:
         if download_id:
             try:
@@ -1149,7 +1155,13 @@ def _move_soulseek_completed_files(
 
         if found:
             dest = (
-                target_dir / f"{uuid.uuid4()}{found.suffix.lower()}"
+                resolve_managed_track_destination(
+                    found,
+                    target_dir,
+                    artist_name=artist,
+                    album_name=clean_album,
+                    album_entity_uid=target_dir.name,
+                )
                 if managed_track_names
                 else target_dir / found.name
             )
@@ -1440,35 +1452,48 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
         p_upload.item = entity_label(artist=artist, album=album)
         emit_progress(task_id, p_upload)
 
-    modified_artists = sorted({item["artist"] for item in imported_albums if item.get("artist")})
-    lib = Path(config["library_path"])
     sync = LibrarySync(config)
+    imported_album_targets = [item for item in imported_albums if item.get("artist") and item.get("dest")]
+    modified_artists = sorted({item["artist"] for item in imported_album_targets})
+    completed_albums: list[dict[str, object]] = []
 
     emit_task_event(task_id, "info", {"message": "Syncing imported music to library", "artists": modified_artists})
     p_upload.phase = "syncing"
     p_upload.phase_index = 2
     p_upload.done = 0
-    p_upload.total = len(modified_artists)
+    p_upload.total = len(imported_album_targets)
     emit_progress(task_id, p_upload, force=True)
-    for artist in modified_artists:
-        artist_row = get_library_artist(artist)
-        found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
-        if found_dir and found_dir.is_dir():
-            try:
-                sync.sync_artist(found_dir)
-            except Exception:
-                log.warning("Sync failed for uploaded artist %s", artist, exc_info=True)
+    for index, imported_album in enumerate(imported_album_targets, start=1):
+        artist = str(imported_album.get("artist") or "").strip()
+        album = str(imported_album.get("album") or "").strip()
+        album_dir = Path(str(imported_album.get("dest") or ""))
+        p_upload.done = index
+        p_upload.item = entity_label(artist=artist, album=album)
+        emit_progress(task_id, p_upload)
+        if not artist or not album_dir.is_dir():
+            continue
+        try:
+            sync.sync_album(album_dir, artist)
+            completed_albums.append(
+                {
+                    "artist": artist,
+                    "album": album,
+                    "path": str(album_dir),
+                    "moved": len(get_audio_files(album_dir, list(extensions))),
+                }
+            )
+        except Exception:
+            log.warning("Sync failed for uploaded album %s / %s", artist, album, exc_info=True)
 
     _seed_uploaded_library(uploader_user_id, imported_albums)
 
-    from crate.content import queue_process_new_content_if_needed
-    for artist in modified_artists:
-        try:
-            queue_process_new_content_if_needed(
-                artist, library_path=config.get("library_path"), force=True
-            )
-        except Exception:
-            log.debug("Failed to queue process_new_content for uploaded artist %s", artist, exc_info=True)
+    if completed_albums:
+        _emit_acquisition_completed_for_albums(
+            task_id=task_id,
+            source="upload",
+            entity_type="album",
+            moved_albums=completed_albums,
+        )
 
     try:
 

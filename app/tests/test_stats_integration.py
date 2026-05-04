@@ -138,10 +138,14 @@ class TestRecordPlayEvent:
                           album_id=data["album_jd"]),
         )
         with db.get_db_ctx() as cur:
-            cur.execute("SELECT was_skipped, was_completed FROM user_play_events WHERE id = %s", (event_id,))
+            cur.execute(
+                "SELECT was_skipped, was_completed, track_entity_uid::text AS track_entity_uid FROM user_play_events WHERE id = %s",
+                (event_id,),
+            )
             row = cur.fetchone()
         assert row["was_skipped"] is True
         assert row["was_completed"] is False
+        assert row["track_entity_uid"] == data["concubine"]["entity_uid"]
 
 
 class TestAggregatesAndOverview:

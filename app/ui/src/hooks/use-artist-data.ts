@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { artistActionApiPath } from "@/lib/library-routes";
 
 interface EnrichmentData {
   lastfm?: {
@@ -79,35 +80,37 @@ interface TopTrack {
   listeners?: number;
 }
 
-export function useArtistEnrichment(artistId: number | undefined) {
+export function useArtistEnrichment(artistId: number | undefined, artistEntityUid?: string) {
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (artistId == null) return;
+    const endpoint = artistActionApiPath({ artistId, artistEntityUid }, "enrichment");
+    if (!endpoint) return;
     let cancelled = false;
     setLoading(true);
-    api<EnrichmentData>(`/api/artists/${artistId}/enrichment`)
+    api<EnrichmentData>(endpoint)
       .then((d) => { if (!cancelled) setEnrichment(d); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [artistId]);
+  }, [artistEntityUid, artistId]);
 
   return { enrichment, loading };
 }
 
-export function useTopTracks(artistId: number | undefined) {
+export function useTopTracks(artistId: number | undefined, artistEntityUid?: string) {
   const [tracks, setTracks] = useState<TopTrack[]>([]);
 
   useEffect(() => {
-    if (artistId == null) return;
+    const endpoint = artistActionApiPath({ artistId, artistEntityUid }, "top-tracks?count=10");
+    if (!endpoint) return;
     let cancelled = false;
-    api<TopTrack[]>(`/api/artists/${artistId}/top-tracks?count=10`)
+    api<TopTrack[]>(endpoint)
       .then((d) => { if (!cancelled && Array.isArray(d)) setTracks(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [artistId]);
+  }, [artistEntityUid, artistId]);
 
   return tracks;
 }

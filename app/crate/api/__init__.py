@@ -181,6 +181,7 @@ def create_app() -> FastAPI:
     from crate.api.subsonic import router as subsonic_router
     from crate.api.paths import router as paths_router
     from crate.api.admin_ops import router as admin_ops_router
+    from crate.api.playback_admin import router as playback_admin_router
 
     # Auth + management + settings + enrichment BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
     app.include_router(paths_router)
     app.include_router(tasks_router)
     app.include_router(stack_router)
+    app.include_router(playback_admin_router)
     from crate.api.admin_metrics import router as admin_metrics_router
     app.include_router(admin_ops_router)
     app.include_router(admin_metrics_router)

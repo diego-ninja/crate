@@ -24,6 +24,31 @@ def create_schema(cur):
     create_core_schema(cur)
     create_auth_schema(cur)
     create_library_schema(cur)
+    cur.execute(
+        """
+        DELETE FROM stream_variants sv
+        WHERE sv.track_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM library_tracks lt WHERE lt.id = sv.track_id
+          )
+        """
+    )
+    cur.execute(
+        """
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'fk_stream_variants_track'
+                  AND conrelid = 'stream_variants'::regclass
+            ) THEN
+                ALTER TABLE stream_variants
+                ADD CONSTRAINT fk_stream_variants_track
+                FOREIGN KEY (track_id) REFERENCES library_tracks(id) ON DELETE CASCADE;
+            END IF;
+        END $$;
+        """
+    )
     create_acquisition_schema(cur)
     create_curation_schema(cur)
     create_activity_schema(cur)

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -46,34 +46,32 @@ import { api, apiSseUrl } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchAlbumRadio, fetchArtistRadio, fetchHomePlaylistRadio } from "@/lib/radio";
 import { albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import {
+  getSseChannelState,
+  markSseChannelClosed,
+  markSseChannelError,
+  markSseChannelEvent,
+  markSseChannelOpen,
+  onSseChannelState,
+} from "@/lib/sse";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { shuffleArray } from "@/lib/utils";
 
 function toPlayerTrack(item: HomeRecommendedTrack): Track {
-  return {
-    id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-    storageId: item.track_storage_id || undefined,
-    title: item.title,
-    artist: item.artist,
-    artistId: item.artist_id || undefined,
-    artistSlug: item.artist_slug || undefined,
-    album: item.album || undefined,
-    albumId: item.album_id || undefined,
-    albumSlug: item.album_slug || undefined,
-    albumCover: item.artist && item.album
-      ? albumCoverApiUrl({
-          albumId: item.album_id,
-          albumSlug: item.album_slug,
-          artistName: item.artist,
-          albumName: item.album,
-        }) || undefined
-      : undefined,
-    path: item.track_path || undefined,
-    libraryTrackId: item.track_id || undefined,
-    format: item.format || undefined,
-    bitrate: item.bitrate,
-    sampleRate: item.sample_rate,
-    bitDepth: item.bit_depth,
-  };
+  return toPlayableTrack(item, {
+    cover:
+      item.artist && item.album
+        ? albumCoverApiUrl({
+            albumId: item.album_id,
+            albumEntityUid: item.album_entity_uid,
+            artistEntityUid: item.artist_entity_uid,
+            albumSlug: item.album_slug,
+            artistName: item.artist,
+            albumName: item.album,
+          }) || undefined
+        : undefined,
+  });
 }
 
 function homePlaylistPath(playlistId: string): string {
@@ -84,6 +82,14 @@ function homeSectionPath(sectionId: HomeSectionId): string {
   return `/home/section/${sectionId}`;
 }
 
+function snapshotVersion(payload: HomeDiscoveryPayload | null | undefined): number {
+  return Number(payload?.snapshot?.version || 0);
+}
+
+const HOME_DISCOVERY_SSE_CHANNEL = "home-discovery";
+const HOME_DISCOVERY_DEGRADE_AFTER_MS = 75_000;
+const HOME_DISCOVERY_DEGRADED_REFRESH_MS = 60_000;
+
 export function Home() {
   const navigate = useNavigate();
   const { play, playAll } = usePlayerActions();
@@ -92,29 +98,106 @@ export function Home() {
   const { data: discovery, refetch: refetchDiscovery } =
     useApi<HomeDiscoveryPayload>("/api/me/home/discovery", "GET", undefined, { reactive: false });
   const [liveDiscovery, setLiveDiscovery] = useState<HomeDiscoveryPayload | null>(null);
+  const refreshingLiveDiscoveryRef = useRef(false);
+  const lastDegradedRefreshAtRef = useRef(0);
+
+  const applyDiscoveryPayload = useCallback((next: HomeDiscoveryPayload | null) => {
+    if (!next) return;
+    startTransition(() => {
+      setLiveDiscovery((current) => (
+        snapshotVersion(next) >= snapshotVersion(current) ? next : current
+      ));
+    });
+  }, []);
 
   useEffect(() => {
     if (discovery) {
-      startTransition(() => {
-        setLiveDiscovery(discovery);
-      });
+      applyDiscoveryPayload(discovery);
     }
-  }, [discovery]);
+  }, [applyDiscoveryPayload, discovery]);
+
+  const refreshLiveDiscovery = useCallback(async (fresh = false) => {
+    if (refreshingLiveDiscoveryRef.current) return;
+    if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
+    refreshingLiveDiscoveryRef.current = true;
+    try {
+      const payload = await api<HomeDiscoveryPayload>(
+        fresh ? "/api/me/home/discovery?fresh=1" : "/api/me/home/discovery",
+      );
+      applyDiscoveryPayload(payload);
+    } catch {
+      // Keep the last good snapshot; the stream may still recover on its own.
+    } finally {
+      refreshingLiveDiscoveryRef.current = false;
+    }
+  }, [applyDiscoveryPayload]);
 
   useEffect(() => {
     const source = new EventSource(apiSseUrl("/api/me/home/discovery-stream?initial=0"));
+    source.onopen = () => {
+      const { reconnected } = markSseChannelOpen(HOME_DISCOVERY_SSE_CHANNEL, {
+        degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
+      });
+      if (reconnected) {
+        void refreshLiveDiscovery(true);
+      }
+    };
     source.onmessage = (event) => {
+      markSseChannelEvent(HOME_DISCOVERY_SSE_CHANNEL, {
+        degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
+      });
       try {
         const next = JSON.parse(event.data) as HomeDiscoveryPayload;
-        startTransition(() => {
-          setLiveDiscovery(next);
-        });
+        applyDiscoveryPayload(next);
       } catch {
         // Ignore malformed snapshots and keep the last good payload.
       }
     };
-    return () => source.close();
-  }, []);
+    source.addEventListener("heartbeat", () => {
+      markSseChannelEvent(HOME_DISCOVERY_SSE_CHANNEL, {
+        degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
+      });
+    });
+    source.onerror = () => {
+      markSseChannelError(HOME_DISCOVERY_SSE_CHANNEL, {
+        degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
+      });
+    };
+    return () => {
+      markSseChannelClosed(HOME_DISCOVERY_SSE_CHANNEL, {
+        degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
+      });
+      source.close();
+    };
+  }, [applyDiscoveryPayload, refreshLiveDiscovery]);
+
+  useEffect(() => {
+    return onSseChannelState(HOME_DISCOVERY_SSE_CHANNEL, (state) => {
+      if (!state.degraded) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
+      const now = Date.now();
+      if (now - lastDegradedRefreshAtRef.current < HOME_DISCOVERY_DEGRADED_REFRESH_MS) return;
+      lastDegradedRefreshAtRef.current = now;
+      void refreshLiveDiscovery(true);
+    });
+  }, [refreshLiveDiscovery]);
+
+  useEffect(() => {
+    const maybeRecoverFromDegradedStream = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
+      const state = getSseChannelState(HOME_DISCOVERY_SSE_CHANNEL);
+      if (!state?.degraded) return;
+      void refreshLiveDiscovery(true);
+    };
+    window.addEventListener("online", maybeRecoverFromDegradedStream);
+    document.addEventListener("visibilitychange", maybeRecoverFromDegradedStream);
+    return () => {
+      window.removeEventListener("online", maybeRecoverFromDegradedStream);
+      document.removeEventListener("visibilitychange", maybeRecoverFromDegradedStream);
+    };
+  }, [refreshLiveDiscovery]);
 
   const currentDiscovery = liveDiscovery ?? discovery;
   // Normalize: backend now returns array, old cache may still return single object
@@ -126,8 +209,9 @@ export function Home() {
   const globalArtistsLoading = !currentDiscovery;
 
   const onRefresh = useCallback(async () => {
+    await refreshLiveDiscovery(true);
     refetchDiscovery();
-  }, [refetchDiscovery]);
+  }, [refetchDiscovery, refreshLiveDiscovery]);
 
   const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
 
@@ -140,20 +224,7 @@ export function Home() {
 
   const recommendedTracks = useMemo(
     () =>
-      (currentDiscovery?.recommended_tracks || []).map((item) => ({
-        id: item.track_id ?? item.track_storage_id ?? item.track_path ?? item.title,
-        storage_id: item.track_storage_id ?? undefined,
-        title: item.title,
-        artist: item.artist,
-        artist_id: item.artist_id ?? undefined,
-        artist_slug: item.artist_slug ?? undefined,
-        album: item.album ?? undefined,
-        album_id: item.album_id ?? undefined,
-        album_slug: item.album_slug ?? undefined,
-        path: item.track_path ?? undefined,
-        duration: item.duration ?? undefined,
-        library_track_id: item.track_id ?? undefined,
-      })),
+      (currentDiscovery?.recommended_tracks || []).map((item) => toTrackRowData(item)),
     [currentDiscovery?.recommended_tracks],
   );
 
@@ -313,22 +384,21 @@ export function Home() {
 
   function playReplayMix() {
     if (!replay?.items?.length) return;
-    const queue: Track[] = replay.items.map((item) => ({
-      id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-      storageId: item.track_storage_id || undefined,
-      title: item.title,
-      artist: item.artist,
-      album: item.album,
-      path: item.track_path || undefined,
-      libraryTrackId: item.track_id || undefined,
-      albumCover: item.artist && item.album
-        ? albumCoverApiUrl({ albumId: item.album_id, albumSlug: item.album_slug, artistName: item.artist, albumName: item.album })
-        : undefined,
-      artistId: item.artist_id || undefined,
-      artistSlug: item.artist_slug || undefined,
-      albumId: item.album_id || undefined,
-      albumSlug: item.album_slug || undefined,
-    }));
+    const queue: Track[] = replay.items.map((item) =>
+      toPlayableTrack(item, {
+        cover:
+          item.artist && item.album
+            ? albumCoverApiUrl({
+                albumId: item.album_id,
+                albumEntityUid: item.album_entity_uid,
+                artistEntityUid: item.artist_entity_uid,
+                albumSlug: item.album_slug,
+                artistName: item.artist,
+                albumName: item.album,
+              })
+            : undefined,
+      }),
+    );
     playAll(queue, 0, { type: "playlist", name: replay.title });
   }
 

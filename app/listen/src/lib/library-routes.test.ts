@@ -16,6 +16,13 @@ import {
   artistTopTracksPath,
   isReservedArtistChildSlug,
   recordAssetInvalidationScope,
+  trackDownloadApiPath,
+  trackEqFeaturesApiPath,
+  trackGenreApiPath,
+  trackInfoApiPath,
+  trackPlaybackApiPath,
+  trackOfflineManifestApiPath,
+  trackStreamApiPath,
 } from "@/lib/library-routes";
 
 describe("library route asset helpers", () => {
@@ -35,6 +42,12 @@ describe("library route asset helpers", () => {
     const url = artistPhotoApiUrl({ artistId: 9 }, { size: 128 });
 
     expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&token=listen-token");
+  });
+
+  it("falls back to entity UID artist assets when numeric ids are unavailable", () => {
+    const url = artistPhotoApiUrl({ artistEntityUid: "artist-entity-9" }, { size: 128 });
+
+    expect(url).toBe("https://api.example.test/api/artists/by-entity/artist-entity-9/photo?size=128&token=listen-token");
   });
 
   it("adds a cache-busting artist asset version after invalidation", () => {
@@ -98,5 +111,44 @@ describe("library route asset helpers", () => {
     });
 
     expect(path).toBe("/api/artist-slugs/quicksand/albums/slip");
+  });
+
+  it("falls back to entity UID album APIs and artwork when slugs and numeric ids are unavailable", () => {
+    const path = albumApiPath({ albumEntityUid: "album-entity-42" });
+    const cover = albumCoverApiUrl({ albumEntityUid: "album-entity-42" }, { size: 256 });
+
+    expect(path).toBe("/api/albums/by-entity/album-entity-42");
+    expect(cover).toBe("https://api.example.test/api/albums/by-entity/album-entity-42/cover?size=256&token=listen-token");
+  });
+
+  it("builds canonical track routes preferring entity_uid", () => {
+    expect(trackInfoApiPath({ entityUid: "track-entity-1", libraryTrackId: 12 })).toBe(
+      "/api/tracks/by-entity/track-entity-1/info",
+    );
+    expect(trackPlaybackApiPath({ entityUid: "track-entity-1", libraryTrackId: 12 })).toBe(
+      "/api/tracks/by-entity/track-entity-1/playback",
+    );
+    expect(trackEqFeaturesApiPath({ entityUid: "track-entity-1" })).toBe(
+      "/api/tracks/by-entity/track-entity-1/eq-features",
+    );
+    expect(trackGenreApiPath({ entityUid: "track-entity-1" })).toBe(
+      "/api/tracks/by-entity/track-entity-1/genre",
+    );
+    expect(trackStreamApiPath({ entityUid: "track-entity-1" })).toBe(
+      "/api/tracks/by-entity/track-entity-1/stream",
+    );
+    expect(trackDownloadApiPath({ entityUid: "track-entity-1" })).toBe(
+      "/api/tracks/by-entity/track-entity-1/download",
+    );
+    expect(trackOfflineManifestApiPath({ entityUid: "track-entity-1" })).toBe(
+      "/api/offline/tracks/by-entity/track-entity-1/manifest",
+    );
+  });
+
+  it("falls back to id/path routes only when canonical identity is missing", () => {
+    expect(trackInfoApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/info");
+    expect(trackPlaybackApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/playback");
+    expect(trackStreamApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/stream");
+    expect(trackDownloadApiPath({ path: "Artist/Album/Track.flac" })).toBe("/api/download/track/Artist/Album/Track.flac");
   });
 });

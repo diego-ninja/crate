@@ -105,6 +105,59 @@ class TestSetlistfmProbableSetlist:
             assert result is None
 
 
+class TestArtistPageEnrichment:
+    def test_artist_page_enrichment_uses_cached_setlist_when_available(self):
+        with patch("crate.api.enrichment.get_cache", return_value=None), \
+             patch("crate.api.enrichment.setlistfm.get_cached_probable_setlist", return_value=[{"title": "Creep"}]), \
+             patch("crate.api.enrichment.setlistfm.get_probable_setlist") as mock_live:
+            from crate.api.enrichment import get_artist_page_enrichment
+
+            result = get_artist_page_enrichment("Radiohead")
+
+        assert result == {"setlist": {"probable_setlist": [{"title": "Creep"}], "total_shows": 1}}
+        mock_live.assert_not_called()
+
+    def test_artist_page_enrichment_falls_back_to_live_setlist_when_cache_misses(self):
+        with patch("crate.api.enrichment.get_cache", return_value=None), \
+             patch("crate.api.enrichment.setlistfm.get_cached_probable_setlist", return_value=None), \
+             patch("crate.api.enrichment.setlistfm.get_probable_setlist", return_value=[{"title": "Paranoid Android"}]) as mock_live:
+            from crate.api.enrichment import get_artist_page_enrichment
+
+            result = get_artist_page_enrichment("Radiohead")
+
+        assert result == {
+            "setlist": {
+                "probable_setlist": [{"title": "Paranoid Android"}],
+                "total_shows": 1,
+            }
+        }
+        mock_live.assert_called_once_with("Radiohead")
+
+
+class TestGenreMetadataTasks:
+    def test_enrich_genre_descriptions_reports_raw_focus_without_taxonomy_node(self):
+        with patch("crate.db.genres.list_genre_taxonomy_nodes_for_external_enrichment", return_value=[]), \
+             patch("crate.db.genres.get_genre_taxonomy_node_id", return_value=None):
+            from crate.genre_descriptions import enrich_genre_descriptions_batch
+
+            result = enrich_genre_descriptions_batch(limit=1, focus_slug="instrumental", force=True)
+
+        assert result["processed"] == 0
+        assert result["reason"] == "focus_slug_not_taxonomy_node"
+        assert result["focus_slug"] == "instrumental"
+
+    def test_sync_musicbrainz_genre_graph_reports_raw_focus_without_taxonomy_node(self):
+        with patch("crate.db.genres.list_genre_taxonomy_nodes_for_musicbrainz_sync", return_value=[]), \
+             patch("crate.db.genres.get_genre_taxonomy_node_id", return_value=None):
+            from crate.genre_descriptions import sync_musicbrainz_genre_graph_batch
+
+            result = sync_musicbrainz_genre_graph_batch(limit=1, focus_slug="instrumental", force=True)
+
+        assert result["processed"] == 0
+        assert result["reason"] == "focus_slug_not_taxonomy_node"
+        assert result["focus_slug"] == "instrumental"
+
+
 class TestMusicBrainzGetArtistDetails:
     def test_get_artist_details_cached(self):
         cached = {

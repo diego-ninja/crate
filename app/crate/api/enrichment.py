@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 
 from crate.api.auth import _require_admin, _require_auth
-from crate.api._deps import artist_name_from_id
+from crate.api._deps import artist_name_from_entity_uid, artist_name_from_id
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.utility import (
     ArtistAnalysisDataResponse,
@@ -117,6 +117,17 @@ def get_artist_page_enrichment(name: str) -> dict:
                 "total_shows": len(setlist),
             }
         }
+    try:
+        live_setlist = setlistfm.get_probable_setlist(name)
+    except Exception:
+        live_setlist = None
+    if live_setlist:
+        return {
+            "setlist": {
+                "probable_setlist": live_setlist,
+                "total_shows": len(live_setlist),
+            }
+        }
     return {}
 
 
@@ -152,6 +163,36 @@ def get_artist_analysis_data(request: Request, artist_id: int):
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/analysis-data",
+    response_model=ArtistAnalysisDataResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Get per-track analysis data for an artist by entity UID",
+)
+def get_artist_analysis_data_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Not found")
+    _require_auth(request)
+    rows = get_artist_analysis_tracks(artist_name)
+    result = {}
+    for row in rows:
+        title = (row.get("title") or "").lower()
+        if not title:
+            continue
+        entry = dict(row)
+        mood = entry.pop("mood_json", None)
+        if isinstance(mood, str):
+            import json as _json
+            try:
+                mood = _json.loads(mood)
+            except Exception:
+                mood = None
+        entry["mood"] = mood
+        result[title] = entry
+    return result
+
+
+@router.get(
     "/api/artists/{artist_id}/enrichment",
     response_model=ArtistEnrichmentResponse,
     responses=_ENRICHMENT_RESPONSES,
@@ -159,6 +200,19 @@ def get_artist_analysis_data(request: Request, artist_id: int):
 )
 def get_artist_enrichment_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Not found")
+    return get_artist_enrichment(request, artist_name)
+
+
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/enrichment",
+    response_model=ArtistEnrichmentResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Get consolidated enrichment data for an artist by entity UID",
+)
+def get_artist_enrichment_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Not found")
     return get_artist_enrichment(request, artist_name)
@@ -370,6 +424,19 @@ def create_setlist_playlist(request: Request, name: str):
 )
 def create_setlist_playlist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Not found")
+    return create_setlist_playlist(request, artist_name)
+
+
+@router.post(
+    "/api/artists/by-entity/{artist_entity_uid}/setlist-playlist",
+    response_model=SetlistPlaylistResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Create or refresh a probable setlist playlist by entity UID",
+)
+def create_setlist_playlist_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Not found")
     return create_setlist_playlist(request, artist_name)

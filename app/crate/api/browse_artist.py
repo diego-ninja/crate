@@ -38,6 +38,7 @@ from crate.db.repositories.library import (
     get_album_quality_map,
     get_library_albums,
     get_library_artist,
+    get_library_artist_by_entity_uid,
     get_library_artist_by_slug,
 )
 from crate.db.queries.browse_artist import (
@@ -68,8 +69,9 @@ from crate.db.queries.shows import (
 )
 from crate.db.releases import get_new_releases
 from crate.db.similarities import get_artist_network
-from crate.lastfm import get_artist_info, get_cached_artist_info, get_cached_top_tracks
+from crate.lastfm import get_artist_info, get_cached_artist_info, get_top_tracks
 from crate.storage_layout import resolve_artist_dir
+from crate.track_versions import canonical_track_title_key, track_variant_rank
 
 log = logging.getLogger(__name__)
 
@@ -166,20 +168,7 @@ def _enrich_similar_artists(similar: list[dict]) -> list[dict]:
 
 
 def _normalize_song_title(value: str) -> str:
-    return (
-        (value or "")
-        .lower()
-        .replace("'", "'")
-        .replace("`", "'")
-        .replace("\"", "")
-        .replace("(", " ")
-        .replace(")", " ")
-        .replace("[", " ")
-        .replace("]", " ")
-        .replace("-", " ")
-        .replace("_", " ")
-        .strip()
-    )
+    return canonical_track_title_key(value or "")
 
 
 def _match_setlist_track(
@@ -194,43 +183,39 @@ def _match_setlist_track(
     def unused(track: dict) -> bool:
         return track.get("id") not in used_ids
 
-    exact = next(
-        (
-            track
-            for track in tracks
-            if unused(track) and (track.get("title") or "").lower() == song_title.lower()
-        ),
-        None,
-    )
-    if exact:
-        return exact
+    exact_title = (song_title or "").strip().casefold()
+    candidates: list[tuple[int, int, int, dict]] = []
 
-    normalized = next(
-        (
-            track
-            for track in tracks
-            if unused(track)
-            and " ".join(_normalize_song_title(track.get("title") or "").split()) == normalized_target
-        ),
-        None,
-    )
-    if normalized:
-        return normalized
+    for index, track in enumerate(tracks):
+        if not unused(track):
+            continue
+        title = str(track.get("title") or "")
+        track_exact = title.strip().casefold()
+        normalized_track = " ".join(_normalize_song_title(title).split())
+        if not normalized_track:
+            continue
 
-    contains = next(
-        (
-            track
-            for track in tracks
-            if unused(track)
-            and (
-                " ".join(_normalize_song_title(track.get("title") or "").split()).startswith(normalized_target)
-                or normalized_target.startswith(" ".join(_normalize_song_title(track.get("title") or "").split()))
-                or normalized_target in " ".join(_normalize_song_title(track.get("title") or "").split())
-            )
-        ),
-        None,
-    )
-    return contains
+        match_quality: int | None = None
+        if track_exact == exact_title:
+            match_quality = 0
+        elif normalized_track == normalized_target:
+            match_quality = 1
+        elif (
+            normalized_track.startswith(normalized_target)
+            or normalized_target.startswith(normalized_track)
+            or normalized_target in normalized_track
+        ):
+            match_quality = 2
+
+        if match_quality is None:
+            continue
+
+        candidates.append((match_quality, track_variant_rank(title), index, track))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    return candidates[0][3]
 
 
 def _build_artist_page_payload(
@@ -261,7 +246,7 @@ def _build_artist_page_payload(
         return artist_payload
 
     info_payload = _get_artist_page_info(artist_name)
-    top_tracks_payload = _get_artist_page_top_tracks(artist_name, count=top_tracks_count)
+    top_tracks_payload = _get_artist_top_tracks_payload(artist_name, count=top_tracks_count)
     shows_payload = _get_artist_page_shows(
         user_id=user_id,
         name=artist_name,
@@ -388,11 +373,11 @@ def _build_artist_top_tracks_payload(
     return [_format_artist_top_track(row) for row in ranked]
 
 
-def _get_artist_page_top_tracks(artist_name: str, *, count: int) -> list[dict]:
+def _get_artist_top_tracks_payload(artist_name: str, *, count: int) -> list[dict]:
     return _build_artist_top_tracks_payload(
         artist_name,
         count=count,
-        lastfm_top=get_cached_top_tracks(artist_name, limit=count * 2),
+        lastfm_top=get_top_tracks(artist_name, limit=max(count * 2, 100)),
     )
 
 
@@ -550,6 +535,7 @@ def api_artists(
     for row in rows:
         item = {
             "id": row.get("id"),
+            "entity_uid": str(row["entity_uid"]) if row.get("entity_uid") is not None else None,
             "slug": row.get("slug"),
             "name": row["name"],
             "albums": row["album_count"],
@@ -652,6 +638,47 @@ def api_artist_top_tracks_by_slug(request: Request, artist_slug: str, count: int
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}",
+    response_model=ArtistDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed artist information by entity UID",
+)
+def api_artist_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist(request, artist["name"])
+
+
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/page",
+    response_model=ArtistPageResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get a listen-optimized artist page payload by entity UID",
+)
+def api_artist_page_by_entity_uid(
+    request: Request,
+    artist_entity_uid: str,
+    top_tracks_count: int = Query(12, ge=1, le=50),
+    shows_limit: int = Query(12, ge=1, le=50),
+    stats_window: str = Query("30d"),
+    stats_limit: int = Query(12, ge=1, le=50),
+):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_page_by_id(
+        request,
+        artist["id"],
+        slug=artist.get("slug"),
+        top_tracks_count=top_tracks_count,
+        shows_limit=shows_limit,
+        stats_window=stats_window,
+        stats_limit=stats_limit,
+    )
+
+
+@router.get(
     "/api/artists/{artist_id}",
     response_model=ArtistDetailResponse,
     responses=_BROWSE_RESPONSES,
@@ -716,6 +743,23 @@ def api_artist_background_by_id(
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/background",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist background image by entity UID",
+)
+def api_artist_background_by_entity_uid(
+    request: Request,
+    artist_entity_uid: str,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = Query(None, ge=32, le=2048),
+):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return Response(status_code=404)
+    return api_artist_background(request, artist["name"], random_pick, size=size)
+
+
+@router.get(
     "/api/artists/{artist_id}/top-tracks",
     response_model=list[ArtistTopTrackResponse],
     responses=AUTH_ERROR_RESPONSES,
@@ -730,43 +774,20 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     if not artist_name:
         return JSONResponse([], status_code=200)
 
-    all_tracks = {r["title"].lower(): r for r in get_artist_all_tracks(artist_name)}
+    return _get_artist_top_tracks_payload(artist_name, count=count)
 
-    from crate.lastfm import get_top_tracks
-    lastfm_top = get_top_tracks(artist_name, limit=count * 2) or []
 
-    ranked = []
-    seen_ids: set[int] = set()
-    for lfm in lastfm_top:
-        match = all_tracks.get(lfm["title"].lower())
-        if match and match["id"] not in seen_ids:
-            seen_ids.add(match["id"])
-            ranked.append(match)
-            if len(ranked) >= count:
-                break
-
-    if len(ranked) < count:
-        remaining = [t for t in all_tracks.values() if t["id"] not in seen_ids]
-        remaining.sort(key=lambda t: (t.get("year") or "0", t.get("track_number") or 0), reverse=True)
-        ranked.extend(remaining[:count - len(ranked)])
-
-    def _fmt(r: dict) -> dict:
-        return {
-            "id": str(r["id"]),
-            "track_id": r["id"],
-            "title": r["title"],
-            "artist": r["artist"],
-            "artist_id": r["artist_id"],
-            "artist_slug": r["artist_slug"],
-            "album": r["album"],
-            "album_id": r["album_id"],
-            "album_slug": r["album_slug"],
-            "duration": r["duration"] or 0,
-            "track": r["track_number"] or 0,
-            "format": r["format"],
-        }
-
-    return [_fmt(r) for r in ranked]
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/top-tracks",
+    response_model=list[ArtistTopTrackResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get top tracks for an artist by entity UID",
+)
+def api_artist_top_tracks_by_entity_uid(request: Request, artist_entity_uid: str, count: int = Query(20, ge=1, le=50)):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse([], status_code=200)
+    return api_artist_top_tracks(request, artist["id"], count=count)
 
 
 @router.get(
@@ -787,6 +808,23 @@ def api_artist_photo_by_id(
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/photo",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist photo by entity UID",
+)
+def api_artist_photo_by_entity_uid(
+    request: Request,
+    artist_entity_uid: str,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = Query(None, ge=32, le=2048),
+):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return Response(status_code=404)
+    return api_artist_photo(request, artist["name"], random_pick, size=size)
+
+
+@router.get(
     "/api/artists/{artist_id}/info",
     response_model=ArtistInfoResponse,
     responses=_BROWSE_RESPONSES,
@@ -797,6 +835,19 @@ def api_artist_info_by_id(request: Request, artist_id: int):
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_artist_info(request, artist_name)
+
+
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/info",
+    response_model=ArtistInfoResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get external metadata for an artist by entity UID",
+)
+def api_artist_info_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_info(request, artist["name"])
 
 
 @router.get(
@@ -812,6 +863,24 @@ def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(
     return api_artist_shows(request, artist_name, limit=limit, country=country)
 
 
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/shows",
+    response_model=ArtistShowsResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get upcoming shows for an artist by entity UID",
+)
+def api_artist_shows_by_entity_uid(
+    request: Request,
+    artist_entity_uid: str,
+    limit: int = Query(10),
+    country: str = Query(""),
+):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_shows(request, artist["name"], limit=limit, country=country)
+
+
 @router.post(
     "/api/artists/{artist_id}/enrich",
     response_model=ArtistEnqueueResponse,
@@ -823,6 +892,19 @@ def api_artist_enrich_by_id(request: Request, artist_id: int):
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_artist_enrich(request, artist_name)
+
+
+@router.post(
+    "/api/artists/by-entity/{artist_entity_uid}/enrich",
+    response_model=ArtistEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artist enrichment by entity UID",
+)
+def api_artist_enrich_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_enrich(request, artist["name"])
 
 
 @router.get(
@@ -839,6 +921,19 @@ def api_artist_track_titles_by_id(request: Request, artist_id: int):
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/track-titles",
+    response_model=list[ArtistTrackTitleResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List track titles for an artist by entity UID",
+)
+def api_artist_track_titles_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_track_titles(request, artist["name"])
+
+
+@router.get(
     "/api/artists/{artist_id}/setlist-playable",
     response_model=ArtistSetlistPlayableResponse,
     responses=_BROWSE_RESPONSES,
@@ -852,6 +947,19 @@ def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
 
 
 @router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/setlist-playable",
+    response_model=ArtistSetlistPlayableResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Match a probable setlist against playable local tracks by entity UID",
+)
+def api_artist_setlist_playable_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"tracks": []}, status_code=404)
+    return api_artist_setlist_playable(request, artist["name"])
+
+
+@router.get(
     "/api/artists/{artist_id}/network",
     response_model=ArtistNetworkResponse,
     responses=_BROWSE_RESPONSES,
@@ -862,6 +970,19 @@ def api_artist_network_by_id(request: Request, artist_id: int, depth: int = 2):
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_artist_network(request, artist_name, depth)
+
+
+@router.get(
+    "/api/artists/by-entity/{artist_entity_uid}/network",
+    response_model=ArtistNetworkResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get the related-artist network for an artist by entity UID",
+)
+def api_artist_network_by_entity_uid(request: Request, artist_entity_uid: str, depth: int = 2):
+    artist = get_library_artist_by_entity_uid(artist_entity_uid)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_network(request, artist["name"], depth)
 
 
 def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random"), size: int | None = None):
@@ -1223,7 +1344,7 @@ def api_artist_setlist_playable(request: Request, name: str):
         matched_tracks.append(
             {
                 "library_track_id": match["id"],
-                "track_storage_id": match.get("track_storage_id"),
+                "track_entity_uid": match.get("track_entity_uid"),
                 "title": match.get("title", ""),
                 "artist": name,
                 "artist_id": artist_id,
@@ -1379,6 +1500,7 @@ def api_artist(request: Request, name: str):
         albums.append(
             {
                 "id": album["id"],
+                "entity_uid": album.get("entity_uid"),
                 "slug": album.get("slug"),
                 "name": album["name"],
                 "display_name": display_name(album["name"]),
@@ -1396,12 +1518,13 @@ def api_artist(request: Request, name: str):
             }
         )
 
-    from crate.storage_layout import looks_like_storage_id
+    from crate.storage_layout import looks_like_entity_uid
     folder_name = artist.get("folder_name") or ""
-    is_v2 = bool(folder_name and looks_like_storage_id(folder_name))
+    is_v2 = bool(folder_name and looks_like_entity_uid(folder_name))
 
     return {
         "id": artist.get("id"),
+        "entity_uid": artist.get("entity_uid"),
         "slug": artist.get("slug"),
         "name": canonical,
         "updated_at": artist.get("updated_at"),

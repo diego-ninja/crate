@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", () => ({
@@ -9,11 +9,12 @@ vi.mock("@/lib/cache", () => ({
   cacheGet: vi.fn(() => null),
   cacheSet: vi.fn(),
   onCacheInvalidation: vi.fn(() => () => {}),
+  onCacheReconnect: vi.fn(() => () => {}),
   scopesForUrl: vi.fn(() => []),
 }));
 
 import { api } from "@/lib/api";
-import { cacheGet, cacheSet } from "@/lib/cache";
+import { cacheGet, cacheSet, onCacheReconnect } from "@/lib/cache";
 import { useApi } from "@/hooks/use-api";
 
 function deferred<T>() {
@@ -29,6 +30,7 @@ function deferred<T>() {
 describe("useApi", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it("reads cached data once per URL instead of on every rerender", async () => {
@@ -117,5 +119,73 @@ describe("useApi", () => {
     await waitFor(() => {
       expect(result.current.data).toEqual({ id: "high-vis" });
     });
+  });
+
+  it("revalidates when the cache invalidation SSE reconnects", async () => {
+    const apiMock = vi.mocked(api);
+    const onCacheReconnectMock = vi.mocked(onCacheReconnect);
+    let reconnect: (() => void) | null = null;
+
+    onCacheReconnectMock.mockImplementation((listener) => {
+      reconnect = () => listener({
+        name: "cache-invalidations",
+        connected: true,
+        degraded: false,
+        hasEverConnected: true,
+        reconnectCount: 1,
+        degradeAfterMs: 75_000,
+        lastOpenAt: Date.now(),
+        lastEventAt: Date.now(),
+        lastReconnectAt: Date.now(),
+        lastErrorAt: null,
+        lastCloseAt: null,
+      });
+      return () => {
+        reconnect = null;
+      };
+    });
+
+    apiMock
+      .mockResolvedValueOnce({ ok: 1 })
+      .mockResolvedValueOnce({ ok: 2 });
+
+    const { result } = renderHook(() => useApi<{ ok: number }>("/api/me"));
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ ok: 1 });
+    });
+
+    act(() => {
+      reconnect?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ ok: 2 });
+    });
+  });
+
+  it("uses a periodic safety-net refetch for critical views", async () => {
+    vi.useFakeTimers();
+    const apiMock = vi.mocked(api);
+    apiMock
+      .mockResolvedValueOnce({ ok: 1 })
+      .mockResolvedValueOnce({ ok: 2 });
+
+    const { result } = renderHook(() =>
+      useApi<{ ok: number }>("/api/me", "GET", undefined, { safetyNetMs: 1_000 }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.data).toEqual({ ok: 1 });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual({ ok: 2 });
   });
 });

@@ -20,7 +20,7 @@ export function useAuthSession() {
     setLoading(true);
 
     try {
-      const data = await api<AuthUser>("/api/auth/me");
+      const data = await api<AuthUser>("/api/auth/me", "GET", undefined, { signal: controller.signal });
       const nextUser = data && data.id ? data : null;
       setUser(nextUser);
       applyAuthenticatedUser(nextUser);

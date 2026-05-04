@@ -31,7 +31,7 @@ def get_orphan_tracks() -> list[dict]:
 def get_all_artists() -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
-            text("SELECT name, folder_name FROM library_artists")
+            text("SELECT name, folder_name, entity_uid FROM library_artists")
         ).mappings().all()
     return [dict(r) for r in rows]
 
@@ -89,8 +89,11 @@ def get_artists_with_photo() -> list[dict]:
 def get_duplicate_albums() -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
-            text("SELECT artist, LOWER(name) AS album_key, MIN(name) AS album_name, COUNT(*) AS cnt "
-                 "FROM library_albums GROUP BY artist, LOWER(name) HAVING COUNT(*) > 1")
+            text(
+                "SELECT artist, LOWER(name) AS album_key, MIN(name) AS album_name, COUNT(*) AS cnt, "
+                "array_agg(path ORDER BY path) AS paths "
+                "FROM library_albums GROUP BY artist, LOWER(name) HAVING COUNT(*) > 1"
+            )
         ).mappings().all()
     return [dict(r) for r in rows]
 

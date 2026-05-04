@@ -14,7 +14,7 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 """
                 SELECT
                     uts.track_id,
-                    lt.storage_id::text AS track_storage_id,
+                    COALESCE(lt.entity_uid::text, uts.track_entity_uid::text) AS track_entity_uid,
                     COALESCE(lt.path, uts.track_path) AS track_path,
                     COALESCE(lt.title, uts.title) AS title,
                     COALESCE(lt.artist, uts.artist) AS artist,
@@ -29,7 +29,9 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                     uts.first_played_at,
                     uts.last_played_at
                 FROM user_track_stats uts
-                LEFT JOIN library_tracks lt ON lt.id = uts.track_id
+                LEFT JOIN library_tracks lt
+                  ON lt.id = uts.track_id
+                  OR (uts.track_id IS NULL AND uts.track_entity_uid IS NOT NULL AND lt.entity_uid = uts.track_entity_uid)
                 LEFT JOIN library_albums alb_by_id ON alb_by_id.id = lt.album_id
                 LEFT JOIN library_albums alb_by_name
                   ON alb_by_id.id IS NULL

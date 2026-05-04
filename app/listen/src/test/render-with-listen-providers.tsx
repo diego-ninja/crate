@@ -14,8 +14,10 @@ import {
 } from "@/contexts/offline-context";
 import {
   PlayerActionsContext,
+  PlayerProgressContext,
   PlayerStateContext,
   type PlayerActionsValue,
+  type PlayerProgressValue,
   type PlayerStateValue,
 } from "@/contexts/player-context";
 import type { Track } from "@/contexts/player-types";
@@ -26,6 +28,7 @@ export interface ListenRenderOptions extends Omit<RenderOptions, "wrapper"> {
   auth?: Partial<AuthContextValue>;
   offline?: Partial<OfflineContextValue>;
   playerActions?: Partial<PlayerActionsValue>;
+  playerProgress?: Partial<PlayerProgressValue>;
   playerState?: Partial<PlayerStateValue>;
   path?: string;
   route?: string;
@@ -57,13 +60,21 @@ export function createMockPlayerState(
   overrides: Partial<PlayerStateValue> = {},
 ): PlayerStateValue {
   return {
-    currentTime: 0,
-    duration: 0,
     isPlaying: false,
     isBuffering: false,
     volume: 0.8,
     analyserVersion: 0,
     crossfadeTransition: null,
+    ...overrides,
+  };
+}
+
+export function createMockPlayerProgress(
+  overrides: Partial<PlayerProgressValue> = {},
+): PlayerProgressValue {
+  return {
+    currentTime: 0,
+    duration: 0,
     ...overrides,
   };
 }
@@ -139,8 +150,8 @@ export function createMockOfflineValue(
 
 export function createMockTrack(overrides: Partial<Track> = {}): Track {
   return {
-    id: "storage-1",
-    storageId: "storage-1",
+    id: "track-1",
+    entityUid: "track-1",
     title: "Track One",
     artist: "Artist One",
     ...overrides,
@@ -186,6 +197,7 @@ export function renderWithListenProviders(
     auth,
     offline,
     playerActions,
+    playerProgress,
     playerState,
     path,
     route = "/",
@@ -194,23 +206,27 @@ export function renderWithListenProviders(
 ) {
   const authValue = createMockAuthValue(auth);
   const playerStateValue = createMockPlayerState(playerState);
+  const playerProgressValue = createMockPlayerProgress(playerProgress);
   const playerActionsValue = createMockPlayerActions(playerActions);
   const offlineValue = createMockOfflineValue(offline);
 
   return {
     authValue,
     playerStateValue,
+    playerProgressValue,
     playerActionsValue,
     offlineValue,
     ...render(
       <MemoryRouter initialEntries={[route]}>
         <AuthContext.Provider value={authValue}>
           <PlayerStateContext.Provider value={playerStateValue}>
-            <PlayerActionsContext.Provider value={playerActionsValue}>
-              <OfflineContext.Provider value={offlineValue}>
-                {withOptionalRoute(ui, path)}
-              </OfflineContext.Provider>
-            </PlayerActionsContext.Provider>
+            <PlayerProgressContext.Provider value={playerProgressValue}>
+              <PlayerActionsContext.Provider value={playerActionsValue}>
+                <OfflineContext.Provider value={offlineValue}>
+                  {withOptionalRoute(ui, path)}
+                </OfflineContext.Provider>
+              </PlayerActionsContext.Provider>
+            </PlayerProgressContext.Provider>
           </PlayerStateContext.Provider>
         </AuthContext.Provider>
       </MemoryRouter>,

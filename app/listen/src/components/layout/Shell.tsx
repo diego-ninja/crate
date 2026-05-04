@@ -6,10 +6,11 @@ import {
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
 } from "lucide-react";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
-import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerState } from "@/contexts/PlayerContext";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { TopBar } from "@/components/layout/TopBar";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { isReservedArtistChildSlug } from "@/lib/library-routes";
 
 const SIDEBAR_KEY = "listen-sidebar-expanded";
 const SIDEBAR_EVENT = "listen-sidebar-changed";
@@ -25,7 +26,8 @@ function Sidebar() {
   const [collectionOpen, setCollectionOpen] = useState(false);
   const collectionRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { isPlaying, playSource, currentTrack, analyserVersion } = usePlayer();
+  const { isPlaying, analyserVersion } = usePlayerState();
+  const { playSource, currentTrack } = usePlayerActions();
   const discoveryRadioActive = isPlaying && playSource?.radio?.seedType === "discovery";
   const { frequenciesDb } = useAudioVisualizer(
     discoveryRadioActive,
@@ -254,6 +256,16 @@ const MOBILE_NAV = [
   { to: "/settings", icon: User, label: "Profile" },
 ] as const;
 
+function hasOverlayHeader(pathname: string) {
+  if (/^\/artists\/[^/]+$/.test(pathname) || /^\/albums\/[^/]+\/[^/]+$/.test(pathname)) {
+    return true;
+  }
+  const artistChildMatch = pathname.match(/^\/artists\/([^/]+)\/([^/]+)$/);
+  if (!artistChildMatch) return false;
+  const childSlug = artistChildMatch[2];
+  return !isReservedArtistChildSlug(childSlug);
+}
+
 // ── Shell ───────────────────────────────────────────────────────
 
 export function Shell() {
@@ -262,16 +274,12 @@ export function Shell() {
   const { currentTrack } = usePlayerActions();
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
-  const overlayHeader =
-    /^\/artists\/[^/]+$/.test(location.pathname) ||
-    /^\/artists\/[^/]+\/[^/]+$/.test(location.pathname) ||
-    /^\/artists\/[^/]+\/[^/]+\/top-tracks$/.test(location.pathname) ||
-    /^\/albums\/[^/]+\/[^/]+$/.test(location.pathname);
-  const headerOffsetClass = overlayHeader ? "" : "pt-16";
+  const overlayHeader = hasOverlayHeader(location.pathname);
+  const headerOffsetClass = overlayHeader ? "" : "pt-24";
   const desktopContentPadClass = overlayHeader ? "pt-0 pb-6" : "py-6";
   const mobileContentPadClass = overlayHeader
     ? "pt-0 pb-4"
-    : "py-4 pt-[calc(4rem+env(safe-area-inset-top,0px))]";
+    : "py-4 pt-[calc(5.5rem+env(safe-area-inset-top,0px))]";
   const headerChromeClass =
     "border-b border-white/6 bg-app-surface/68 shadow-[0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-xl";
 
@@ -304,7 +312,7 @@ export function Shell() {
         </div>
 
         <main className={`relative z-0 flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
-          <div className={`mx-auto w-full max-w-[1440px] ${desktopContentPadClass} ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
+          <div className={`mx-auto w-full max-w-[1560px] ${desktopContentPadClass} ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -329,7 +337,7 @@ export function Shell() {
       </div>
 
       <main className={`relative z-0 flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`mx-auto w-full max-w-[1440px] px-[max(1rem,env(safe-area-inset-left))] ${mobileContentPadClass}`}>
+        <div className={`mx-auto w-full max-w-[1560px] px-[max(1rem,env(safe-area-inset-left))] ${mobileContentPadClass}`}>
           <Outlet />
         </div>
       </main>

@@ -5,6 +5,22 @@ from crate.db.queries.home import get_artist_core_track_rows, get_library_artist
 from crate.db.queries.user_library import get_play_history
 
 
+def _has_artist_route(row: dict) -> bool:
+    return bool(
+        row.get("artist_entity_uid")
+        or row.get("artist_slug")
+        or row.get("artist_id") is not None
+    )
+
+
+def _has_album_route(row: dict) -> bool:
+    return bool(
+        row.get("album_entity_uid")
+        or row.get("album_slug")
+        or row.get("album_id") is not None
+    )
+
+
 def build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
     target_per_bucket = max(3, (limit + 2) // 3)
     history = get_play_history(user_id, limit=max(limit * 6, 48))
@@ -16,12 +32,13 @@ def build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
 
     for row in history:
         artist_key = _artist_identity(row)
-        if artist_key and artist_key not in seen_artists:
+        if artist_key and artist_key not in seen_artists and _has_artist_route(row):
             seen_artists.add(artist_key)
             recent_artists.append(
                 {
                     "type": "artist",
                     "artist_id": row.get("artist_id"),
+                    "artist_entity_uid": row.get("artist_entity_uid"),
                     "artist_slug": row.get("artist_slug"),
                     "artist_name": row.get("artist") or "",
                     "subtitle": "Artist",
@@ -29,16 +46,18 @@ def build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
                 }
             )
         album_key = _album_identity(row)
-        if row.get("album") and album_key not in seen_albums:
+        if row.get("album") and album_key not in seen_albums and _has_album_route(row):
             seen_albums.add(album_key)
             recent_albums.append(
                 {
                     "type": "album",
                     "album_id": row.get("album_id"),
+                    "album_entity_uid": row.get("album_entity_uid"),
                     "album_slug": row.get("album_slug"),
                     "album_name": row.get("album") or "",
                     "artist_name": row.get("artist") or "",
                     "artist_id": row.get("artist_id"),
+                    "artist_entity_uid": row.get("artist_entity_uid"),
                     "artist_slug": row.get("artist_slug"),
                     "subtitle": "Album",
                     "played_at": row.get("played_at"),

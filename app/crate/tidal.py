@@ -12,7 +12,12 @@ from pathlib import Path
 import requests
 
 from crate.db.cache_settings import get_setting, set_setting
-from crate.storage_import import infer_album_identity, move_album_tree, resolve_import_album_target
+from crate.storage_import import (
+    infer_album_identity,
+    move_album_tree,
+    resolve_import_album_target,
+    resolve_managed_track_destination,
+)
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +25,10 @@ TIDDL_CONFIG_DIR = os.environ.get("TIDDL_CONFIG_DIR", "/data/.tiddl")
 # tiddl 3.x uses ~/.tiddl — we set HOME to parent of .tiddl
 TIDDL_HOME = str(Path(TIDDL_CONFIG_DIR).parent)
 PROCESSING_DIR = "/tmp/tidal-processing"
+TIDDL_OUTPUT_TEMPLATE = (
+    "{album.artist}/{album.title}/"
+    "{item.volume:02d}-{item.number:02d} - {item.title_version}"
+)
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -214,18 +223,26 @@ def get_album_tracks(album_id: str, _retried: bool = False) -> list[dict]:
                 return artists[0].get("name", "")
             return ""
 
-        return [
-            {
-                "id": str(t.get("id", "")),
-                "title": t.get("title", ""),
-                "artist": _artist_name(t),
-                "track_number": t.get("trackNumber", 0),
-                "duration": t.get("duration", 0),
-                "url": f"https://tidal.com/track/{t.get('id', '')}",
-                "quality": t.get("mediaMetadata", {}).get("tags", []),
-            }
-            for t in items
-        ]
+        tracks = []
+        for t in items:
+            title = str(t.get("title") or "")
+            version = str(t.get("version") or "")
+            tracks.append(
+                {
+                    "id": str(t.get("id", "")),
+                    "title": title,
+                    "version": version,
+                    "display_title": f"{title} ({version})" if version else title,
+                    "artist": _artist_name(t),
+                    "track_number": t.get("trackNumber", 0),
+                    "volume_number": t.get("volumeNumber", 0),
+                    "duration": t.get("duration", 0),
+                    "isrc": t.get("isrc", ""),
+                    "url": f"https://tidal.com/track/{t.get('id', '')}",
+                    "quality": t.get("mediaMetadata", {}).get("tags", []),
+                }
+            )
+        return tracks
     except Exception as e:
         log.warning("Failed to fetch album tracks: %s", e)
         return []
@@ -465,6 +482,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
         "tiddl", "download",
         "--path", str(processing_dir),
         "-q", q,
+        "--output", TIDDL_OUTPUT_TEMPLATE,
         "url", url,
     ]
 
@@ -608,7 +626,13 @@ def move_to_library_detailed(processing_path: str, library_path: str) -> list[di
                 artist_name, album_name = infer_album_identity(album_item, fallback_artist=item.name)
                 _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 try:
-                    moved = move_album_tree(album_item, target_album_dir, managed_track_names=managed_track_names)
+                    moved = move_album_tree(
+                        album_item,
+                        target_album_dir,
+                        managed_track_names=managed_track_names,
+                        artist_name=artist_name,
+                        album_name=album_name,
+                    )
                     key = (artist_name, album_name, str(target_album_dir))
                     imported_targets[key] = {
                         "artist": artist_name,
@@ -629,7 +653,13 @@ def move_to_library_detailed(processing_path: str, library_path: str) -> list[di
                 _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 target_album_dir.mkdir(parents=True, exist_ok=True)
                 dest_file = (
-                    target_album_dir / f"{uuid.uuid4()}{album_item.suffix.lower()}"
+                    resolve_managed_track_destination(
+                        album_item,
+                        target_album_dir,
+                        artist_name=artist_name,
+                        album_name=album_name,
+                        album_entity_uid=target_album_dir.name,
+                    )
                     if managed_track_names
                     else target_album_dir / album_item.name
                 )

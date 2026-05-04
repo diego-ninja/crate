@@ -1,7 +1,7 @@
 import { startTransition, useState, useEffect, useCallback, useRef } from "react";
 
 import { api } from "@/lib/api";
-import { cacheGet, cacheSet, onCacheInvalidation, scopesForUrl } from "@/lib/cache";
+import { cacheGet, cacheSet, onCacheInvalidation, onCacheReconnect, scopesForUrl } from "@/lib/cache";
 
 export interface UseApiState<T> {
   data: T | null;
@@ -12,6 +12,8 @@ export interface UseApiState<T> {
 
 interface UseApiOptions {
   reactive?: boolean;
+  revalidateOnReconnect?: boolean;
+  safetyNetMs?: number;
 }
 
 /**
@@ -27,7 +29,11 @@ export function useApi<T>(
   body?: unknown,
   options: UseApiOptions = {},
 ): UseApiState<T> {
-  const { reactive = true } = options;
+  const {
+    reactive = true,
+    revalidateOnReconnect = true,
+    safetyNetMs = 0,
+  } = options;
   const initialStateRef = useRef<{ data: T | null; loading: boolean } | null>(null);
   if (initialStateRef.current == null) {
     const initialData = url ? cacheGet<T>(url) : null;
@@ -107,6 +113,25 @@ export function useApi<T>(
       }
     });
   }, [reactive, url, refetch]);
+
+  useEffect(() => {
+    if (!url || !reactive || !revalidateOnReconnect) return;
+    return onCacheReconnect(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
+      refetch();
+    });
+  }, [reactive, revalidateOnReconnect, url, refetch]);
+
+  useEffect(() => {
+    if (!url || safetyNetMs <= 0) return;
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
+      refetch();
+    }, safetyNetMs);
+    return () => window.clearInterval(timer);
+  }, [safetyNetMs, url, refetch]);
 
   const stateMatchesCurrentUrl = dataUrlRef.current === url;
   const cachedForCurrentUrl = !stateMatchesCurrentUrl && url ? cacheGet<T>(url) : null;

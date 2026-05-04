@@ -86,18 +86,28 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                     pt.playlist_id,
                     COALESCE(lt.artist, pt.artist) AS artist,
                     ar.id AS artist_id,
+                    ar.entity_uid::text AS artist_entity_uid,
                     ar.slug AS artist_slug,
                     COALESCE(lt.album, pt.album) AS album,
                     alb.id AS album_id,
+                    alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
-                    SELECT id, storage_id::text, path, artist, album, album_id
+                    SELECT id, entity_uid::text, path, artist, album, album_id
                     FROM library_tracks lt
                     WHERE lt.id = pt.track_id
+                       OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)
+                       OR (pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id)
                        OR lt.path = pt.track_path
                        OR lt.path LIKE ('%/' || pt.track_path)
-                    ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
+                    ORDER BY CASE
+                        WHEN lt.id = pt.track_id THEN 0
+                        WHEN pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid THEN 1
+                        WHEN pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id THEN 2
+                        WHEN lt.path = pt.track_path THEN 3
+                        ELSE 4
+                    END
                     LIMIT 1
                 ) lt ON TRUE
                 LEFT JOIN library_albums alb
@@ -111,9 +121,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                     pt.playlist_id,
                     COALESCE(lt.artist, pt.artist),
                     ar.id,
+                    ar.entity_uid,
                     ar.slug,
                     COALESCE(lt.album, pt.album),
                     alb.id,
+                    alb.entity_uid,
                     alb.slug
             ),
             ranked_artwork AS (
@@ -121,9 +133,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                     playlist_id,
                     artist,
                     artist_id,
+                    artist_entity_uid,
                     artist_slug,
                     album,
                     album_id,
+                    album_entity_uid,
                     album_slug,
                     ROW_NUMBER() OVER (
                         PARTITION BY playlist_id
@@ -135,9 +149,11 @@ def fetch_artwork_tracks_for_playlists(session: Session, playlist_ids: list[int]
                 playlist_id,
                 artist,
                 artist_id,
+                artist_entity_uid,
                 artist_slug,
                 album,
                 album_id,
+                album_entity_uid,
                 album_slug
             FROM ranked_artwork
             WHERE artwork_rank <= 4

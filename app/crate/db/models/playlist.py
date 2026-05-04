@@ -30,6 +30,7 @@ class PlaylistTrackRow(BaseModel):
 
     playlist_id: int
     track_id: int | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     track_storage_id: str | None = None
     position: int = 0

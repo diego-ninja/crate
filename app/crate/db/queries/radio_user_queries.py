@@ -72,7 +72,9 @@ def get_recent_play_vectors(user_id: int, limit: int = 20) -> list[list[float]]:
                 """
                 SELECT t.bliss_vector
                 FROM user_play_events pe
-                LEFT JOIN library_tracks t ON t.id = pe.track_id
+                LEFT JOIN library_tracks t
+                  ON t.id = pe.track_id
+                  OR (pe.track_id IS NULL AND pe.track_entity_uid IS NOT NULL AND t.entity_uid = pe.track_entity_uid)
                 WHERE pe.user_id = :user_id
                   AND t.bliss_vector IS NOT NULL
                 ORDER BY pe.ended_at DESC

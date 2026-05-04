@@ -11,6 +11,7 @@ import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { api } from "@/lib/api";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
+import { toPlayableTrack } from "@/lib/playable-track";
 import { cn } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
@@ -18,6 +19,8 @@ interface AlbumCardProps {
   artist: string;
   album: string;
   albumId?: number;
+  albumEntityUid?: string;
+  artistEntityUid?: string;
   albumSlug?: string;
   year?: string;
   cover?: string;
@@ -31,7 +34,7 @@ interface AlbumData {
   display_name: string;
   tracks: Array<{
     id: number;
-    storage_id?: string;
+    entity_uid?: string;
     filename: string;
     path: string;
     length_sec: number;
@@ -45,6 +48,8 @@ export const AlbumCard = memo(function AlbumCard({
   artist,
   album,
   albumId,
+  albumEntityUid,
+  artistEntityUid,
   albumSlug,
   year,
   cover,
@@ -57,7 +62,7 @@ export const AlbumCard = memo(function AlbumCard({
   const { getAlbumState, getAlbumRecord } = useOffline();
   const [playing, setPlaying] = useState(false);
   const coverUrl = cover || albumCoverApiUrl(
-    { albumId, albumSlug, artistName: artist, albumName: album },
+    { albumId, albumEntityUid, artistEntityUid, albumSlug, artistName: artist, albumName: album },
     { size: layout === "grid" ? 320 : compact ? 192 : 256 },
   );
   const saved = isSaved(albumId);
@@ -75,6 +80,7 @@ export const AlbumCard = memo(function AlbumCard({
     artist,
     album,
     albumId,
+    albumEntityUid,
     albumSlug,
     cover: coverUrl,
   });
@@ -85,16 +91,19 @@ export const AlbumCard = memo(function AlbumCard({
     setPlaying(true);
     try {
       const data = await api<AlbumData>(albumApiPath({ albumId, albumSlug, artistName: artist, albumName: album }));
-      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
-        id: track.storage_id || track.path || String(track.id),
-        storageId: track.storage_id,
-        title: track.tags?.title || track.filename || "Unknown",
-        artist: data.artist,
-        album: data.display_name || data.name,
-        albumCover: coverUrl,
-        path: track.path,
-        libraryTrackId: track.id,
-      }));
+      const playerTracks: Track[] = (data.tracks || []).map((track) =>
+        toPlayableTrack(
+          {
+            id: track.id,
+            entity_uid: track.entity_uid,
+            title: track.tags?.title || track.filename || "Unknown",
+            artist: data.artist,
+            album: data.display_name || data.name,
+            path: track.path,
+          },
+          { cover: coverUrl },
+        ),
+      );
       if (playerTracks.length > 0) {
         playAll(playerTracks, 0, {
           type: "album",

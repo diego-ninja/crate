@@ -16,6 +16,7 @@ DB_HEAVY_TASKS = {
     "repair",
     "enrich_mbids",
     "migrate_storage_v2",
+    "fix_artist",
 }
 TASKS_SURFACE_AFTER_COMMIT_KEY = "_tasks_surface_signal_registered"
 

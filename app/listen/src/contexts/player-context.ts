@@ -11,13 +11,16 @@ export interface CrossfadeTransition {
 }
 
 export interface PlayerStateValue {
-  currentTime: number;
-  duration: number;
   isPlaying: boolean;
   isBuffering: boolean;
   volume: number;
   analyserVersion: number;
   crossfadeTransition: CrossfadeTransition | null;
+}
+
+export interface PlayerProgressValue {
+  currentTime: number;
+  duration: number;
 }
 
 export interface PlayerActionsValue {
@@ -46,7 +49,8 @@ export interface PlayerActionsValue {
   reorderQueue: (fromIndex: number, toIndex: number) => void;
 }
 
-export type PlayerContextValue = PlayerStateValue & PlayerActionsValue;
+export type PlayerContextValue = PlayerStateValue & PlayerProgressValue & PlayerActionsValue;
 
 export const PlayerStateContext = createContext<PlayerStateValue | null>(null);
+export const PlayerProgressContext = createContext<PlayerProgressValue | null>(null);
 export const PlayerActionsContext = createContext<PlayerActionsValue | null>(null);

@@ -55,11 +55,11 @@ def rename_artist(old_name: str, new_name: str, folder_name: str) -> None:
         session.execute(
             text(
                 """
-                INSERT INTO library_artists (name, storage_id, folder_name)
-                VALUES (:name, :storage_id, :folder_name)
+                INSERT INTO library_artists (name, folder_name)
+                VALUES (:name, :folder_name)
                 """
             ),
-            {"name": temp_name, "storage_id": str(uuid4()), "folder_name": folder_name or None},
+            {"name": temp_name, "folder_name": folder_name or None},
         )
         session.execute(
             text("UPDATE library_albums SET artist = :temp_name WHERE artist = :old_name"),

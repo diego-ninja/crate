@@ -16,12 +16,22 @@ def coerce_uuid(value: str | uuid.UUID | None) -> uuid.UUID:
     return uuid.uuid4()
 
 
+def coerce_uuid_or_none(value: str | uuid.UUID | None) -> uuid.UUID | None:
+    if isinstance(value, uuid.UUID):
+        return value
+    if value:
+        return uuid.UUID(str(value))
+    return None
+
+
 def artist_to_dict(artist) -> dict | None:
     if artist is None:
         return None
+    entity_uid = str(artist.entity_uid) if getattr(artist, "entity_uid", None) else None
     return {
         "id": artist.id,
-        "storage_id": str(artist.storage_id) if artist.storage_id else None,
+        "storage_id": None if entity_uid else (str(artist.storage_id) if artist.storage_id else None),
+        "entity_uid": entity_uid,
         "name": artist.name,
         "slug": artist.slug,
         "folder_name": artist.folder_name,
@@ -64,9 +74,11 @@ def artist_to_dict(artist) -> dict | None:
 def album_to_dict(album) -> dict | None:
     if album is None:
         return None
+    entity_uid = str(album.entity_uid) if getattr(album, "entity_uid", None) else None
     return {
         "id": album.id,
-        "storage_id": str(album.storage_id) if album.storage_id else None,
+        "storage_id": None if entity_uid else (str(album.storage_id) if album.storage_id else None),
+        "entity_uid": entity_uid,
         "artist": album.artist,
         "name": album.name,
         "slug": album.slug,
@@ -97,9 +109,11 @@ def album_to_dict(album) -> dict | None:
 def track_to_dict(track) -> dict | None:
     if track is None:
         return None
+    entity_uid = str(track.entity_uid) if getattr(track, "entity_uid", None) else None
     return {
         "id": track.id,
         "storage_id": str(track.storage_id) if track.storage_id else None,
+        "entity_uid": entity_uid,
         "album_id": track.album_id,
         "artist": track.artist,
         "album": track.album,
@@ -119,6 +133,9 @@ def track_to_dict(track) -> dict | None:
         "albumartist": track.albumartist,
         "musicbrainz_albumid": track.musicbrainz_albumid,
         "musicbrainz_trackid": track.musicbrainz_trackid,
+        "audio_fingerprint": track.audio_fingerprint,
+        "audio_fingerprint_source": track.audio_fingerprint_source,
+        "audio_fingerprint_computed_at": track.audio_fingerprint_computed_at,
         "path": track.path,
         "updated_at": track.updated_at,
         "bpm": track.bpm,
@@ -166,5 +183,6 @@ __all__ = [
     "allocate_unique_slug",
     "artist_to_dict",
     "coerce_uuid",
+    "coerce_uuid_or_none",
     "track_to_dict",
 ]

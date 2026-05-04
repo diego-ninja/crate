@@ -300,6 +300,42 @@ services:
     mem_limit: 4g
     command: ["worker"]
 
+  crate-playback-worker:
+    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
+    build: ./app
+    container_name: crate-playback-worker
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - CRATE_RUNTIME=worker
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - DOMAIN=${DOMAIN}
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
+      - JWT_SECRET=${JWT_SECRET}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_STREAM_TRANSCODE_MAX_CONCURRENT=${STREAM_TRANSCODE_MAX_CONCURRENT:-1}
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/librarian:/data
+    networks:
+      - crate
+    depends_on:
+      - crate-postgres
+      - crate-redis
+    mem_limit: 1g
+    command: ["worker", "--queues", "playback", "--processes", "${PLAYBACK_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
+
   proton-vpn:
     image: genericmale/protonvpn
     container_name: proton-vpn

@@ -119,11 +119,13 @@ def enrich_track_refs(track_ids: list[int], *, session: Session | None = None) -
         rows = s.execute(
             select(
                 LibraryTrack.id.label("track_id"),
-                LibraryTrack.storage_id.label("track_storage_id"),
+                LibraryTrack.entity_uid.label("track_entity_uid"),
                 LibraryTrack.slug.label("track_slug"),
                 LibraryAlbum.id.label("album_id"),
+                LibraryAlbum.entity_uid.label("album_entity_uid"),
                 LibraryAlbum.slug.label("album_slug"),
                 LibraryArtist.id.label("artist_id"),
+                LibraryArtist.entity_uid.label("artist_entity_uid"),
                 LibraryArtist.slug.label("artist_slug"),
             )
             .join(LibraryAlbum, LibraryTrack.album_id == LibraryAlbum.id)
@@ -133,7 +135,9 @@ def enrich_track_refs(track_ids: list[int], *, session: Session | None = None) -
         return {
             row["track_id"]: {
                 **dict(row),
-                "track_storage_id": str(row["track_storage_id"]) if row.get("track_storage_id") is not None else None,
+                "track_entity_uid": str(row["track_entity_uid"]) if row.get("track_entity_uid") is not None else None,
+                "album_entity_uid": str(row["album_entity_uid"]) if row.get("album_entity_uid") is not None else None,
+                "artist_entity_uid": str(row["artist_entity_uid"]) if row.get("artist_entity_uid") is not None else None,
             }
             for row in rows
         }

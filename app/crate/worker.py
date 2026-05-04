@@ -13,8 +13,20 @@ from crate.worker_handlers.integrations import INTEGRATION_TASK_HANDLERS
 from crate.worker_handlers.library import LIBRARY_TASK_HANDLERS
 from crate.worker_handlers.management import MANAGEMENT_TASK_HANDLERS
 from crate.worker_handlers.migration import MIGRATION_TASK_HANDLERS
+from crate.worker_handlers.playback import PLAYBACK_TASK_HANDLERS
 
 log = logging.getLogger(__name__)
+
+
+def _normalise_queues(value) -> list[str]:
+    if isinstance(value, str):
+        parts = value.replace(" ", ",").split(",")
+    elif isinstance(value, (list, tuple, set)):
+        parts = list(value)
+    else:
+        parts = []
+    queues = [str(part).strip() for part in parts if str(part).strip()]
+    return queues or ["fast", "heavy", "default"]
 
 
 def _is_cancelled(task_id: str) -> bool:
@@ -39,48 +51,68 @@ def run_worker(config: dict):
 
     from crate.utils import init_musicbrainz
 
+    queues = _normalise_queues(config.get("worker_queues"))
+    start_service_loop = bool(config.get("worker_service_loop", True))
+    start_analysis_daemons = bool(config.get("worker_analysis_daemons", True))
+    start_projector = bool(config.get("worker_projector", True))
+    start_telegram = bool(config.get("worker_telegram", True))
+
     init_db()
     init_musicbrainz()
-    cleanup_orphaned_tasks()
+    cleanup_orphaned_tasks(pools=queues)
 
     # Clear stale locks from previous run
-    from crate.actors import clear_db_heavy_lock, clear_download_slots
-    clear_db_heavy_lock()
-    clear_download_slots()
+    if any(queue in {"fast", "heavy", "default"} for queue in queues):
+        from crate.actors import clear_db_heavy_lock, clear_download_slots
+        clear_db_heavy_lock()
+        clear_download_slots()
+    if "playback" in queues:
+        from crate.worker_handlers.playback import prune_stream_transcode_slots
+        prune_stream_transcode_slots()
 
     # Start scheduler + watcher + zombie cleanup in background thread
     service_stop = threading.Event()
-    service_thread = threading.Thread(
-        target=_run_service_loop, args=(config, service_stop), daemon=True,
-    )
-    service_thread.start()
-    log.info("Service loop started (scheduler + watcher + zombie cleanup)")
+    if start_service_loop:
+        service_thread = threading.Thread(
+            target=_run_service_loop, args=(config, service_stop), daemon=True,
+        )
+        service_thread.start()
+        log.info("Service loop started (scheduler + watcher + zombie cleanup)")
+    else:
+        log.info("Service loop disabled for queues: %s", ",".join(queues))
 
     # Start background analysis daemons (independent of Dramatiq tasks)
-    from crate.analysis_daemon import analysis_daemon, bliss_daemon
-    analysis_thread = threading.Thread(
-        target=analysis_daemon, args=(config,), daemon=True, name="analysis-daemon",
-    )
-    bliss_thread = threading.Thread(
-        target=bliss_daemon, args=(config,), daemon=True, name="bliss-daemon",
-    )
-    analysis_thread.start()
-    bliss_thread.start()
-    log.info("Background analysis daemons started")
+    if start_analysis_daemons:
+        from crate.analysis_daemon import analysis_daemon, bliss_daemon
+        analysis_thread = threading.Thread(
+            target=analysis_daemon, args=(config,), daemon=True, name="analysis-daemon",
+        )
+        bliss_thread = threading.Thread(
+            target=bliss_daemon, args=(config,), daemon=True, name="bliss-daemon",
+        )
+        analysis_thread.start()
+        bliss_thread.start()
+        log.info("Background analysis daemons started")
+    else:
+        log.info("Background analysis daemons disabled for queues: %s", ",".join(queues))
 
     # Start projector daemon (domain events → snapshot warming)
-    projector_thread = threading.Thread(
-        target=_run_projector_loop, args=(service_stop,), daemon=True, name="projector",
-    )
-    projector_thread.start()
-    log.info("Projector daemon started")
+    if start_projector:
+        projector_thread = threading.Thread(
+            target=_run_projector_loop, args=(service_stop,), daemon=True, name="projector",
+        )
+        projector_thread.start()
+        log.info("Projector daemon started")
+    else:
+        log.info("Projector daemon disabled for queues: %s", ",".join(queues))
 
     # Start Telegram bot
-    from crate.telegram import telegram_bot_loop
-    telegram_thread = threading.Thread(
-        target=telegram_bot_loop, args=(config,), daemon=True, name="telegram-bot",
-    )
-    telegram_thread.start()
+    if start_telegram:
+        from crate.telegram import telegram_bot_loop
+        telegram_thread = threading.Thread(
+            target=telegram_bot_loop, args=(config,), daemon=True, name="telegram-bot",
+        )
+        telegram_thread.start()
 
     # Start Dramatiq workers via CLI (this manages its own process pool)
     dramatiq_cmd = [
@@ -88,7 +120,7 @@ def run_worker(config: dict):
         "crate.actors",
         "--processes", str(config.get("worker_processes", 6)),
         "--threads", "1",
-        "--queues", "fast", "heavy", "default",
+        "--queues", *queues,
     ]
     log.info("Starting Dramatiq: %s", " ".join(dramatiq_cmd))
     proc = subprocess.Popen(dramatiq_cmd)
@@ -232,8 +264,8 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                         "active": int(activity["running_count"]),
                     },
                     "queue_breakdown": activity.get("queue_breakdown") or {
-                        "running": {"fast": 0, "default": 0, "heavy": 0},
-                        "pending": {"fast": 0, "default": 0, "heavy": 0},
+                        "running": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
+                        "pending": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
                     },
                     "db_heavy_gate": activity.get("db_heavy_gate") or {
                         "active": 0,
@@ -329,3 +361,4 @@ TASK_HANDLERS.update(INTEGRATION_TASK_HANDLERS)
 TASK_HANDLERS.update(LIBRARY_TASK_HANDLERS)
 TASK_HANDLERS.update(MANAGEMENT_TASK_HANDLERS)
 TASK_HANDLERS.update(MIGRATION_TASK_HANDLERS)
+TASK_HANDLERS.update(PLAYBACK_TASK_HANDLERS)

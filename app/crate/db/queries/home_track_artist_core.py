@@ -8,14 +8,16 @@ def get_artist_core_track_rows(*, artist_id: int, artist_name: str, limit: int) 
         """
         SELECT
             t.id AS track_id,
-            t.storage_id::text AS track_storage_id,
+            t.entity_uid::text AS track_entity_uid,
             t.path AS track_path,
             t.title,
             t.artist,
             art.id AS artist_id,
+            art.entity_uid::text AS artist_entity_uid,
             art.slug AS artist_slug,
             t.album,
             alb.id AS album_id,
+            alb.entity_uid::text AS album_entity_uid,
             alb.slug AS album_slug,
             t.duration,
             t.format,
