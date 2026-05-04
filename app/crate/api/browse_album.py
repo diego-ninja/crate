@@ -420,6 +420,7 @@ def api_enrich_album(request: Request, album_id: int):
         "artist": album["artist"],
         "album": album["name"],
         "force": True,
+        "triggered_by": "ui",
     })
     return {"task_id": task_id}
 

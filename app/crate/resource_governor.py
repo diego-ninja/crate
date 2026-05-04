@@ -61,6 +61,31 @@ MAINTENANCE_WINDOW_TASK_TYPES = frozenset({
     "write_portable_metadata",
 })
 
+SCOPED_RESOURCE_BYPASS_TASK_TYPES = frozenset({
+    "backfill_track_audio_fingerprints",
+    "export_rich_metadata",
+    "fix_artist",
+    "fix_issues",
+    "health_check",
+    "library_sync",
+    "process_new_content",
+    "rehydrate_portable_metadata",
+    "repair",
+    "write_portable_metadata",
+})
+
+MANUAL_RESOURCE_BYPASS_TASK_TYPES = frozenset({
+    "health_check",
+})
+
+MANUAL_TRIGGER_VALUES = frozenset({
+    "admin",
+    "api",
+    "manual",
+    "ui",
+    "user",
+})
+
 DEFAULT_DEFER_SECONDS = 300
 DEFAULT_LOAD_RATIO = 0.85
 DEFAULT_IOWAIT_PERCENT = 25.0
@@ -114,6 +139,8 @@ def should_defer_task(task_type: str, params: dict | None = None) -> ResourceDec
         window_decision = evaluate_maintenance_window(task_type=task_type)
         if not window_decision.allowed:
             return window_decision
+    if _bypasses_resource_pressure(task_type, params):
+        return ResourceDecision(allowed=True)
     return evaluate_resources(label=task_type, listener_sensitive=True)
 
 
@@ -251,6 +278,7 @@ def wait_while_pressured(
     task_type: str,
     is_cancelled_fn,
     task_id: str,
+    params: dict | None = None,
     emit_event_fn=None,
     max_sleep_seconds: int | None = None,
 ) -> bool:
@@ -258,8 +286,9 @@ def wait_while_pressured(
     while True:
         if is_cancelled_fn(task_id):
             return False
-        decision = evaluate_resources(label=label, listener_sensitive=True)
-        record_decision(decision, task_type=task_type, source="task_loop")
+        decision = should_defer_task(task_type, params)
+        if decision.snapshot is not None or not decision.allowed:
+            record_decision(decision, task_type=task_type, source="task_loop")
         if decision.allowed:
             return True
         delay = min(decision.defer_seconds, max_sleep_seconds or decision.defer_seconds)
@@ -304,6 +333,30 @@ def _requires_maintenance_window(task_type: str, params: dict) -> bool:
         limit = _coerce_int(params.get("limit"), 5000)
         threshold = _int_setting("CRATE_MAINTENANCE_WINDOW_FINGERPRINT_LIMIT", DEFAULT_FINGERPRINT_WINDOW_LIMIT)
         return not _has_specific_scope(params) or limit > threshold
+    return False
+
+
+def _bypasses_resource_pressure(task_type: str, params: dict) -> bool:
+    if params.get("ignore_resource_pressure"):
+        return True
+    if task_type in MANUAL_RESOURCE_BYPASS_TASK_TYPES and _has_manual_trigger(params):
+        return True
+    if task_type not in SCOPED_RESOURCE_BYPASS_TASK_TYPES:
+        return False
+    if task_type == "backfill_track_audio_fingerprints":
+        limit = _coerce_int(params.get("limit"), DEFAULT_FINGERPRINT_WINDOW_LIMIT + 1)
+        threshold = _int_setting("CRATE_MAINTENANCE_WINDOW_FINGERPRINT_LIMIT", DEFAULT_FINGERPRINT_WINDOW_LIMIT)
+        return _has_specific_scope(params) and limit <= threshold
+    return _has_specific_scope(params)
+
+
+def _has_manual_trigger(params: dict) -> bool:
+    if params.get("user_initiated") is True or params.get("manual") is True:
+        return True
+    for key in ("triggered_by", "source", "origin", "initiated_by"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip().lower() in MANUAL_TRIGGER_VALUES:
+            return True
     return False
 
 

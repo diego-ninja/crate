@@ -783,6 +783,7 @@ def _handle_backfill_track_audio_fingerprints(task_id: str, params: dict, config
             task_type="backfill_track_audio_fingerprints",
             is_cancelled_fn=is_cancelled,
             task_id=task_id,
+            params=params,
             emit_event_fn=emit_task_event,
             max_sleep_seconds=300,
         ):

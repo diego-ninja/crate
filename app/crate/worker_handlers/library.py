@@ -168,6 +168,7 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
                 process_task_id = queue_process_new_content_if_needed(
                     canonical,
                     library_path=sync.library_path,
+                    triggered_by="scoped_library_sync",
                 )
                 if process_task_id:
                     emit_task_event(

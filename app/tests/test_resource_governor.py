@@ -59,6 +59,99 @@ def test_resource_governor_can_be_bypassed_per_task(monkeypatch):
     assert decision.allowed is True
 
 
+def test_resource_governor_allows_scoped_process_new_content_under_load(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("CRATE_MAINTENANCE_WINDOW_ENABLED", "false")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: (_ for _ in ()).throw(AssertionError("scoped task should not sample")),
+    )
+
+    decision = governor.should_defer_task(
+        "process_new_content",
+        {"artist": "Kneecap", "album": "H.O.O.D 2025", "force": True},
+    )
+
+    assert decision.allowed is True
+
+
+def test_resource_governor_allows_manual_admin_health_check_under_load(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: (_ for _ in ()).throw(AssertionError("manual task should not sample")),
+    )
+
+    decision = governor.should_defer_task("health_check", {"triggered_by": "admin"})
+
+    assert decision.allowed is True
+
+
+def test_resource_governor_still_defers_unscoped_health_check_under_load(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("CRATE_RESOURCE_MAX_SWAP_PERCENT", "30")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: governor.ResourceSnapshot(
+            cpu_count=4,
+            load_1m=0.1,
+            load_ratio=0.025,
+            iowait_percent=0.0,
+            swap_used_percent=41.0,
+            active_users=0,
+            active_streams=0,
+        ),
+    )
+
+    decision = governor.should_defer_task("health_check")
+
+    assert decision.allowed is False
+    assert "swap 41.0%>30.0%" in decision.reason
+
+
+def test_scoped_fingerprint_backfill_respects_batch_limit(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("CRATE_MAINTENANCE_WINDOW_FINGERPRINT_LIMIT", "1000")
+    monkeypatch.setenv("CRATE_RESOURCE_MAX_LOAD_RATIO", "0.50")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: governor.ResourceSnapshot(
+            cpu_count=4,
+            load_1m=4.0,
+            load_ratio=1.0,
+            iowait_percent=0.0,
+            swap_used_percent=0.0,
+            active_users=0,
+            active_streams=0,
+        ),
+    )
+
+    small = governor.should_defer_task(
+        "backfill_track_audio_fingerprints",
+        {"artist": "Kneecap", "limit": 1000},
+    )
+    large = governor.should_defer_task(
+        "backfill_track_audio_fingerprints",
+        {"artist": "Kneecap", "limit": 5000},
+    )
+
+    assert small.allowed is True
+    assert large.allowed is False
+    assert "load 1.00>0.50" in large.reason
+
+
 def test_maintenance_window_defers_full_batch_work_outside_window(monkeypatch):
     from crate import resource_governor as governor
 

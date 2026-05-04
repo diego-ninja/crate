@@ -206,7 +206,7 @@ async def api_admin_health_stream(request: Request, check_type: str = "", limit:
 )
 def run_health_check(request: Request):
     _require_admin(request)
-    task_id = create_task("health_check")
+    task_id = create_task("health_check", {"triggered_by": "admin"})
     return {"task_id": task_id}
 
 

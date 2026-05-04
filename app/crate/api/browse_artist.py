@@ -1308,7 +1308,7 @@ def api_artist_enrich(request: Request, name: str):
     _require_auth(request)
     from crate.content import queue_process_new_content_if_needed
 
-    task_id = queue_process_new_content_if_needed(name, force=True)
+    task_id = queue_process_new_content_if_needed(name, force=True, triggered_by="ui")
     return {"status": "queued", "task_id": task_id}
 
 
