@@ -344,6 +344,13 @@ def _format_artist_top_track(row: dict) -> dict:
         "duration": row["duration"] or 0,
         "track": row["track_number"] or 0,
         "format": row["format"],
+        "bpm": row.get("bpm"),
+        "audio_key": row.get("audio_key"),
+        "audio_scale": row.get("audio_scale"),
+        "energy": row.get("energy"),
+        "danceability": row.get("danceability"),
+        "valence": row.get("valence"),
+        "bliss_vector": list(row["bliss_vector"]) if row.get("bliss_vector") is not None else None,
     }
 
 
@@ -1354,6 +1361,13 @@ def api_artist_setlist_playable(request: Request, name: str):
                 "album_slug": match.get("album_slug"),
                 "path": match.get("path", ""),
                 "duration": match.get("duration"),
+                "bpm": match.get("bpm"),
+                "audio_key": match.get("audio_key"),
+                "audio_scale": match.get("audio_scale"),
+                "energy": match.get("energy"),
+                "danceability": match.get("danceability"),
+                "valence": match.get("valence"),
+                "bliss_vector": list(match["bliss_vector"]) if match.get("bliss_vector") is not None else None,
                 "setlist_title": song.get("title", ""),
                 "position": song.get("position"),
             }

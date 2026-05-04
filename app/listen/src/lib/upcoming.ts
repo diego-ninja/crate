@@ -20,6 +20,13 @@ export async function fetchPlayableSetlist(input: { artistId?: number; artistNam
       album_slug?: string;
       path: string;
       duration?: number;
+      bpm?: number | null;
+      audio_key?: string | null;
+      audio_scale?: string | null;
+      energy?: number | null;
+      danceability?: number | null;
+      valence?: number | null;
+      bliss_vector?: number[] | null;
     }[];
   }>(`/api/artists/${input.artistId}/setlist-playable`);
 

@@ -62,7 +62,9 @@ def search_tracks(like: str, limit: int) -> list[dict]:
                 SELECT t.id, t.entity_uid::text AS entity_uid, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
                        a.entity_uid::text AS album_entity_uid, a.name AS album,
                        ar.id AS artist_id, ar.entity_uid::text AS artist_entity_uid, ar.slug AS artist_slug,
-                       t.path, t.duration
+                       t.path, t.duration,
+                       t.bpm, t.audio_key, t.audio_scale, t.energy,
+                       t.danceability, t.valence, t.bliss_vector
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 LEFT JOIN library_artists ar ON ar.name = t.artist
@@ -82,6 +84,8 @@ def search_tracks(like: str, limit: int) -> list[dict]:
             item["artist_entity_uid"] = (
                 str(item["artist_entity_uid"]) if item.get("artist_entity_uid") is not None else None
             )
+            if item.get("bliss_vector") is not None:
+                item["bliss_vector"] = list(item["bliss_vector"])
             items.append(item)
         return items
 

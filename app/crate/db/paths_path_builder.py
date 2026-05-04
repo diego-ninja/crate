@@ -64,6 +64,13 @@ def compute_path(
             "album": track.get("album"),
             "album_id": track.get("album_id"),
             "album_entity_uid": track.get("album_entity_uid"),
+            "bpm": track.get("bpm"),
+            "audio_key": track.get("audio_key"),
+            "audio_scale": track.get("audio_scale"),
+            "energy": track.get("energy"),
+            "danceability": track.get("danceability"),
+            "valence": track.get("valence"),
+            "bliss_vector": list(track["bliss_vector"]) if track.get("bliss_vector") else None,
             "distance": round(track["distance"], 6),
         }
 

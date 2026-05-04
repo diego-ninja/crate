@@ -457,6 +457,7 @@ def _radio_track_payload(track: dict) -> dict:
     track_path = track.get("track_path") or track.get("path") or ""
     if track_path.startswith("/music/"):
         track_path = track_path[len("/music/") :]
+    bliss_vector = track.get("bliss_vector")
 
     return {
         "track_id": track.get("track_id") or track.get("id"),
@@ -466,6 +467,13 @@ def _radio_track_payload(track: dict) -> dict:
         "album": track.get("album"),
         "duration": track.get("duration", 0),
         "score": track.get("score"),
+        "bpm": track.get("bpm"),
+        "audio_key": track.get("audio_key"),
+        "audio_scale": track.get("audio_scale"),
+        "energy": track.get("energy"),
+        "danceability": track.get("danceability"),
+        "valence": track.get("valence"),
+        "bliss_vector": list(bliss_vector) if bliss_vector is not None else None,
     }
 
 

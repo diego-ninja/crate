@@ -11,6 +11,13 @@ export interface AlbumPlaybackTrack {
   bitrate: number | null;
   sample_rate?: number | null;
   bit_depth?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   path: string;
   tags: {
     title: string;
@@ -66,6 +73,13 @@ export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
     bitrate: track.bitrate,
     sample_rate: track.sample_rate,
     bit_depth: track.bit_depth,
+    bpm: track.bpm,
+    audio_key: track.audio_key,
+    audio_scale: track.audio_scale,
+    energy: track.energy,
+    danceability: track.danceability,
+    valence: track.valence,
+    bliss_vector: track.bliss_vector,
   }, { cover }));
 }
 

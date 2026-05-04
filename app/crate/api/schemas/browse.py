@@ -147,6 +147,13 @@ class ArtistTopTrackResponse(IdentityFieldsMixin):
     duration: float | int
     track: int | str
     format: str | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
 
 
 class SimilarArtistResponse(BaseModel):
@@ -284,6 +291,13 @@ class ArtistSetlistTrackResponse(IdentityFieldsMixin):
     album_slug: str | None = None
     path: str
     duration: float | int | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
     setlist_title: str
     position: int | str | None = None
 

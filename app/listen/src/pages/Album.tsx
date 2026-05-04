@@ -44,6 +44,13 @@ interface AlbumTrack {
   bitrate: number | null;
   sample_rate?: number | null;
   bit_depth?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   length_sec: number;
   rating: number;
   tags: {
@@ -370,6 +377,13 @@ export function Album() {
         duration: track.length_sec,
         path: track.path,
         library_track_id: track.id,
+        bpm: track.bpm,
+        audio_key: track.audio_key,
+        audio_scale: track.audio_scale,
+        energy: track.energy,
+        danceability: track.danceability,
+        valence: track.valence,
+        bliss_vector: track.bliss_vector,
       })),
     });
     setMenuOpen(false);
@@ -638,6 +652,13 @@ export function Album() {
                       bitrate: t.bitrate,
                       sample_rate: t.sample_rate,
                       bit_depth: t.bit_depth,
+                      bpm: t.bpm,
+                      audio_key: t.audio_key,
+                      audio_scale: t.audio_scale,
+                      energy: t.energy,
+                      danceability: t.danceability,
+                      valence: t.valence,
+                      bliss_vector: t.bliss_vector,
                       library_track_id: t.id,
                     })}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
@@ -674,6 +695,13 @@ export function Album() {
                 bitrate: t.bitrate,
                 sample_rate: t.sample_rate,
                 bit_depth: t.bit_depth,
+                bpm: t.bpm,
+                audio_key: t.audio_key,
+                audio_scale: t.audio_scale,
+                energy: t.energy,
+                danceability: t.danceability,
+                valence: t.valence,
+                bliss_vector: t.bliss_vector,
                 library_track_id: t.id,
               })}
               index={parseInt(t.tags.tracknumber) || idx + 1}

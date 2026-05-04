@@ -34,6 +34,13 @@ export interface TrackRowData {
   bitrate?: number | null;
   sample_rate?: number | null;
   bit_depth?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   library_track_id?: number;
 }
 

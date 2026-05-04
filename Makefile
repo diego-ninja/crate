@@ -258,32 +258,11 @@ _create-dirs:
 # DEPLOY (production)
 # ===========================================================================
 
+# Defaults to the short SHA tag published by GitHub Actions for origin/main.
+# Overrides: DEPLOY_IMAGE_TAG=<tag>, DEPLOY_REF=<git-ref>, DEPLOY_PUBLIC_CHECKS=0.
 .PHONY: deploy
-deploy: ## Deploy by pulling pre-built images from GHCR, syncing config, and restarting
-	@echo "$(YELLOW)Ensuring directories exist...$(NC)"
-	@$(SSH) "mkdir -p $(SERVER_PATH)/media/downloads/soulseek/incomplete $(SERVER_PATH)/media/downloads/tidal/incomplete && chown -R $(shell grep PUID .env 2>/dev/null | cut -d= -f2 || echo 1000):$(shell grep PGID .env 2>/dev/null | cut -d= -f2 || echo 1000) $(SERVER_PATH)/media/downloads"
-	@echo "$(YELLOW)Syncing config...$(NC)"
-	@# docker-compose.project.yaml is the overlay that adds crate-site
-	@# and crate-docs (the official project surfaces). The remote commands
-	@# below include it explicitly so deploys do not depend on COMPOSE_FILE
-	@# being present in the server's .env.
-	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
-	@rsync -az \
-		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
-		--exclude='.vite' --exclude='*.tsbuildinfo' \
-		--exclude='bin/' --exclude='crate/' --exclude='ui/' --exclude='listen/' \
-		--exclude='requirements.txt' --exclude='Dockerfile' --exclude='tests/' \
-		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
-	@# docs/ is consumed by the crate-docs build via COPY docs/ /docs/,
-	@# so it must exist on the server whenever we might re-build (fallback
-	@# path). Synced here so the server stays consistent even on pull-only
-	@# deploys.
-	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
-	@echo "$(YELLOW)Pulling images (GHCR + external services)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-pull-failures"
-	@echo "$(YELLOW)Restarting services (no local build)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d --no-build --remove-orphans"
-	@echo "$(GREEN)Deploy complete$(NC)"
+deploy: ## Deploy origin/main GHCR images by SHA, verify health, rollback on failure
+	@SERVER_USER="$(SERVER_USER)" SERVER_HOST="$(SERVER_HOST)" SERVER_PATH="$(SERVER_PATH)" scripts/deploy.sh
 
 .PHONY: deploy-build
 deploy-build: ## Deploy by building on the server (GHCR fallback)

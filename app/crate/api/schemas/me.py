@@ -279,6 +279,13 @@ class LikedTrackResponse(IdentityFieldsMixin):
     album_entity_uid: str | None = None
     album_slug: str | None = None
     duration: float | int | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
 
 
 class LikeMutationResponse(OkResponse):
@@ -365,6 +372,13 @@ class StatsTrackResponse(IdentityFieldsMixin):
     artist_slug: str | None = None
     album_id: int | None = None
     album_slug: str | None = None
+    bpm: float | None = None
+    audio_key: str | None = None
+    audio_scale: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    bliss_vector: list[float] | None = None
     play_count: int
     complete_play_count: int
     minutes_listened: float | int

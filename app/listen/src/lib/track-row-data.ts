@@ -27,6 +27,13 @@ export function toTrackRowData(input: TrackRowDataInput): TrackRowData {
     bitrate: track.bitrate,
     sample_rate: track.sampleRate,
     bit_depth: track.bitDepth,
+    bpm: track.bpm,
+    audio_key: track.audioKey,
+    audio_scale: track.audioScale,
+    energy: track.energy,
+    danceability: track.danceability,
+    valence: track.valence,
+    bliss_vector: track.blissVector,
     library_track_id: track.libraryTrackId,
   };
 }

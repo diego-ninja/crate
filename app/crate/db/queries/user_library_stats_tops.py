@@ -23,6 +23,13 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                     art.slug AS artist_slug,
                     COALESCE(alb_by_id.id, alb_by_name.id) AS album_id,
                     COALESCE(alb_by_id.slug, alb_by_name.slug) AS album_slug,
+                    lt.bpm,
+                    lt.audio_key,
+                    lt.audio_scale,
+                    lt.energy,
+                    lt.danceability,
+                    lt.valence,
+                    lt.bliss_vector,
                     uts.play_count,
                     uts.complete_play_count,
                     uts.minutes_listened,
@@ -45,7 +52,11 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
             ),
             {"user_id": user_id, "window": normalized, "lim": limit},
         ).mappings().all()
-    return [dict(row) for row in rows]
+    payload = [dict(row) for row in rows]
+    for item in payload:
+        if item.get("bliss_vector") is not None:
+            item["bliss_vector"] = list(item["bliss_vector"])
+    return payload
 
 
 def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:

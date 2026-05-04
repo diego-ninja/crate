@@ -20,6 +20,13 @@ export interface RadioTrackPayload {
   album_slug?: string | null;
   duration?: number | null;
   score?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
 }
 
 interface RadioResponse {
@@ -286,6 +293,13 @@ export interface ShapedRadioTrack {
   artist: string;
   album?: string | null;
   album_id?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   distance: number;
 }
 
@@ -311,6 +325,13 @@ function shapedToTrack(t: ShapedRadioTrack): Track {
       album: t.album,
       album_id: t.album_id,
       library_track_id: t.track_id,
+      bpm: t.bpm,
+      audio_key: t.audio_key,
+      audio_scale: t.audio_scale,
+      energy: t.energy,
+      danceability: t.danceability,
+      valence: t.valence,
+      bliss_vector: t.bliss_vector,
     },
     {
       cover: t.album_id

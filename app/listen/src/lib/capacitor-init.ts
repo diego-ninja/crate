@@ -19,6 +19,10 @@ export async function initCapacitor(): Promise<string | null> {
   }
 
   App.addListener("backButton", ({ canGoBack }) => {
+    const nativeBackEvent = new CustomEvent("crate:native-back", { cancelable: true });
+    window.dispatchEvent(nativeBackEvent);
+    if (nativeBackEvent.defaultPrevented) return;
+
     if (canGoBack) {
       window.history.back();
     } else {

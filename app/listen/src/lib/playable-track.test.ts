@@ -19,6 +19,13 @@ describe("playable track mapper", () => {
       bitrate: 1411,
       sample_rate: 44100,
       bit_depth: 16,
+      bpm: 124,
+      audio_key: "C",
+      audio_scale: "minor",
+      energy: 0.72,
+      danceability: 0.41,
+      valence: 0.28,
+      bliss_vector: [0.1, 0.2, 0.3],
     }, { cover: "/api/albums/8/cover" });
 
     expect(track).toEqual(expect.objectContaining({
@@ -33,6 +40,13 @@ describe("playable track mapper", () => {
       bitrate: 1411,
       sampleRate: 44100,
       bitDepth: 16,
+      bpm: 124,
+      audioKey: "C",
+      audioScale: "minor",
+      energy: 0.72,
+      danceability: 0.41,
+      valence: 0.28,
+      blissVector: [0.1, 0.2, 0.3],
     }));
   });
 

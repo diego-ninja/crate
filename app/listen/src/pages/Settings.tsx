@@ -253,8 +253,8 @@ export function Settings() {
           }}
         />
         <ToggleRow
-          label="Smart crossfade"
-          description="Use your crossfade setting for playlists, radio, and mixed queues, but keep straight-through gapless playback for album sequencing when shuffle is off."
+          label="Smart transitions"
+          description="Adapt crossfade length for playlists, radio, and mixed queues using audio analysis when available, while keeping album sequencing gapless when shuffle is off."
           checked={smartCrossfadeEnabled}
           onChange={(value) => {
             setSmartCrossfadeEnabled(value);

@@ -134,6 +134,13 @@ export interface ReplayTrack {
   album_id?: number | null;
   album_entity_uid?: string | null;
   album_slug?: string | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -163,6 +170,13 @@ export interface PlaylistDetailTrack {
   album_entity_uid?: string;
   album_slug?: string;
   duration: number;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
 }
 
 export interface PlaylistDetailData {
@@ -274,6 +288,13 @@ export interface HomeRecommendedTrack {
   bitrate?: number | null;
   sample_rate?: number | null;
   bit_depth?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audio_scale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
 }
 
 export interface HomeRadioStation {

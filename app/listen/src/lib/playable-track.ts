@@ -33,6 +33,16 @@ export interface PlayableTrackInput {
   sampleRate?: number | null;
   bit_depth?: number | null;
   bitDepth?: number | null;
+  bpm?: number | null;
+  audio_key?: string | null;
+  audioKey?: string | null;
+  audio_scale?: string | null;
+  audioScale?: string | null;
+  energy?: number | null;
+  danceability?: number | null;
+  valence?: number | null;
+  bliss_vector?: number[] | null;
+  blissVector?: number[] | null;
   is_suggested?: boolean;
   isSuggested?: boolean;
   suggestion_source?: "playlist";
@@ -104,6 +114,13 @@ export function toPlayableTrack(
     bitrate: input.bitrate ?? null,
     sampleRate: input.sampleRate ?? input.sample_rate ?? null,
     bitDepth: input.bitDepth ?? input.bit_depth ?? null,
+    bpm: input.bpm ?? null,
+    audioKey: input.audioKey ?? input.audio_key ?? null,
+    audioScale: input.audioScale ?? input.audio_scale ?? null,
+    energy: input.energy ?? null,
+    danceability: input.danceability ?? null,
+    valence: input.valence ?? null,
+    blissVector: input.blissVector ?? input.bliss_vector ?? null,
     isSuggested: input.isSuggested ?? input.is_suggested,
     suggestionSource: input.suggestionSource ?? input.suggestion_source,
   };

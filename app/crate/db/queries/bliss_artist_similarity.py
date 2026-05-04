@@ -169,6 +169,8 @@ def get_artist_tracks(session=None, artist_id: int | None = None) -> list[dict]:
                     t.audio_key,
                     t.audio_scale,
                     t.energy,
+                    t.danceability,
+                    t.valence,
                     t.rating
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id

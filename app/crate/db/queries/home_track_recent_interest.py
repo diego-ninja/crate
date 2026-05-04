@@ -27,6 +27,13 @@ def get_recent_interest_track_rows(interest_artists_lower: list[str], limit: int
             t.bitrate,
             t.sample_rate,
             t.bit_depth,
+            t.bpm,
+            t.audio_key,
+            t.audio_scale,
+            t.energy,
+            t.danceability,
+            t.valence,
+            t.bliss_vector,
             COALESCE(t.lastfm_playcount, 0) AS popularity
         FROM library_tracks t
         JOIN library_albums alb ON alb.id = t.album_id

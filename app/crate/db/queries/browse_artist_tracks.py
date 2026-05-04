@@ -13,6 +13,8 @@ def get_artist_all_tracks(artist_name: str) -> list[dict]:
                 SELECT
                     t.id, t.title, t.artist, t.album, t.path, t.duration,
                     t.track_number, t.format,
+                    t.bpm, t.audio_key, t.audio_scale, t.energy,
+                    t.danceability, t.valence, t.bliss_vector,
                     t.entity_uid::text AS track_entity_uid,
                     a.id as album_id, a.entity_uid::text AS album_entity_uid, a.slug as album_slug, a.year,
                     ar.id as artist_id, ar.entity_uid::text AS artist_entity_uid, ar.slug as artist_slug
@@ -53,7 +55,14 @@ def get_artist_setlist_tracks(artist_name: str) -> list[dict]:
                     t.album,
                     t.album_id,
                     a.slug AS album_slug,
-                    t.duration
+                    t.duration,
+                    t.bpm,
+                    t.audio_key,
+                    t.audio_scale,
+                    t.energy,
+                    t.danceability,
+                    t.valence,
+                    t.bliss_vector
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 WHERE a.artist = :artist_name
