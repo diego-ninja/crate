@@ -7,12 +7,38 @@ from sqlalchemy import text
 from crate.db.tx import transaction_scope
 
 
-def list_tracks_missing_audio_fingerprints(*, limit: int = 1000) -> list[dict]:
+def list_tracks_missing_audio_fingerprints(
+    *,
+    limit: int = 1000,
+    track_id: int | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+    album_id: int | None = None,
+) -> list[dict]:
     capped_limit = max(1, min(int(limit or 1000), 50_000))
+    filters = [
+        "audio_fingerprint IS NULL",
+        "path IS NOT NULL",
+        "path != ''",
+    ]
+    params: dict[str, object] = {"limit": capped_limit}
+    if track_id:
+        filters.append("id = :track_id")
+        params["track_id"] = int(track_id)
+    if album_id:
+        filters.append("album_id = :album_id")
+        params["album_id"] = int(album_id)
+    if artist:
+        filters.append("lower(artist) = lower(:artist)")
+        params["artist"] = artist
+    if album:
+        filters.append("lower(album) = lower(:album)")
+        params["album"] = album
+    where_sql = " AND ".join(filters)
     with transaction_scope() as session:
         rows = session.execute(
             text(
-                """
+                f"""
                 SELECT
                     id,
                     entity_uid::text AS entity_uid,
@@ -22,14 +48,12 @@ def list_tracks_missing_audio_fingerprints(*, limit: int = 1000) -> list[dict]:
                     album,
                     title
                 FROM library_tracks
-                WHERE audio_fingerprint IS NULL
-                  AND path IS NOT NULL
-                  AND path != ''
+                WHERE {where_sql}
                 ORDER BY id ASC
                 LIMIT :limit
                 """
             ),
-            {"limit": capped_limit},
+            params,
         ).mappings().all()
         return [dict(row) for row in rows]
 

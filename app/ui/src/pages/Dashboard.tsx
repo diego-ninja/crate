@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { ResponsiveBar } from "@nivo/bar";
 import { ResponsivePie } from "@nivo/pie";
@@ -52,10 +52,10 @@ interface AttentionItem {
 }
 
 function queueTotal(
-  queue: { fast: number; default: number; heavy: number; playback: number } | null | undefined,
+  queue: { fast: number; default: number; heavy: number; maintenance?: number; playback: number } | null | undefined,
 ): number {
   if (!queue) return 0;
-  return (queue.fast || 0) + (queue.default || 0) + (queue.heavy || 0) + (queue.playback || 0);
+  return (queue.fast || 0) + (queue.default || 0) + (queue.heavy || 0) + (queue.maintenance || 0) + (queue.playback || 0);
 }
 
 function prettifyTaskType(taskType: string | null | undefined): string {
@@ -165,7 +165,7 @@ export function Dashboard() {
   const opsHealthy = Boolean(systems?.postgres) && Boolean(systems?.watcher);
   const workerSaturated = Boolean(workerSlots && workerSlots.max > 0 && workerSlots.active >= workerSlots.max);
 
-  const attentionItems = useMemo<AttentionItem[]>(() => {
+  const attentionItems = (() => {
     const items: AttentionItem[] = [];
 
     if (!systems?.postgres || !systems?.watcher) {
@@ -255,21 +255,7 @@ export function Dashboard() {
     }
 
     return items.slice(0, 6);
-  }, [
-    dbHeavyGate?.active,
-    dbHeavyGate?.blocking,
-    dbHeavyGate?.pending,
-    pendingImports,
-    recentFailedTasks,
-    systems?.postgres,
-    systems?.watcher,
-    topHealthLabel,
-    totalAnalysisFailures,
-    totalHealthIssues,
-    workerSlots?.active,
-    workerSlots?.max,
-    workerSaturated,
-  ]);
+  })();
 
   async function triggerLibrarySync() {
     try {

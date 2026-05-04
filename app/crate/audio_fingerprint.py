@@ -6,6 +6,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from crate.resource_governor import low_priority_command
+
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ PCM16_MD5_V1 = "pcm16-md5-v1"
 def _compute_chromaprint(path: Path, *, timeout_seconds: int = 300) -> tuple[str, str] | None:
     try:
         proc = subprocess.run(
-            ["fpcalc", "-json", str(path)],
+            low_priority_command(["fpcalc", "-json", str(path)]),
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -74,7 +76,7 @@ def _compute_pcm16_md5(path: Path, *, timeout_seconds: int = 300) -> tuple[str, 
     wrote_audio = False
     proc: subprocess.Popen[bytes] | None = None
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(low_priority_command(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stdout is not None
         for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
             if not chunk:

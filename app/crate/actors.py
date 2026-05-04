@@ -34,6 +34,7 @@ MAX_RSS_MB = 1500  # 1.5 GB — matches previous worker recycling limit
 #   fast    — I/O-bound: HTTP APIs, light DB
 #   heavy   — CPU-bound: audio analysis, bliss vectors
 #   default — mixed: sync, pipeline, downloads, management
+#   maintenance — deferrable repair/sync/export work
 #   playback — interactive playback delivery and stream variant preparation
 
 TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
@@ -61,23 +62,23 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "analyze_album_full":   ("fast",    1, 60, 0),  # just resets state for background daemon
 
     # Scheduled recurring (priority 2)
-    "library_sync":         ("default", 2, 3600, 0),
-    "library_pipeline":     ("default", 2, 7200, 0),
-    "health_check":         ("default", 2, 1500, 0),
-    "repair":               ("default", 2, 3600, 0),
+    "library_sync":         ("maintenance", 2, 3600, 0),
+    "library_pipeline":     ("maintenance", 2, 7200, 0),
+    "health_check":         ("maintenance", 2, 1500, 0),
+    "repair":               ("maintenance", 2, 3600, 0),
     "compute_analytics":    ("fast",    2, 600, 0),
     "check_new_releases":   ("fast",    2, 600, 1),
-    "scan":                 ("default", 2, 1800, 0),
-    "fix_issues":           ("default", 2, 3600, 0),
+    "scan":                 ("maintenance", 2, 1800, 0),
+    "fix_issues":           ("maintenance", 2, 3600, 0),
     "fetch_artist_covers":  ("fast",    2, 300, 1),
-    "batch_retag":          ("default", 2, 3600, 0),
+    "batch_retag":          ("maintenance", 2, 3600, 0),
     "batch_covers":         ("fast",    2, 3600, 0),
     "wipe_library":         ("default", 2, 300, 0),
     "rebuild_library":      ("default", 2, 14400, 0),
     "resolve_duplicates":   ("default", 2, 600, 0),
-    "write_portable_metadata": ("default", 2, 14400, 0),
-    "rehydrate_portable_metadata": ("default", 2, 14400, 0),
-    "export_rich_metadata":  ("default", 2, 28800, 0),
+    "write_portable_metadata": ("maintenance", 2, 14400, 0),
+    "rehydrate_portable_metadata": ("maintenance", 2, 14400, 0),
+    "export_rich_metadata":  ("maintenance", 2, 28800, 0),
 
     # Background batch (priority 3)
     "enrich_artists":       ("fast",    3, 86400, 0),
@@ -100,9 +101,9 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "cleanup_incomplete_downloads": ("default", 3, 600, 0),
 
     # Storage migration (priority 1 — user-initiated, long-running)
-    "migrate_storage_v2":   ("default", 1, 14400, 0),
-    "fix_artist":           ("default", 1, 14400, 0),
-    "verify_storage_v2":    ("default", 2, 3600, 0),
+    "migrate_storage_v2":   ("maintenance", 1, 14400, 0),  # deprecated legacy storage migration
+    "fix_artist":           ("maintenance", 1, 14400, 0),
+    "verify_storage_v2":    ("maintenance", 2, 3600, 0),   # deprecated legacy storage migration
 
     # Library completeness check
     "compute_completeness": ("fast",    3, 3600, 0),
@@ -159,7 +160,7 @@ _DB_HEAVY_LOCK_TTL = 7200  # 2h max
 
 
 def clear_db_heavy_lock():
-    """Force-clear the DB-heavy lock. Called on worker startup."""
+    """Force-clear the DB-heavy lock for manual emergency recovery."""
     try:
         from crate.db.cache_runtime import _get_redis
         r = _get_redis()
@@ -404,7 +405,7 @@ def _release_download_slot(task_id: str):
 
 
 def clear_download_slots():
-    """Force-clear download semaphore. Called on worker startup."""
+    """Force-clear the download semaphore for manual emergency recovery."""
     try:
         from crate.db.cache_runtime import _get_redis
         r = _get_redis()
@@ -421,6 +422,7 @@ def _execute_task(task_type: str, task_id: str):
     from crate.config import load_config
     from crate.db.queries.tasks import get_task
     from crate.db.repositories.tasks import update_task
+    from crate.resource_governor import record_decision, should_defer_task
     from crate.worker import TASK_HANDLERS, _is_cancelled
 
     task = get_task(task_id)
@@ -434,6 +436,24 @@ def _execute_task(task_type: str, task_id: str):
     handler = TASK_HANDLERS.get(task_type)
     if not handler:
         update_task(task_id, status="failed", error=f"Unknown task type: {task_type}")
+        return
+
+    resource_decision = should_defer_task(task_type, task.get("params", {}))
+    if not resource_decision.allowed:
+        record_decision(resource_decision, task_type=task_type, source="task_start")
+        log.info(
+            "Task %s (%s) deferred by resource governor: %s",
+            task_id,
+            task_type,
+            resource_decision.reason,
+        )
+        update_task(task_id, progress=f"Deferred by resource governor: {resource_decision.reason}")
+        actor = _actors.get(task_type)
+        if actor:
+            actor.send_with_options(
+                args=(task_id,),
+                delay=max(1, resource_decision.defer_seconds) * 1000,
+            )
         return
 
     # DB-heavy mutex — check BEFORE marking as running

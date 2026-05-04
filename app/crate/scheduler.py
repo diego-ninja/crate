@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 # Default schedule: {task_type: interval_seconds}
 DEFAULT_SCHEDULES = {
     "enrich_artists": 86400,       # 24h — full enrichment of all artists
-    "library_pipeline": 21600,     # 6h — health check + repair + sync (watcher handles real-time)
+    "library_pipeline": 86400,     # 24h — gated maintenance path (watcher handles real-time)
     "compute_analytics": 14400,    # 4h — recompute analytics from DB
     "check_new_releases": 43200,   # 12h — check MusicBrainz for new releases
     "cleanup_incomplete_downloads": 172800,  # 48h — remove incomplete soulseek downloads
@@ -88,6 +88,20 @@ def check_and_create_scheduled_tasks():
         if interval <= 0:
             continue
         if should_run(task_type, schedules):
+            try:
+                from crate.resource_governor import record_decision, should_defer_task
+
+                decision = should_defer_task(task_type)
+                if not decision.allowed:
+                    record_decision(decision, task_type=task_type, source="scheduler")
+                    log.info(
+                        "Deferring scheduled task %s due to resource pressure: %s",
+                        task_type,
+                        decision.reason,
+                    )
+                    continue
+            except Exception:
+                log.debug("Resource governor check failed for scheduled %s", task_type, exc_info=True)
             log.info("Scheduling task: %s (interval=%ds)", task_type, interval)
             create_task(task_type)
             mark_run(task_type)

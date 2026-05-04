@@ -59,8 +59,8 @@ export interface OpsAnalyticsSnapshot {
 export interface OpsLiveActivity {
   engine?: string;
   queue_breakdown: {
-    running: { fast: number; default: number; heavy: number; playback: number };
-    pending: { fast: number; default: number; heavy: number; playback: number };
+    running: { fast: number; default: number; heavy: number; maintenance: number; playback: number };
+    pending: { fast: number; default: number; heavy: number; maintenance: number; playback: number };
   };
   db_heavy_gate: {
     active: number;

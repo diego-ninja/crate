@@ -3,10 +3,11 @@ import { Menu, X } from "lucide-react";
 import { GithubIcon } from "./GithubIcon";
 
 const NAV_LINKS = [
+  { href: "/#why-crate", label: "Why Crate?" },
   { href: "/#features", label: "Features" },
   { href: "/#stack", label: "Stack" },
   { href: "/#install", label: "Install" },
-  { href: "/why", label: "Why Crate?" },
+  { href: "/why", label: "Manifesto" },
 ];
 
 export function Nav() {

@@ -9,7 +9,7 @@ const TASK_LABELS: Record<string, string> = {
   delete_artist: "Artist Deletion",
   delete_album: "Album Deletion",
   migrate_storage: "Storage Migration",
-  migrate_storage_v2: "Storage Migration v2",
+  migrate_storage_v2: "Legacy Storage Migration v2",
   fix_artist: "Artist Fix",
   write_portable_metadata: "Portable Metadata",
   rehydrate_portable_metadata: "Portable Metadata Rehydrate",

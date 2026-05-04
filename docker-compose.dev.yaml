@@ -165,7 +165,84 @@ services:
       - postgres
       - redis
       - slskd
-    command: ["worker"]
+    command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons"]
+
+  maintenance-worker:
+    build: ./app
+    container_name: crate-dev-maintenance-worker
+    environment:
+      - TZ=Europe/Madrid
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
+      - CRATE_RUNTIME=worker
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
+      - JWT_SECRET=dev-secret-not-for-production
+      - DEFAULT_ADMIN_PASSWORD=admin
+      - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - SPOTIFY_ID=${SPOTIFY_ID:-}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://redis:6379/0
+      - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+    volumes:
+      - ./app/crate:/app/crate:ro
+      - ./app/tests:/app/tests:ro
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music
+      - ./data/slskd/downloads/complete:/downloads/soulseek
+      - dev_data:/data
+    networks:
+      - crate-dev
+    depends_on:
+      - postgres
+      - redis
+      - slskd
+    command: ["worker", "--queues", "maintenance", "--processes", "${MAINTENANCE_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
+
+  analysis-worker:
+    build: ./app
+    container_name: crate-dev-analysis-worker
+    environment:
+      - TZ=Europe/Madrid
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
+      - CRATE_RUNTIME=worker
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
+      - JWT_SECRET=dev-secret-not-for-production
+      - DEFAULT_ADMIN_PASSWORD=admin
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./app/crate:/app/crate:ro
+      - ./app/tests:/app/tests:ro
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music
+      - dev_data:/data
+    networks:
+      - crate-dev
+    depends_on:
+      - postgres
+      - redis
+    command: ["worker", "--queues", "heavy", "--processes", "${ANALYSIS_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-projector", "--no-telegram"]
 
   playback-worker:
     build: ./app

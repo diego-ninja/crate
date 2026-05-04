@@ -50,6 +50,11 @@ interface MetricsSummaryResponse {
   home_endpoint_cache_hit: MetricSummary;
   home_endpoint_cache_miss: MetricSummary;
   home_endpoint_compute_ms: MetricSummary;
+  worker_resource_deferred: MetricSummary;
+  worker_resource_defer_seconds: MetricSummary;
+  worker_resource_load_ratio: MetricSummary;
+  worker_resource_iowait_percent: MetricSummary;
+  worker_resource_swap_used_percent: MetricSummary;
 }
 
 interface TimeseriesPoint {
@@ -109,6 +114,33 @@ interface SystemMetrics {
     bliss?: { pending: number; done: number; failed: number };
   };
   load: { load_1m: number; load_5m: number; load_15m: number; cpu_count: number; load_percent: number };
+  resource_pressure?: ResourcePressure;
+}
+
+interface ResourceSnapshot {
+  cpu_count: number;
+  load_1m?: number | null;
+  load_ratio?: number | null;
+  iowait_percent?: number | null;
+  swap_used_percent?: number | null;
+  active_users?: number | null;
+  active_streams?: number | null;
+}
+
+interface ResourcePressure {
+  allowed: boolean;
+  reason?: string;
+  defer_seconds?: number;
+  snapshot?: ResourceSnapshot | null;
+  window?: {
+    enabled?: boolean;
+    start?: string;
+    end?: string;
+    now?: string;
+    in_window?: boolean;
+    seconds_until_start?: number;
+  } | null;
+  last_defer?: ResourcePressure | null;
 }
 
 type Period = "minute" | "hour";
@@ -265,9 +297,9 @@ function ProgressBar({
   return (
     <div className="space-y-1">
       {label ? (
-        <div className="flex justify-between text-[11px]">
-          <span className="text-white/40">{label}</span>
-          <span className="text-white/60 tabular-nums">{pct.toFixed(0)}%</span>
+        <div className="flex min-w-0 justify-between gap-2 text-[11px]">
+          <span className="min-w-0 truncate text-white/40">{label}</span>
+          <span className="shrink-0 text-white/60 tabular-nums">{pct.toFixed(0)}%</span>
         </div>
       ) : null}
       <div className="h-1.5 overflow-hidden rounded-full bg-white/8">
@@ -545,6 +577,8 @@ export function SystemHealth() {
   const queueTs = dashboard?.timeseries?.["worker.queue.depth"] ?? [];
   const taskDurationTs = dashboard?.timeseries?.["worker.task.duration"] ?? [];
   const queueWaitTs = dashboard?.timeseries?.["worker.queue.wait"] ?? [];
+  const resourceDeferredTs = dashboard?.timeseries?.["worker.resource.deferred"] ?? [];
+  const resourceLoadTs = dashboard?.timeseries?.["worker.resource.load_ratio"] ?? [];
   const playbackDelivery = dashboard?.playback_delivery;
 
   const score = useMemo(() => {
@@ -558,6 +592,7 @@ export function SystemHealth() {
     }
     if (system?.load?.load_percent && system.load.load_percent > 80) next -= 10;
     if (system?.db_pool?.checked_out && system.db_pool.checked_out >= (system.db_pool.size || 8)) next -= 10;
+    if (system?.resource_pressure && !system.resource_pressure.allowed) next -= 10;
     return Math.max(0, next);
   }, [summary, system]);
 
@@ -632,6 +667,21 @@ export function SystemHealth() {
         ) : null}
         {playbackDelivery?.stats ? (
           <CrateChip icon={Headphones}>{playbackDelivery.stats.coverage_percent}% playback coverage</CrateChip>
+        ) : null}
+        {summary?.worker_resource_deferred?.count ? (
+          <CrateChip icon={Gauge}>{summary.worker_resource_deferred.count} batch deferrals</CrateChip>
+        ) : null}
+        {system?.resource_pressure ? (
+          <CrateChip
+            icon={Gauge}
+            className={
+              system.resource_pressure.allowed
+                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                : "border-amber-500/25 bg-amber-500/10 text-amber-100"
+            }
+          >
+            {system.resource_pressure.allowed ? "Batch open" : "Batch deferred"}
+          </CrateChip>
         ) : null}
       </OpsPageHero>
 
@@ -798,6 +848,38 @@ export function SystemHealth() {
                 ) : null}
               </ResourceCard>
             ) : null}
+
+            {system.resource_pressure ? (
+              <ResourceCard
+                icon={Gauge}
+                label="Resource Governor"
+                value={system.resource_pressure.allowed ? "Open" : "Deferring"}
+              >
+                <ProgressBar
+                  value={(system.resource_pressure.snapshot?.load_ratio ?? 0) * 100}
+                  max={100}
+                  color={system.resource_pressure.allowed ? "bg-primary" : "bg-amber-500"}
+                  label={
+                    system.resource_pressure.reason
+                      ? system.resource_pressure.reason
+                      : "No batch pressure detected"
+                  }
+                />
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-white/35">
+                  <span>IO wait: {system.resource_pressure.snapshot?.iowait_percent ?? "—"}%</span>
+                  <span>Swap: {system.resource_pressure.snapshot?.swap_used_percent ?? "—"}%</span>
+                  <span>Listeners: {system.resource_pressure.snapshot?.active_users ?? "—"}</span>
+                  <span>Streams: {system.resource_pressure.snapshot?.active_streams ?? "—"}</span>
+                </div>
+                {system.resource_pressure.window?.enabled ? (
+                  <div className="text-[10px] text-white/30">
+                    Window {system.resource_pressure.window.start}-{system.resource_pressure.window.end}
+                    {" · "}
+                    {system.resource_pressure.window.in_window ? "inside" : "outside"}
+                  </div>
+                ) : null}
+              </ResourceCard>
+            ) : null}
           </div>
         </OpsPanel>
       ) : null}
@@ -829,6 +911,13 @@ export function SystemHealth() {
           <MetricChart title="Task Duration" data={taskDurationTs} yLabel="sec" />
           <MetricChart title="Queue Wait Time" data={queueWaitTs} yLabel="sec" />
           <MetricChart title="Queue Depth" data={queueTs} yLabel="tasks" />
+          <MetricChart
+            title="Resource Deferrals"
+            data={resourceDeferredTs}
+            yLabel="deferrals"
+            series={[{ id: "deferred", field: "count" }]}
+          />
+          <MetricChart title="Resource Load Ratio" data={resourceLoadTs} yLabel="ratio" />
         </div>
       </OpsPanel>
 

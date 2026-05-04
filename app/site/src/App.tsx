@@ -8,13 +8,14 @@ import { GetApp } from "@/components/GetApp";
 import { GetInvolved } from "@/components/GetInvolved";
 import { Footer } from "@/components/Footer";
 import { Manifesto } from "@/components/Manifesto";
+import { WhyCrate } from "@/components/WhyCrate";
 
 function WhyTeaser() {
   return (
     <section className="relative mx-auto max-w-[1400px] px-5 py-10 sm:px-8 sm:py-16">
       <div className="mx-auto max-w-3xl text-center">
         <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
-          Why Crate?
+          The Crate Manifesto
         </div>
         <blockquote className="text-xl font-medium leading-relaxed text-white/80 sm:text-2xl sm:leading-relaxed">
           "In a system where artists earn $0.003 per stream while platforms
@@ -43,6 +44,7 @@ function HomePage() {
     <>
       <Hero />
       <WhyTeaser />
+      <WhyCrate />
       <ValueProps />
       <FeatureShowcase />
       <MusicPaths />

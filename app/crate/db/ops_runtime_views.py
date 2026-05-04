@@ -7,10 +7,27 @@ from crate.db.ops_runtime import get_ops_runtime_state
 
 DEFAULT_MAX_WORKERS = 3
 DEFAULT_QUEUE_BREAKDOWN = {
-    "running": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
-    "pending": {"fast": 0, "default": 0, "heavy": 0, "playback": 0},
+    "running": {"fast": 0, "default": 0, "heavy": 0, "maintenance": 0, "playback": 0},
+    "pending": {"fast": 0, "default": 0, "heavy": 0, "maintenance": 0, "playback": 0},
 }
 DEFAULT_DB_HEAVY_GATE = {"active": 0, "pending": 0, "blocking": False}
+
+
+def _coerce_pool_counts(value: dict | None) -> dict:
+    counts = dict(DEFAULT_QUEUE_BREAKDOWN["running"])
+    if isinstance(value, dict):
+        for key in counts:
+            counts[key] = int(value.get(key) or 0)
+    return counts
+
+
+def _coerce_queue_breakdown(value: dict | None) -> dict:
+    if not isinstance(value, dict):
+        return DEFAULT_QUEUE_BREAKDOWN
+    return {
+        "running": _coerce_pool_counts(value.get("running")),
+        "pending": _coerce_pool_counts(value.get("pending")),
+    }
 
 
 def get_worker_live_state(*, max_age_seconds: int = 30) -> dict | None:
@@ -30,7 +47,7 @@ def get_worker_live_state(*, max_age_seconds: int = 30) -> dict | None:
             "max": int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS),
             "active": len(running_tasks),
         },
-        "queue_breakdown": cached.get("queue_breakdown") or DEFAULT_QUEUE_BREAKDOWN,
+        "queue_breakdown": _coerce_queue_breakdown(cached.get("queue_breakdown")),
         "db_heavy_gate": cached.get("db_heavy_gate") or DEFAULT_DB_HEAVY_GATE,
         "scan": cached.get("scan") or {"running": False, "progress": {}},
         "systems": cached.get("systems") or {"postgres": True, "watcher": True},

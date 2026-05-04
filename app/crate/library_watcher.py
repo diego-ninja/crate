@@ -9,10 +9,10 @@ import threading
 import time
 from pathlib import Path
 
-from crate.db.cache_store import get_cache
-from crate.db.repositories.library import get_library_artist
-from watchdog.events import FileSystemEventHandler, EVENT_TYPE_CREATED
+from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from crate.db.cache_store import get_cache
 
 log = logging.getLogger(__name__)
 
@@ -117,25 +117,20 @@ class LibraryWatcher:
         with self._lock:
             self.debounce_timers.pop(str(album_dir), None)
         try:
-            artist_dir = album_dir.parent
-            canonical = self.sync._canonical_artist_name(artist_dir, artist_name)
+            from crate.db.repositories.tasks import create_task_dedup
 
-            # Check if artist is new (not in DB yet)
-            is_new_artist = get_library_artist(canonical) is None
-
-            if album_dir.is_dir():
-                log.info("Watcher: syncing album %s/%s", canonical, album_dir.name)
-                self.sync.sync_album(album_dir, canonical)
-            self.sync.sync_artist(artist_dir)
-
-            # Queue enrichment for new content (only if content actually changed)
-            if is_new_file:
-                try:
-                    from crate.content import queue_process_new_content_if_needed
-                    if queue_process_new_content_if_needed(canonical, library_path=self.library_path):
-                        log.info("Watcher: queued process_new_content for %s", canonical)
-                except Exception:
-                    log.debug("Watcher: failed to queue processing for %s", canonical)
+            params = {
+                "artist": artist_name,
+                "album_dir": str(album_dir),
+                "is_new_file": bool(is_new_file),
+            }
+            task_id = create_task_dedup(
+                "library_sync",
+                params,
+                dedup_key=f"library-sync:album:{str(album_dir).lower()}",
+            )
+            if task_id:
+                log.info("Watcher: queued scoped library sync for %s/%s", artist_name, album_dir.name)
 
         except Exception:
-            log.exception("Watcher: failed to sync %s/%s", artist_name, album_dir.name)
+            log.exception("Watcher: failed to queue sync for %s/%s", artist_name, album_dir.name)

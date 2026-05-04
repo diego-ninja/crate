@@ -762,6 +762,27 @@ class TestRepairOrchestration:
             result = repair.repair(report, dry_run=True, auto_only=True)
             mock_z.assert_called_once()
 
+    def test_global_only_skips_non_global_repairs(self):
+        from crate.repair import LibraryRepair
+        config = {"library_path": "/tmp/fake"}
+        repair = LibraryRepair(config)
+
+        report = {
+            "issues": [
+                {"check": "artist_layout_fix", "auto_fixable": True, "details": {"artist": "X"}},
+                {"check": "stale_tracks", "auto_fixable": True, "details": {"path": "/tmp/fake/x.flac"}},
+            ]
+        }
+
+        with patch.object(repair, "_fix_artist_layout", return_value={"action": "layout", "applied": True}) as mock_layout, \
+             patch.object(repair, "_fix_stale_tracks", return_value={"action": "stale", "applied": True}) as mock_stale:
+            result = repair.repair(report, dry_run=True, auto_only=True, global_only=True)
+
+        mock_layout.assert_not_called()
+        mock_stale.assert_called_once()
+        assert len(result["actions"]) == 1
+        assert result["actions"][0]["action"] == "stale"
+
     def test_unknown_check_type_ignored(self):
         from crate.repair import LibraryRepair
         config = {"library_path": "/tmp/fake"}

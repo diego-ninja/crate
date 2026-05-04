@@ -930,6 +930,35 @@ def _process_new_content_lyrics(
         result["steps"]["lyrics"] = "failed"
 
 
+def _process_new_content_audio_fingerprints(
+    task_id: str,
+    result: dict,
+    artist_name: str,
+    album_folder: str,
+) -> None:
+    try:
+        from crate.db.repositories.tasks import create_task_dedup
+
+        params = {"artist": artist_name, "limit": 1000}
+        if album_folder:
+            params["album"] = album_folder
+        child_task_id = create_task_dedup(
+            "backfill_track_audio_fingerprints",
+            params,
+            dedup_key=f"fingerprints:{artist_name.lower()}:{album_folder.lower()}",
+        )
+        result["steps"]["audio_fingerprints"] = "queued" if child_task_id else "deduplicated"
+        if child_task_id:
+            emit_task_event(
+                task_id,
+                "info",
+                {"message": "Queued audio fingerprint backfill", "child_task_id": child_task_id},
+            )
+    except Exception:
+        log.debug("Failed to queue audio fingerprint backfill for %s", artist_name, exc_info=True)
+        result["steps"]["audio_fingerprints"] = "failed"
+
+
 def _process_new_content_update_artist_hash(artist_dir: Path, artist_name: str) -> None:
     if not artist_dir.is_dir():
         return
@@ -990,6 +1019,7 @@ def _process_new_content_inner(
     # and are picked up automatically. No need to enqueue anything here.
     result["steps"]["audio_analysis"] = "background_daemon"
     result["steps"]["bliss"] = "background_daemon"
+    _process_new_content_audio_fingerprints(task_id, result, artist_name, album_folder)
 
     _process_new_content_popularity(task_id, result, albums, artist_name, album_folder, p)
     _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder, p)
