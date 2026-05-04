@@ -16,8 +16,8 @@ _WS_RE = re.compile(r"\s+")
 _NON_ALNUM_RE = re.compile(r"[^0-9a-z]+")
 
 
-def _normalize_text(value: str | None) -> str:
-    normalized = unicodedata.normalize("NFKD", (value or "").strip())
+def _normalize_text(value: object | None) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").strip())
     ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
     ascii_value = ascii_value.casefold()
     return _WS_RE.sub(" ", _NON_ALNUM_RE.sub(" ", ascii_value)).strip()

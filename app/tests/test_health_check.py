@@ -333,3 +333,29 @@ class TestRunOrchestration:
 
         # Should still have the zombie issue despite duplicate_folders exploding
         assert len(result["issues"]) == 1
+
+    def test_run_selected_only_executes_requested_checks(self):
+        from crate.health_check import LibraryHealthCheck
+
+        with tempfile.TemporaryDirectory() as lib:
+            config = {"library_path": lib}
+            hc = LibraryHealthCheck(config)
+
+            for attr in dir(hc):
+                if attr.startswith("_check_") and callable(getattr(hc, attr)):
+                    setattr(hc, attr, MagicMock(return_value=[]))
+
+            hc._check_zombie_artists.return_value = [
+                {"check": "zombie_artists", "severity": "low", "auto_fixable": True, "details": {"artist": "X"}},
+            ]
+            hc._check_duplicate_albums.return_value = [
+                {"check": "duplicate_albums", "severity": "medium", "details": {"artist": "Y", "album": "Album"}},
+            ]
+
+            result = hc.run_selected({"zombie_artists"}, persist=False)
+
+        assert len(result["issues"]) == 1
+        assert result["summary"] == {"zombie_artists": 1}
+        assert result["check_count"] == 1
+        hc._check_zombie_artists.assert_called_once()
+        hc._check_duplicate_albums.assert_not_called()

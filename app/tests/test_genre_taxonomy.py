@@ -155,6 +155,51 @@ def test_infer_canonical_genre_falls_back_to_family_when_needed() -> None:
     assert proposal["canonical_slug"] in {"techno", "house", "electronic"}
 
 
+def test_infer_canonical_genre_prefers_specific_runtime_child_over_generic_family() -> None:
+    import crate.genre_taxonomy as genre_taxonomy
+
+    genre_taxonomy.invalidate_runtime_taxonomy_cache()
+    with patch(
+        "crate.db.queries.genre_taxonomy.get_runtime_taxonomy_rows",
+        return_value=(
+            [
+                {
+                    "slug": "instrumental-rock",
+                    "name": "instrumental rock",
+                    "description": "instrumental rock variant",
+                    "is_top_level": False,
+                    "eq_gains": None,
+                }
+            ],
+            [
+                {
+                    "alias_slug": "instrumental-rock",
+                    "alias_name": "instrumental rock",
+                    "canonical_slug": "instrumental-rock",
+                }
+            ],
+            [
+                {
+                    "source_slug": "instrumental-rock",
+                    "target_slug": "rock",
+                    "relation_type": "parent",
+                }
+            ],
+        ),
+    ):
+        proposal = infer_canonical_genre(
+            "instrumental",
+            cooccurring={"rock": 5.0},
+            aggressive=True,
+        )
+
+    assert proposal is not None
+    assert proposal["canonical_slug"] == "instrumental-rock"
+    assert proposal["mode"] == "specific"
+
+    genre_taxonomy.invalidate_runtime_taxonomy_cache()
+
+
 # ── resolve_genre_eq_preset ─────────────────────────────────────────
 
 

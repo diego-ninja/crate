@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { BarChart3, Download } from "lucide-react";
+import { BarChart3, Download, FileText, Loader2 } from "lucide-react";
 import { ResponsiveRadar } from "@nivo/radar";
 
 import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
-import { StarRating } from "@crate/ui/primitives/StarRating";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { Button } from "@crate/ui/shadcn/button";
 
@@ -22,7 +21,6 @@ import {
   TooltipProvider,
 } from "@crate/ui/shadcn/tooltip";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
-import { api } from "@/lib/api";
 import { trackDownloadApiPath } from "@/lib/library-routes";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 
@@ -39,9 +37,35 @@ interface Track {
   popularity?: number | null;
   popularity_score?: number | null;
   popularity_confidence?: number | null;
-  rating?: number;
+  lyrics?: TrackLyricsStatus;
+  stream_variants?: TrackStreamVariant[];
   tags: Record<string, string>;
   path?: string;
+}
+
+export interface TrackLyricsStatus {
+  status?: string;
+  found?: boolean;
+  has_plain?: boolean;
+  has_synced?: boolean;
+  provider?: string;
+  updated_at?: string | null;
+}
+
+interface TrackStreamVariant {
+  id: string;
+  preset: string;
+  status: string;
+  delivery_format: string;
+  delivery_codec: string;
+  delivery_bitrate: number;
+  delivery_sample_rate?: number | null;
+  bytes?: number | null;
+  error?: string | null;
+  task_id?: string | null;
+  task_status?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface AudioAnalysisTrack {
@@ -69,6 +93,8 @@ interface TrackTableProps {
   albumSlug?: string;
   albumCover?: string;
   analysisData?: Record<string, AudioAnalysisTrack>;
+  syncingLyricsTrackKey?: string | null;
+  onSyncTrackLyrics?: (track: Track) => void | Promise<void>;
 }
 
 function EnergyBar({ value }: { value: number }) {
@@ -119,6 +145,153 @@ function PopularityBar({
             {confidence != null ? (
               <div className="text-white/60">Confidence {Math.round(confidencePct * 100)}%</div>
             ) : null}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function formatBytes(bytes: number | null | undefined) {
+  const value = Number(bytes || 0);
+  if (value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const size = value / Math.pow(1024, index);
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`;
+}
+
+function variantTone(status: string) {
+  if (status === "ready") return "border-emerald-400/35 bg-emerald-400/10 text-emerald-200";
+  if (status === "failed") return "border-red-400/35 bg-red-500/10 text-red-200";
+  if (status === "running") return "border-cyan-400/35 bg-cyan-400/10 text-cyan-200";
+  if (status === "pending") return "border-amber-400/35 bg-amber-400/10 text-amber-200";
+  return "border-white/15 bg-white/[0.04] text-white/50";
+}
+
+function variantLabel(variant: TrackStreamVariant) {
+  const codec = (variant.delivery_codec || variant.delivery_format || "").toUpperCase();
+  return `${codec} ${variant.delivery_bitrate}k`;
+}
+
+function TrackVariantBadges({ variants }: { variants: TrackStreamVariant[] | undefined }) {
+  if (!variants?.length) {
+    return <span className="text-xs text-white/25">None</span>;
+  }
+
+  const visible = variants.slice(0, 2);
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex min-w-[112px] flex-wrap gap-1">
+            {visible.map((variant) => (
+              <span
+                key={variant.id}
+                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none ${variantTone(variant.status)}`}
+              >
+                {variantLabel(variant)}
+              </span>
+            ))}
+            {variants.length > visible.length ? (
+              <span className="inline-flex items-center rounded-md border border-white/12 bg-white/[0.04] px-1.5 py-0.5 text-[10px] leading-none text-white/45">
+                +{variants.length - visible.length}
+              </span>
+            ) : null}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          className="w-[260px] border border-white/10 bg-popover-surface text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl"
+        >
+          <div className="space-y-2 text-xs">
+            <div className="font-semibold text-white/75">Playback variants</div>
+            {variants.map((variant) => (
+              <div key={variant.id} className="rounded-md border border-white/8 bg-white/[0.03] px-2 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-white/75">{variant.preset}</span>
+                  <span className={`rounded-md border px-1.5 py-0.5 text-[10px] ${variantTone(variant.status)}`}>
+                    {variant.status}
+                  </span>
+                </div>
+                <div className="mt-1 text-white/45">
+                  {variantLabel(variant)}
+                  {variant.delivery_sample_rate ? ` / ${Math.round(variant.delivery_sample_rate / 1000)}kHz` : ""}
+                  {" - "}
+                  {formatBytes(variant.bytes)}
+                </div>
+                {variant.task_status ? (
+                  <div className="mt-1 text-white/30">Task {variant.task_status}</div>
+                ) : null}
+                {variant.error ? (
+                  <div className="mt-1 line-clamp-2 text-red-200/70">{variant.error}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function normalizeLyricsStatus(lyrics: TrackLyricsStatus | undefined) {
+  if (lyrics?.has_synced || lyrics?.status === "synced") return "synced";
+  if (lyrics?.has_plain || lyrics?.status === "txt" || lyrics?.status === "plain") return "txt";
+  return "none";
+}
+
+function lyricsTone(status: string) {
+  if (status === "synced") return "border-amber-300/45 bg-amber-300/10 text-amber-200";
+  if (status === "txt") return "border-cyan-300/40 bg-cyan-300/10 text-cyan-200";
+  return "border-white/10 bg-white/[0.03] text-white/35";
+}
+
+function lyricsLabel(status: string) {
+  if (status === "synced") return "SYNCED";
+  if (status === "txt") return "TXT";
+  return "NONE";
+}
+
+function LyricsBadge({
+  lyrics,
+  busy = false,
+  onClick,
+}: {
+  lyrics?: TrackLyricsStatus;
+  busy?: boolean;
+  onClick?: () => void;
+}) {
+  const status = normalizeLyricsStatus(lyrics);
+  const label = lyricsLabel(status);
+  const actionLabel = busy ? "Syncing lyrics..." : "Sync lyrics for this track";
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!busy) onClick?.();
+            }}
+            className={`inline-flex min-w-[68px] items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-colors hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-70 ${lyricsTone(status)}`}
+            aria-label={`${actionLabel}: ${label}`}
+          >
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+            {label}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          className="border border-white/10 bg-popover-surface text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl"
+        >
+          <div className="space-y-1 text-xs">
+            <div>{busy ? "Syncing lyrics..." : label === "NONE" ? "No lyrics cached" : label === "TXT" ? "Plain lyrics cached" : "Synced lyrics cached"}</div>
+            <div className="text-white/50">{actionLabel}</div>
+            {lyrics?.updated_at ? <div className="text-white/50">Updated {new Date(lyrics.updated_at).toLocaleString()}</div> : null}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -250,26 +423,21 @@ export function TrackTable({
   albumSlug,
   albumCover,
   analysisData,
+  syncingLyricsTrackKey,
+  onSyncTrackLyrics,
 }: TrackTableProps) {
-  const [ratings, setRatings] = useState<Record<number, number>>(() => {
-    const initial: Record<number, number> = {};
-    for (const track of tracks) {
-      if (track.id != null) initial[track.id] = track.rating ?? 0;
-    }
-    return initial;
-  });
   const [similarTrack, setSimilarTrack] = useState<{ path: string; title: string; artist: string } | null>(null);
-
-  function handleRate(trackId: number | undefined, path: string | undefined, rating: number) {
-    if (trackId != null) setRatings((prev) => ({ ...prev, [trackId]: rating }));
-    api("/api/track/rate", "POST", { track_id: trackId, path, rating }).catch(() => {
-      if (trackId != null) setRatings((prev) => ({ ...prev, [trackId]: 0 }));
-    });
-  }
 
   function getTrackId(track: Track): string {
     if (track.id != null) return String(track.id);
     return track.path ?? `${artist}/${track.filename}`;
+  }
+
+  function getTrackLyricsSyncKey(track: Track): string {
+    if (track.id != null) return `id:${track.id}`;
+    if (track.entity_uid) return `uid:${track.entity_uid}`;
+    if (track.path) return `path:${track.path}`;
+    return `file:${track.filename}`;
   }
 
   const hasAnalysis = analysisData && tracks.some((track) => {
@@ -286,13 +454,14 @@ export function TrackTable({
             <TableHead>Track</TableHead>
             <TableHead>Format</TableHead>
             <TableHead>Bitrate</TableHead>
+            <TableHead>Variants</TableHead>
             <TableHead>Duration</TableHead>
             <TableHead>Popularity</TableHead>
-            <TableHead className="w-28">Rating</TableHead>
             <TableHead>Size</TableHead>
             {hasAnalysis ? <TableHead>BPM</TableHead> : null}
             {hasAnalysis ? <TableHead>Key</TableHead> : null}
             {hasAnalysis ? <TableHead>Energy</TableHead> : null}
+            <TableHead className="w-[86px]">Lyrics</TableHead>
             {hasAnalysis ? <TableHead className="w-10" /> : null}
             <TableHead className="w-10" />
           </TableRow>
@@ -300,6 +469,7 @@ export function TrackTable({
         <TableBody>
           {tracks.map((track, index) => {
             const trackId = getTrackId(track);
+            const lyricsSyncKey = getTrackLyricsSyncKey(track);
             const trackTitle = (track.tags.title || track.filename).toLowerCase();
             const analyzedTrack = analysisData ? (analysisData[trackTitle] ?? undefined) : undefined;
 
@@ -352,6 +522,9 @@ export function TrackTable({
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {formatBitrate(track.bitrate)}
                   </TableCell>
+                  <TableCell>
+                    <TrackVariantBadges variants={track.stream_variants} />
+                  </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {formatDuration(track.length_sec)}
                   </TableCell>
@@ -359,13 +532,6 @@ export function TrackTable({
                     <PopularityBar
                       score={track.popularity_score ?? ((track.popularity ?? 0) > 0 ? (track.popularity ?? 0) / 100 : null)}
                       confidence={track.popularity_confidence}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <StarRating
-                      value={track.id != null ? (ratings[track.id] ?? 0) : 0}
-                      onChange={(rating) => handleRate(track.id, track.path, rating)}
-                      size={13}
                     />
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
@@ -390,6 +556,13 @@ export function TrackTable({
                       {analyzedTrack?.energy != null ? <EnergyBar value={analyzedTrack.energy} /> : null}
                     </TableCell>
                   ) : null}
+                  <TableCell>
+                    <LyricsBadge
+                      lyrics={track.lyrics}
+                      busy={syncingLyricsTrackKey === lyricsSyncKey}
+                      onClick={onSyncTrackLyrics ? () => void onSyncTrackLyrics(track) : undefined}
+                    />
+                  </TableCell>
                   {hasAnalysis ? (
                     <TableCell>
                       {analyzedTrack ? <TrackAudioInfo track={analyzedTrack} /> : null}

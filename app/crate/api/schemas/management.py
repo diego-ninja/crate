@@ -20,6 +20,71 @@ class RepairRequest(BaseModel):
 class RepairIssuesRequest(BaseModel):
     issues: list[dict[str, Any]] = Field(default_factory=list)
     dry_run: bool = False
+    plan_version: str | None = None
+    plan_item_ids: list[str] = Field(default_factory=list)
+    confirm_risky: bool = False
+
+
+class RepairPreviewRequest(BaseModel):
+    issues: list[dict[str, Any]] = Field(default_factory=list)
+    auto_only: bool = False
+
+
+class RepairCatalogEntryResponse(BaseModel):
+    check_type: str
+    scanner_method: str
+    fixer_method: str | None = None
+    support: str
+    risk: str
+    scope: str
+    requires_confirmation: bool = False
+    supports_batch: bool = True
+    supports_artist_scope: bool = True
+    supports_global_scope: bool = True
+    auto_fixable: bool
+
+
+class RepairCatalogResponse(BaseModel):
+    items: list[RepairCatalogEntryResponse] = Field(default_factory=list)
+
+
+class RepairPlanItemResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    issue_id: int | None = None
+    item_key: str | None = None
+    plan_item_id: str | None = None
+    check_type: str
+    severity: str | None = None
+    description: str | None = None
+    support: str
+    risk: str | None = None
+    scope: str | None = None
+    requires_confirmation: bool = False
+    supports_batch: bool = True
+    supports_artist_scope: bool = True
+    supports_global_scope: bool = True
+    auto_fixable: bool = False
+    executable: bool = False
+    action: str | None = None
+    target: str | None = None
+    message: str | None = None
+    fs_write: bool = False
+    details: dict[str, Any] | list[Any] | str | None = None
+    issue: dict[str, Any] = Field(default_factory=dict)
+
+
+class RepairPreviewResponse(BaseModel):
+    items: list[RepairPlanItemResponse] = Field(default_factory=list)
+    total: int = 0
+    executable: int = 0
+    manual_only: int = 0
+    plan_version: str | None = None
+    generated_at: datetime | str | None = None
+
+
+class ArtistRepairPlanResponse(RepairPreviewResponse):
+    artist: str
 
 
 class MoveRequest(BaseModel):
@@ -37,6 +102,41 @@ class EnrichMbidsRequest(BaseModel):
 
 class StorageMigrationRequest(BaseModel):
     artist: str | None = None
+
+
+class PortableMetadataRequest(BaseModel):
+    album_id: int | None = None
+    album_entity_uid: str | None = None
+    artist: str | None = None
+    write_audio_tags: bool = True
+    write_sidecars: bool = True
+    limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class PortableRehydrateRequest(BaseModel):
+    root_path: str | None = None
+    limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class RichMetadataExportRequest(BaseModel):
+    album_id: int | None = None
+    album_entity_uid: str | None = None
+    artist: str | None = None
+    export_root: str | None = None
+    include_audio: bool = False
+    write_rich_tags: bool = True
+    limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class LyricsSyncRequest(BaseModel):
+    artist: str | None = None
+    album_id: int | None = None
+    album_entity_uid: str | None = None
+    track_id: int | None = Field(default=None, ge=1)
+    track_entity_uid: str | None = None
+    force: bool = False
+    limit: int = Field(default=500, ge=1, le=5000)
+    delay_seconds: float = Field(default=0.2, ge=0, le=10)
 
 
 class HealthIssueResponse(BaseModel):
@@ -80,6 +180,8 @@ class CheckTypeMutationResponse(OkResponse):
 class HealthFixTypeResponse(BaseModel):
     task_id: str | None = None
     fixable: int
+    allowed: bool = True
+    reason: str | None = None
 
 
 class ArtistHealthIssuesResponse(BaseModel):
@@ -128,6 +230,16 @@ class AnalysisStatusResponse(BaseModel):
     fingerprint_pcm: int = 0
     chromaprint_available: bool = False
     fingerprint_strategy: str = "unavailable"
+    total_albums: int = 0
+    lyrics_cached: int = 0
+    lyrics_found: int = 0
+    lyrics_missing: int = 0
+    portable_sidecar_albums: int = 0
+    portable_audio_tag_albums: int = 0
+    portable_audio_tag_tracks: int = 0
+    portable_tag_errors: int = 0
+    rich_export_albums: int = 0
+    rich_export_tracks: int = 0
     last_analyzed: AnalysisTrackSummaryResponse = Field(default_factory=AnalysisTrackSummaryResponse)
     last_bliss: BlissTrackSummaryResponse = Field(default_factory=BlissTrackSummaryResponse)
 

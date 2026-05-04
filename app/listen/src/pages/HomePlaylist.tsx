@@ -29,7 +29,10 @@ export function HomePlaylist() {
   const [filterQuery, setFilterQuery] = useState("");
   const deferredFilterQuery = useDeferredValue(filterQuery);
   const { data, loading } = useApi<HomeGeneratedPlaylistDetail>(
-    playlistId ? `/api/me/home/playlists/${encodeURIComponent(playlistId)}` : null,
+    playlistId ? `/api/me/home/playlists/${encodeURIComponent(playlistId)}?v=2` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 

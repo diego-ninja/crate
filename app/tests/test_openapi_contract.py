@@ -840,6 +840,10 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     analysis_status_operation = data["paths"]["/api/manage/analysis-status"]["get"]
     audit_log_operation = data["paths"]["/api/manage/audit-log"]["get"]
     storage_status_operation = data["paths"]["/api/manage/storage-v2-status"]["get"]
+    portable_metadata_operation = data["paths"]["/api/manage/portable-metadata"]["post"]
+    portable_rehydrate_operation = data["paths"]["/api/manage/portable-metadata/rehydrate"]["post"]
+    rich_export_operation = data["paths"]["/api/manage/portable-metadata/export-rich"]["post"]
+    sync_lyrics_operation = data["paths"]["/api/manage/sync-lyrics"]["post"]
 
     assert admin_health_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert admin_health_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminHealthSnapshotResponse")
@@ -867,3 +871,19 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
 
     assert storage_status_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert storage_status_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StorageV2StatusResponse")
+
+    assert portable_metadata_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert portable_metadata_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/PortableMetadataRequest")
+    assert portable_metadata_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert portable_rehydrate_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert portable_rehydrate_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/PortableRehydrateRequest")
+    assert portable_rehydrate_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert rich_export_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert rich_export_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/RichMetadataExportRequest")
+    assert rich_export_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
+
+    assert sync_lyrics_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert sync_lyrics_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/LyricsSyncRequest")
+    assert sync_lyrics_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")

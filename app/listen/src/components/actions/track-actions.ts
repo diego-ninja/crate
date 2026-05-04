@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowDownToLine,
+  Download,
   Loader2,
   Disc3,
   Heart,
@@ -23,7 +24,7 @@ import {
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
-import { albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { albumPagePath, artistPagePath, downloadApiUrl, trackDownloadApiPath } from "@/lib/library-routes";
 import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
 import { hasPlayableTrackReference } from "@/lib/playable-track";
 import { fetchTrackRadio } from "@/lib/radio";
@@ -127,6 +128,21 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
           } catch (error) {
             toast.error((error as Error).message || "Failed to update offline copy");
           }
+        },
+      }),
+      action({
+        key: "download",
+        label: "Download track",
+        icon: Download,
+        disabled: !hasTrackRef,
+        onSelect: async () => {
+          const path = trackDownloadApiPath({
+            entityUid: trackEntityUid,
+            id: libraryTrackId,
+            path: input.track.path,
+          });
+          const url = downloadApiUrl(path);
+          if (url) window.location.assign(url);
         },
       }),
     ];

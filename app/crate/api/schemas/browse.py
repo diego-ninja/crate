@@ -59,7 +59,7 @@ class GenreProfileResponse(BaseModel):
     percent: int | None = None
 
 
-class ArtistBrowseItemResponse(BaseModel):
+class ArtistBrowseItemResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
@@ -93,7 +93,7 @@ class ArtistCheckLibraryResponse(RootModel[dict[str, bool]]):
     pass
 
 
-class ArtistAlbumSummaryResponse(BaseModel):
+class ArtistAlbumSummaryResponse(IdentityFieldsMixin):
     id: int
     entity_uid: str | None = None
     slug: str | None = None
@@ -112,7 +112,7 @@ class ArtistAlbumSummaryResponse(BaseModel):
     popularity_confidence: float | None = None
 
 
-class ArtistDetailResponse(BaseModel):
+class ArtistDetailResponse(IdentityFieldsMixin):
     id: int | None = None
     entity_uid: str | None = None
     slug: str | None = None
@@ -131,7 +131,7 @@ class ArtistDetailResponse(BaseModel):
     popularity_confidence: float | None = None
 
 
-class ArtistTopTrackResponse(BaseModel):
+class ArtistTopTrackResponse(IdentityFieldsMixin):
     id: str
     track_id: int
     track_entity_uid: str | None = None
@@ -321,9 +321,38 @@ class AlbumTrackTagsResponse(BaseModel):
     musicbrainz_trackid: str | None = None
 
 
-class AlbumTrackResponse(IdentityFieldsMixin):
+class AlbumTrackStreamVariantResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    track_id: int | None = None
+    preset: str
+    status: str
+    delivery_format: str
+    delivery_codec: str
+    delivery_bitrate: int
+    delivery_sample_rate: int | None = None
+    bytes: int | None = None
+    error: str | None = None
+    task_id: str | None = None
+    task_status: str | None = None
+    updated_at: datetime | str | None = None
+    completed_at: datetime | str | None = None
+
+
+class AlbumTrackLyricsResponse(BaseModel):
+    status: str = "none"
+    found: bool = False
+    has_plain: bool = False
+    has_synced: bool = False
+    provider: str = "lrclib"
+    updated_at: datetime | str | None = None
+
+
+class AlbumTrackResponse(BaseModel):
     id: int
     entity_uid: str | None = None
+    storage_id: str | None = None
     filename: str
     format: str = ""
     size_mb: float | int
@@ -335,11 +364,18 @@ class AlbumTrackResponse(IdentityFieldsMixin):
     popularity_score: float | None = None
     popularity_confidence: float | None = None
     rating: int | float = 0
+    stream_variants: list[AlbumTrackStreamVariantResponse] = Field(default_factory=list)
+    lyrics: AlbumTrackLyricsResponse = Field(default_factory=AlbumTrackLyricsResponse)
     tags: AlbumTrackTagsResponse
     path: str
 
+    @field_validator("entity_uid", "storage_id", mode="before")
+    @classmethod
+    def coerce_uuid_like(cls, value: Any) -> str | None:
+        return str(value) if value is not None else None
 
-class AlbumDetailResponse(BaseModel):
+
+class AlbumDetailResponse(IdentityFieldsMixin):
     id: int
     entity_uid: str | None = None
     slug: str | None = None

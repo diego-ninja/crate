@@ -92,12 +92,19 @@ export function ArtistHeroSection({
           <img
             src={heroBackgroundSrc}
             alt=""
-            className="absolute inset-0 h-full w-full scale-105 object-cover opacity-50 blur-[2px]"
+            className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] grayscale brightness-[0.5] contrast-110 opacity-40"
           />
         ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/78 to-background/35" />
+        <div className="absolute inset-0 bg-black/28" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.14) 34%, rgba(8, 10, 14, 0.46) 60%, var(--surface-app) 100%)",
+          }}
+        />
 
-        <div className="relative flex h-full items-end px-4 pb-6 sm:px-6">
+        <div className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-6 sm:px-6">
           <div className="flex w-full flex-col gap-5 sm:flex-row sm:items-end">
             {/* Avatar — small inline on mobile, large circle on desktop */}
             <div className="hidden sm:block h-40 w-40 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-2xl ring-2 ring-white/10">
@@ -192,68 +199,70 @@ export function ArtistHeroSection({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 px-4 py-4 sm:px-6">
-        <button
-          className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          onClick={onPlay}
-          aria-label="Play"
-        >
-          <Play size={16} fill="currentColor" />
-          Play
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={onShuffle}
-          aria-label="Shuffle"
-        >
-          <Shuffle size={16} />
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={onArtistRadio}
-          aria-label="Artist Radio"
-        >
-          <Radio size={16} />
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
-          onClick={onPlaySetlist}
-          disabled={!hasSetlist}
-          aria-label="Setlist"
-        >
-          <ListMusic size={16} />
-        </button>
-        <button
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-            following
-              ? "border border-primary/30 bg-primary/15 text-primary"
-              : "border border-white/15 text-foreground hover:bg-white/5"
-          }`}
-          onClick={onToggleFollow}
-          aria-label={following ? "Unfollow" : "Follow"}
-        >
-          {following ? <UserCheck size={16} /> : <UserPlus size={16} />}
-        </button>
-        <div className="relative" ref={menuRef}>
+      <div className="px-4 py-4 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1480px] items-center gap-2">
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-            onClick={() => setMenuOpen((current) => !current)}
-            aria-label="More"
+            className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            onClick={onPlay}
+            aria-label="Play"
           >
-            <MoreHorizontal size={16} />
+            <Play size={16} fill="currentColor" />
+            Play
           </button>
-          {menuOpen && isDesktop ? (
-            <AppPopover className="absolute right-0 top-12 z-app-popover w-64 p-1">
-              {menuContent}
-            </AppPopover>
-          ) : null}
-          {menuOpen && !isDesktop ? (
-            <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
-              <ModalBody className="pb-4">
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={onShuffle}
+            aria-label="Shuffle"
+          >
+            <Shuffle size={16} />
+          </button>
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={onArtistRadio}
+            aria-label="Artist Radio"
+          >
+            <Radio size={16} />
+          </button>
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={onPlaySetlist}
+            disabled={!hasSetlist}
+            aria-label="Setlist"
+          >
+            <ListMusic size={16} />
+          </button>
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              following
+                ? "border border-primary/30 bg-primary/15 text-primary"
+                : "border border-white/15 text-foreground hover:bg-white/5"
+            }`}
+            onClick={onToggleFollow}
+            aria-label={following ? "Unfollow" : "Follow"}
+          >
+            {following ? <UserCheck size={16} /> : <UserPlus size={16} />}
+          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              onClick={() => setMenuOpen((current) => !current)}
+              aria-label="More"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {menuOpen && isDesktop ? (
+              <AppPopover className="absolute right-0 top-12 z-app-popover w-64 p-1">
                 {menuContent}
-              </ModalBody>
-            </AppModal>
-          ) : null}
+              </AppPopover>
+            ) : null}
+            {menuOpen && !isDesktop ? (
+              <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
+                <ModalBody className="pb-4">
+                  {menuContent}
+                </ModalBody>
+              </AppModal>
+            ) : null}
+          </div>
         </div>
       </div>
     </>

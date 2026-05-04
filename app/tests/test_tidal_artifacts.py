@@ -1,11 +1,99 @@
 from pathlib import Path
 
+from crate import tidal
 from crate.m4a_fix import repair_tidal_artifacts
 from crate.worker_handlers.acquisition import _tidal_download_inner
 
 
 def _write_mp4_header(path: Path) -> None:
     path.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64)
+
+
+def test_tidal_download_uses_collision_safe_output_template(tmp_path, monkeypatch):
+    captured: list[list[str]] = []
+
+    class FakeProc:
+        def __init__(self, cmd, **_kwargs):
+            captured.append(cmd)
+            processing_dir = Path(cmd[cmd.index("--path") + 1])
+            album_dir = processing_dir / "KNEECAP" / "H.O.O.D 2025"
+            album_dir.mkdir(parents=True)
+            (album_dir / "01-01 - H.O.O.D (2025 Mix).m4a").write_bytes(b"fake-aac")
+            self.stdout = iter([
+                "Total downloads: 1\n",
+                "Downloaded H.O.O.D  123 /tmp/out\n",
+            ])
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(tidal, "PROCESSING_DIR", str(tmp_path))
+    monkeypatch.setattr(tidal.subprocess, "Popen", FakeProc)
+
+    result = tidal.download(
+        "https://tidal.com/album/413046494",
+        quality="normal",
+        task_id="task-hood",
+    )
+
+    assert result["success"] is True
+    assert result["audio_file_count"] == 1
+    cmd = captured[0]
+    assert cmd[cmd.index("--output") + 1] == tidal.TIDDL_OUTPUT_TEMPLATE
+    assert "{item.number:02d}" in tidal.TIDDL_OUTPUT_TEMPLATE
+    assert "{item.title_version}" in tidal.TIDDL_OUTPUT_TEMPLATE
+
+
+def test_get_album_tracks_preserves_tidal_version_metadata(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "items": [
+                    {
+                        "id": 413046496,
+                        "title": "H.O.O.D",
+                        "version": "2025 Mix",
+                        "trackNumber": 1,
+                        "volumeNumber": 1,
+                        "duration": 173,
+                        "isrc": "GBPVV2400717",
+                        "artist": {"name": "KNEECAP"},
+                        "mediaMetadata": {"tags": ["LOSSLESS", "HIRES_LOSSLESS"]},
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(tidal, "get_auth_token", lambda: "token")
+    monkeypatch.setattr(tidal, "get_setting", lambda _key, default=None: default)
+    monkeypatch.setattr(
+        tidal.requests,
+        "get",
+        lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    tracks = tidal.get_album_tracks("413046494")
+
+    assert tracks == [
+        {
+            "id": "413046496",
+            "title": "H.O.O.D",
+            "version": "2025 Mix",
+            "display_title": "H.O.O.D (2025 Mix)",
+            "artist": "KNEECAP",
+            "track_number": 1,
+            "volume_number": 1,
+            "duration": 173,
+            "isrc": "GBPVV2400717",
+            "url": "https://tidal.com/track/413046496",
+            "quality": ["LOSSLESS", "HIRES_LOSSLESS"],
+        }
+    ]
 
 
 def test_repair_tidal_artifacts_recovers_raw_flac_and_deletes_temp(tmp_path):

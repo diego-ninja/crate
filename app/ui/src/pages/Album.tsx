@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { AlbumHeader } from "@/components/album/AlbumHeader";
 import { AudioProfileCard } from "@/components/album/AudioProfileCard";
-import { TrackTable, type AudioAnalysisTrack } from "@/components/album/TrackTable";
+import { TrackTable, type AudioAnalysisTrack, type TrackLyricsStatus } from "@/components/album/TrackTable";
 import { TagEditor } from "@/components/album/TagEditor";
 import { RelatedAlbums } from "@/components/album/RelatedAlbums";
 import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { api } from "@/lib/api";
 import { albumApiPath, albumCoverApiUrl, albumManagementApiPath, albumMatchApiPath, albumPagePath, albumReanalyzeApiPath, artistActionApiPath, artistPagePath } from "@/lib/library-routes";
+import { useTaskEvents } from "@/hooks/use-task-events";
 import { waitForTask } from "@/lib/tasks";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
@@ -41,16 +42,22 @@ interface AlbumData {
   popularity_confidence?: number | null;
   tracks: {
     id?: number;
+    entity_uid?: string;
     filename: string;
     format: string;
     size_mb: number;
     bitrate: number | null;
+    sample_rate?: number | null;
+    bit_depth?: number | null;
     length_sec: number;
     popularity?: number | null;
     popularity_score?: number | null;
     popularity_confidence?: number | null;
     rating?: number;
+    lyrics?: TrackLyricsStatus;
+    stream_variants?: AlbumTrackStreamVariant[];
     tags: Record<string, string>;
+    path?: string;
   }[];
   album_tags: {
     artist?: string;
@@ -62,6 +69,8 @@ interface AlbumData {
   genres?: string[];
   genre_profile?: GenreProfileItem[];
 }
+
+type AlbumMetadataAction = "lyrics" | "portable" | "export";
 
 interface MatchResult {
   title: string;
@@ -77,6 +86,65 @@ interface MatchResult {
     duration_diff: number | null;
   }[];
   [key: string]: unknown;
+}
+
+interface AlbumTrackStreamVariant {
+  id: string;
+  preset: string;
+  status: string;
+  delivery_format: string;
+  delivery_codec: string;
+  delivery_bitrate: number;
+  delivery_sample_rate?: number | null;
+  bytes?: number | null;
+  error?: string | null;
+  task_id?: string | null;
+  task_status?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+}
+
+function lyricOverrideKeyFromEvent(data: Record<string, unknown>) {
+  if (data.track_id != null) return `id:${data.track_id}`;
+  if (data.track_entity_uid) return `uid:${data.track_entity_uid}`;
+  if (data.path) return `path:${data.path}`;
+  return "";
+}
+
+function lyricOverrideKeysForTrack(track: AlbumData["tracks"][number]) {
+  return [
+    track.id != null ? `id:${track.id}` : "",
+    track.entity_uid ? `uid:${track.entity_uid}` : "",
+    track.path ? `path:${track.path}` : "",
+  ].filter(Boolean);
+}
+
+function primaryLyricOverrideKeyForTrack(track: AlbumData["tracks"][number]) {
+  return lyricOverrideKeysForTrack(track)[0] || `file:${track.filename}`;
+}
+
+function lyricsStatusFromTaskEvent(data: Record<string, unknown>): TrackLyricsStatus {
+  const lyrics = data.lyrics && typeof data.lyrics === "object" ? data.lyrics as Record<string, unknown> : data;
+  return {
+    status: String(lyrics.status || data.status || "none"),
+    found: Boolean(lyrics.found ?? data.found),
+    has_plain: Boolean(lyrics.has_plain ?? data.has_plain),
+    has_synced: Boolean(lyrics.has_synced ?? data.has_synced),
+    provider: String(lyrics.provider || data.provider || "lrclib"),
+    updated_at: typeof lyrics.updated_at === "string" ? lyrics.updated_at : typeof data.updated_at === "string" ? data.updated_at : null,
+  };
+}
+
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error) || !error.message) return fallback;
+  try {
+    const parsed = JSON.parse(error.message) as { detail?: unknown; error?: unknown };
+    const detail = parsed.detail ?? parsed.error;
+    if (typeof detail === "string" && detail.trim()) return detail;
+  } catch {
+    // Keep the original message below.
+  }
+  return error.message;
 }
 
 export function Album() {
@@ -98,6 +166,11 @@ export function Album() {
   const [matching, setMatching] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<MatchResult | null>(null);
   const [analysisData, setAnalysisData] = useState<Record<string, AudioAnalysisTrack> | null>(null);
+  const [lyricsTaskId, setLyricsTaskId] = useState<string | null>(null);
+  const [lyricsOverrides, setLyricsOverrides] = useState<Record<string, TrackLyricsStatus>>({});
+  const [syncingLyricsTrackKey, setSyncingLyricsTrackKey] = useState<string | null>(null);
+  const processedLyricsEventIds = useRef<Set<number | string>>(new Set());
+  const { events: lyricsEvents, done: lyricsTaskDone } = useTaskEvents(lyricsTaskId);
 
   useEffect(() => {
     const endpoint = artistActionApiPath({ artistId: data?.artist_id, artistEntityUid: data?.artist_entity_uid }, "analysis-data");
@@ -123,15 +196,89 @@ export function Album() {
     );
   }, [albumId, data?.artist_slug, data?.artist, data?.slug, data?.name, navigate]);
 
+  useEffect(() => {
+    setLyricsOverrides({});
+    setSyncingLyricsTrackKey(null);
+    processedLyricsEventIds.current.clear();
+  }, [data?.id, data?.entity_uid]);
+
+  useEffect(() => {
+    processedLyricsEventIds.current.clear();
+  }, [lyricsTaskId]);
+
+  useEffect(() => {
+    if (!lyricsTaskId || lyricsEvents.length === 0) return;
+
+    const updates: Record<string, TrackLyricsStatus> = {};
+    for (const event of lyricsEvents) {
+      if (event.type !== "lyrics_track") continue;
+      const eventId = event.id ?? `${event.timestamp}:${event.data.track_id ?? event.data.track_entity_uid ?? event.data.path ?? ""}`;
+      if (processedLyricsEventIds.current.has(eventId)) continue;
+      processedLyricsEventIds.current.add(eventId);
+      const key = lyricOverrideKeyFromEvent(event.data);
+      if (!key) continue;
+      updates[key] = lyricsStatusFromTaskEvent(event.data);
+      if (syncingLyricsTrackKey === key) {
+        setSyncingLyricsTrackKey(null);
+      }
+    }
+    if (Object.keys(updates).length === 0) return;
+    setLyricsOverrides((prev) => ({ ...prev, ...updates }));
+  }, [lyricsEvents, lyricsTaskId, syncingLyricsTrackKey]);
+
+  useEffect(() => {
+    if (!lyricsTaskId || !lyricsTaskDone) return;
+    if (lyricsTaskDone.status === "completed") {
+      refetch();
+    }
+    setSyncingLyricsTrackKey(null);
+    setLyricsTaskId(null);
+  }, [lyricsTaskDone, lyricsTaskId, refetch]);
+
+  const tableTracks = useMemo(() => {
+    return (data?.tracks ?? []).map((track) => {
+      const override = lyricOverrideKeysForTrack(track).map((key) => lyricsOverrides[key]).find(Boolean);
+      return override ? { ...track, lyrics: override } : track;
+    });
+  }, [data?.tracks, lyricsOverrides]);
+
   async function findMatches() {
     const endpoint = albumMatchApiPath({ albumId: data?.id, albumEntityUid: data?.entity_uid });
     if (!endpoint) return;
     setMatching(true);
     try {
       const results = await api<MatchResult[]>(endpoint);
-      setMatches(results);
+      setMatches(Array.isArray(results) ? results : []);
+    } catch (error) {
+      setMatches(null);
+      toast.error(apiErrorMessage(error, "Failed to search MusicBrainz matches"));
     } finally {
       setMatching(false);
+    }
+  }
+
+  async function queueTrackLyricsSync(track: AlbumData["tracks"][number]) {
+    const trackId = track.id;
+    const trackEntityUid = track.entity_uid;
+    if (trackId == null && !trackEntityUid) {
+      toast.error("Track reference missing");
+      return;
+    }
+
+    setSyncingLyricsTrackKey(primaryLyricOverrideKeyForTrack(track));
+    try {
+      const response = await api<{ task_id: string }>("/api/manage/sync-lyrics", "POST", {
+        track_id: trackId,
+        track_entity_uid: trackEntityUid,
+        force: true,
+        limit: 1,
+        delay_seconds: 0,
+      });
+      setLyricsTaskId(response.task_id);
+      toast.success("Lyrics sync queued");
+    } catch (error) {
+      setSyncingLyricsTrackKey(null);
+      toast.error(apiErrorMessage(error, "Failed to queue lyrics sync"));
     }
   }
 
@@ -161,7 +308,7 @@ export function Album() {
     return (
       <div className="-mt-16 md:-mt-[6.5rem]">
         <div className="-mx-4 h-[420px] animate-pulse bg-card md:-mx-8 md:h-[560px]" />
-        <div className="mx-auto w-full max-w-[1160px] px-4 pt-6 md:px-8">
+        <div className="mx-auto w-full max-w-[1480px] px-4 pt-6 md:px-8">
           <Skeleton className="mb-4 h-6 w-48" />
           <div className="space-y-2">
             {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -172,6 +319,8 @@ export function Album() {
   }
 
   if (!data) return <div className="text-center py-12 text-muted-foreground">Not found</div>;
+
+  const hasMusicBrainzAlbumId = Boolean(data.album_tags.musicbrainz_albumid?.trim());
 
   return (
     <div className="-mt-16 md:-mt-[6.5rem]">
@@ -204,6 +353,9 @@ export function Album() {
               .then((d) => { if (d && Object.keys(d).length > 0) setAnalysisData(d); })
               .catch(() => {});
           }}
+          onMetadataTaskQueued={(action: AlbumMetadataAction, taskId: string) => {
+            if (action === "lyrics") setLyricsTaskId(taskId);
+          }}
         >
           <Button
             size="sm"
@@ -213,22 +365,24 @@ export function Album() {
           >
             Edit Tags
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-green-500/30 text-green-500 hover:bg-green-500/10"
-            onClick={findMatches}
-            disabled={matching}
-          >
-            {matching ? (
-              <>
-                <Loader2 size={14} className="animate-spin mr-1" />
-                Searching...
-              </>
-            ) : (
-              "Sync MusicBrainz"
-            )}
-          </Button>
+          {!hasMusicBrainzAlbumId ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-green-500/30 text-green-500 hover:bg-green-500/10"
+              onClick={findMatches}
+              disabled={matching}
+            >
+              {matching ? (
+                <>
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                  Searching...
+                </>
+              ) : (
+                "Sync MusicBrainz"
+              )}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="outline"
@@ -258,7 +412,7 @@ export function Album() {
           )}
         </AlbumHeader>
 
-      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 pb-12 pt-6 md:px-8">
         {showTags && data.id != null && (
           <TagEditor
             albumId={data.id}
@@ -336,7 +490,7 @@ export function Album() {
         <div>
           <h3 className="font-semibold mb-3">Tracks</h3>
           <TrackTable
-            tracks={data.tracks}
+            tracks={tableTracks}
             artist={data.artist}
             artistId={data.artist_id}
             artistSlug={data.artist_slug}
@@ -345,6 +499,8 @@ export function Album() {
             albumSlug={data.slug}
             albumCover={albumCoverApiUrl({ albumId: data.id, albumEntityUid: data.entity_uid, albumSlug: data.slug, artistName: data.artist, albumName: data.name })}
             analysisData={analysisData ?? undefined}
+            syncingLyricsTrackKey={syncingLyricsTrackKey}
+            onSyncTrackLyrics={queueTrackLyricsSync}
           />
         </div>
 

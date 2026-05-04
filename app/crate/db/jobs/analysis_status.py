@@ -6,6 +6,7 @@ import shutil
 
 from sqlalchemy import text
 
+from crate.db.repositories.portable_metadata import get_portable_metadata_status
 from crate.db.tx import transaction_scope
 
 
@@ -149,6 +150,7 @@ def get_analysis_status() -> dict:
             "fingerprint_pcm": int(fingerprint_counts.get("pcm") or 0),
             "chromaprint_available": chromaprint_available,
             "fingerprint_strategy": fingerprint_strategy,
+            **get_portable_metadata_status(),
         }
 
 

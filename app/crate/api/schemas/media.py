@@ -9,7 +9,7 @@ from crate.api.schemas.common import IdentityFieldsMixin, OkResponse, TaskEnqueu
 from crate.api.schemas.radio import RadioTrack
 
 
-class SearchArtistResultResponse(BaseModel):
+class SearchArtistResultResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
@@ -20,7 +20,7 @@ class SearchArtistResultResponse(BaseModel):
     has_photo: bool | int | None = None
 
 
-class SearchAlbumResultResponse(BaseModel):
+class SearchAlbumResultResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
@@ -161,7 +161,7 @@ class DiscoverCompletenessMissingAlbumResponse(BaseModel):
     year: str | int | None = None
 
 
-class DiscoverCompletenessArtistResponse(BaseModel):
+class DiscoverCompletenessArtistResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     artist_id: int | None = None
@@ -210,3 +210,124 @@ class SimilarTracksResponse(BaseModel):
 
 class DiscoverCompletenessRefreshResponse(TaskEnqueueResponse):
     pass
+
+
+class PlaybackQualityResponse(BaseModel):
+    format: str | None = None
+    codec: str | None = None
+    bitrate: int | None = None
+    sample_rate: int | None = None
+    bit_depth: int | None = None
+    bytes: int | None = None
+    lossless: bool | None = None
+    fallback: bool | None = None
+    reason: str | None = None
+
+
+class PlaybackResolutionResponse(BaseModel):
+    stream_url: str
+    requested_policy: str
+    effective_policy: str
+    source: PlaybackQualityResponse
+    delivery: PlaybackQualityResponse
+    transcoded: bool = False
+    cache_hit: bool = False
+    preparing: bool = False
+    task_id: str | None = None
+    variant_id: str | None = None
+    variant_status: str | None = None
+
+
+class PlaybackPrepareTrackRequest(BaseModel):
+    track_id: int | None = None
+    entity_uid: str | None = None
+    path: str | None = None
+
+
+class PlaybackPrepareRequest(BaseModel):
+    policy: str = "original"
+    tracks: list[PlaybackPrepareTrackRequest] = Field(default_factory=list)
+
+
+class PlaybackPrepareItemResponse(BaseModel):
+    track_id: int | None = None
+    entity_uid: str | None = None
+    ok: bool = False
+    preparing: bool = False
+    cache_hit: bool = False
+    transcoded: bool = False
+    task_id: str | None = None
+    variant_id: str | None = None
+    variant_status: str | None = None
+    error: str | None = None
+
+
+class PlaybackPrepareResponse(BaseModel):
+    policy: str
+    items: list[PlaybackPrepareItemResponse] = Field(default_factory=list)
+
+
+class PlaybackDeliveryStatsResponse(BaseModel):
+    tracks: int = 0
+    lossless_tracks: int = 0
+    hires_tracks: int = 0
+    variants: int = 0
+    variant_tracks: int = 0
+    ready: int = 0
+    pending: int = 0
+    running: int = 0
+    failed: int = 0
+    missing: int = 0
+    ready_tracks: int = 0
+    cached_bytes: int = 0
+    ready_source_bytes: int = 0
+    estimated_saved_bytes: int = 0
+    coverage_percent: float = 0
+    avg_prepare_seconds: float | None = None
+
+
+class PlaybackTranscodeSlotResponse(BaseModel):
+    task_id: str
+    started_at: float
+
+
+class PlaybackTranscodeRuntimeResponse(BaseModel):
+    active: int = 0
+    limit: int = 1
+    slots: list[PlaybackTranscodeSlotResponse] = Field(default_factory=list)
+
+
+class PlaybackVariantAdminResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    cache_key: str
+    track_id: int | None = None
+    track_entity_uid: str | None = None
+    preset: str
+    status: str
+    delivery_format: str
+    delivery_codec: str
+    delivery_bitrate: int
+    delivery_sample_rate: int | None = None
+    source_format: str | None = None
+    source_bitrate: int | None = None
+    source_sample_rate: int | None = None
+    source_bit_depth: int | None = None
+    source_size: int | None = None
+    bytes: int | None = None
+    error: str | None = None
+    task_id: str | None = None
+    task_status: str | None = None
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    created_at: datetime | str | None = None
+    updated_at: datetime | str | None = None
+    completed_at: datetime | str | None = None
+
+
+class AdminPlaybackDeliveryResponse(BaseModel):
+    stats: PlaybackDeliveryStatsResponse
+    runtime: PlaybackTranscodeRuntimeResponse
+    recent_variants: list[PlaybackVariantAdminResponse] = Field(default_factory=list)

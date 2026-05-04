@@ -57,7 +57,7 @@ class PlaylistInviteRequest(BaseModel):
     max_uses: int | None = 20
 
 
-class PlaylistArtworkTrackResponse(BaseModel):
+class PlaylistArtworkTrackResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     artist: str | None = None

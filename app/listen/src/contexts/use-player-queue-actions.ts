@@ -29,7 +29,7 @@ import {
   shouldRestartTrackBeforePrev,
   shuffleKeepingCurrent,
 } from "@/contexts/player-queue-helpers";
-import { getTrackCacheKey, STORAGE_KEY } from "@/contexts/player-utils";
+import { getStreamUrl, getTrackCacheKey, STORAGE_KEY } from "@/contexts/player-utils";
 
 const SOFT_PAUSE_FADE_MS = 220;
 const PREV_DOUBLE_TAP_WINDOW_MS = 1500;
@@ -128,6 +128,10 @@ export function usePlayerQueueActions({
   const startQueuePlayback = useCallback((tracks: Track[], startIndex: number, source?: PlaySource) => {
     if (!tracks.length) return;
     const normalizedIndex = clampIndex(startIndex, tracks.length);
+    const restartingSameQueueAtSameIndex =
+      queueRef.current.length === tracks.length
+      && currentIndexRef.current === normalizedIndex
+      && queueRef.current.every((track, index) => getStreamUrl(track) === getStreamUrl(tracks[index]!));
 
     cancelSoftInterruption();
     pendingRestoreTimeRef.current = 0;
@@ -136,12 +140,13 @@ export function usePlayerQueueActions({
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
 
-    gpLoadQueue(buildEngineUrls(tracks), normalizedIndex);
+    gpLoadQueue(buildEngineUrls(tracks), normalizedIndex, { restartIfSameIndex: true });
     gpSetLoop(repeatRef.current === "all");
     gpSetSingleMode(repeatRef.current === "one");
 
     commitCurrentTime(0);
-    commitIsBuffering(true);
+    bufferingIntentRef.current = !restartingSameQueueAtSameIndex;
+    commitIsBuffering(!restartingSameQueueAtSameIndex);
     const nextSource = source || (tracks.length > 1
       ? { type: "queue" as const, name: "Queue" }
       : { type: "track" as const, name: tracks[normalizedIndex]!.title });
@@ -153,7 +158,6 @@ export function usePlayerQueueActions({
       startTrackerSession(resolvedTrack, nextSource);
     }
 
-    bufferingIntentRef.current = true;
     gpPlay();
   }, [
     buildEngineUrls,
@@ -161,10 +165,12 @@ export function usePlayerQueueActions({
     cancelRestoreAutoplay,
     commitCurrentTime,
     commitIsBuffering,
+    currentIndexRef,
     flushCurrentPlayEvent,
     rememberActiveTrack,
     resetPlaybackIntelligence,
     pullFromEngine,
+    queueRef,
     startTrackerSession,
   ]);
 

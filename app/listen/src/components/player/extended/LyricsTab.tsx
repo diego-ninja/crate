@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
-import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerProgress } from "@/contexts/PlayerContext";
 
 interface LyricLine {
   time: number;
@@ -31,7 +31,7 @@ function parseSyncedLyrics(lrc: string): LyricLine[] {
 
 export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
   void useAlbumPalette;
-  const { currentTime } = usePlayer();
+  const { currentTime } = usePlayerProgress();
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);

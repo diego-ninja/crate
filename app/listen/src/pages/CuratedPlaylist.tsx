@@ -68,6 +68,9 @@ export function CuratedPlaylist() {
   const { supported: offlineSupported, getPlaylistState, getPlaylistRecord, togglePlaylistOffline } = useOffline();
   const { data, loading, refetch } = useApi<CuratedPlaylistData>(
     id ? `/api/curation/playlists/${id}` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
   const [togglingFollow, setTogglingFollow] = useState(false);

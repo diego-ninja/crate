@@ -20,6 +20,7 @@ import {
   trackEqFeaturesApiPath,
   trackGenreApiPath,
   trackInfoApiPath,
+  trackPlaybackApiPath,
   trackOfflineManifestApiPath,
   trackStreamApiPath,
 } from "@/lib/library-routes";
@@ -124,6 +125,9 @@ describe("library route asset helpers", () => {
     expect(trackInfoApiPath({ entityUid: "track-entity-1", libraryTrackId: 12 })).toBe(
       "/api/tracks/by-entity/track-entity-1/info",
     );
+    expect(trackPlaybackApiPath({ entityUid: "track-entity-1", libraryTrackId: 12 })).toBe(
+      "/api/tracks/by-entity/track-entity-1/playback",
+    );
     expect(trackEqFeaturesApiPath({ entityUid: "track-entity-1" })).toBe(
       "/api/tracks/by-entity/track-entity-1/eq-features",
     );
@@ -143,6 +147,7 @@ describe("library route asset helpers", () => {
 
   it("falls back to id/path routes only when canonical identity is missing", () => {
     expect(trackInfoApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/info");
+    expect(trackPlaybackApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/playback");
     expect(trackStreamApiPath({ libraryTrackId: 12 })).toBe("/api/tracks/12/stream");
     expect(trackDownloadApiPath({ path: "Artist/Album/Track.flac" })).toBe("/api/download/track/Artist/Album/Track.flac");
   });

@@ -48,6 +48,7 @@ export interface AlbumMenuData {
   artistSlug?: string;
   album: string;
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   cover?: string;
 }
@@ -155,6 +156,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     }>;
   }>(albumApiPath({
     albumId: data.albumId,
+    albumEntityUid: data.albumEntityUid,
     albumSlug: data.albumSlug,
     artistSlug: data.artistSlug,
     artistName: data.artist,
@@ -163,6 +165,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 
   const coverUrl = data.cover || albumCoverApiUrl({
     albumId: data.albumId,
+    albumEntityUid: data.albumEntityUid,
     albumSlug: data.albumSlug,
     artistName: data.artist,
     albumName: data.album,
@@ -175,6 +178,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     artist: response.artist,
     album: response.display_name || response.name,
     album_id: data.albumId,
+    album_entity_uid: data.albumEntityUid,
     album_slug: data.albumSlug,
     path: track.path,
     format: track.format || undefined,

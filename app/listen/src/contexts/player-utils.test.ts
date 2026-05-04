@@ -6,6 +6,7 @@ vi.mock("@/lib/offline", () => ({
 
 import type { PlaySource, Track } from "./player-types";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
+import { setPlaybackDeliveryPolicyPreference } from "@/lib/player-playback-prefs";
 import {
   getEffectiveCrossfadeSeconds,
   getStoredQueue,
@@ -119,6 +120,20 @@ describe("getStreamUrl", () => {
     });
 
     expect(url).toContain("/api/stream/Band/Album/Song.flac");
+  });
+
+  it("adds the selected playback delivery policy to remote stream URLs", () => {
+    setPlaybackDeliveryPolicyPreference("balanced");
+
+    const url = getStreamUrl({
+      id: "t1",
+      entityUid: "entity-1",
+      title: "Song",
+      artist: "Band",
+    });
+
+    expect(url).toContain("/api/tracks/by-entity/entity-1/stream");
+    expect(url).toContain("delivery=balanced");
   });
 
   it("prefers the native offline file URL when one exists", () => {

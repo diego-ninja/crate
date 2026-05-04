@@ -669,7 +669,14 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         update_tidal_download(download_id, status="downloading", task_id=task_id)
 
     try:
-        return _tidal_download_inner(task_id, params, config, url, quality, download_id, lib)
+        result = _tidal_download_inner(task_id, params, config, url, quality, download_id, lib)
+        if isinstance(result, dict) and result.get("error"):
+            error_message = str(result.get("error") or "Tidal download failed")
+            phase = str(result.get("phase") or "").strip()
+            if phase:
+                error_message = f"{error_message} (phase: {phase})"
+            raise RuntimeError(error_message)
+        return result
     except Exception as exc:
         if download_id:
             try:

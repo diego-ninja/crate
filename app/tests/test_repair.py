@@ -8,6 +8,184 @@ import shutil
 
 import pytest
 
+APP_ROOT = Path(__file__).resolve().parents[1]
+CRATE_ROOT = APP_ROOT / "crate"
+
+
+class TestRepairCatalog:
+    def test_auto_fixable_checks_have_registered_fixers(self):
+        import re
+
+        from crate.repair import LibraryRepair
+
+        source = (CRATE_ROOT / "health_check.py").read_text()
+        repair = LibraryRepair({"library_path": "/tmp/fake_lib"})
+
+        auto_fixable_checks = {
+            match.group(1)
+            for match in re.finditer(
+                r'"check": "([a-z0-9_]+)"[\s\S]{0,260}?"auto_fixable": True,',
+                source,
+            )
+        }
+        missing = sorted(check for check in auto_fixable_checks if check not in repair.FIXER_METHODS)
+        assert missing == []
+
+    def test_repair_skips_duplicate_tracks_when_no_safe_automatic_resolution_exists(self):
+        from crate.repair import LibraryRepair
+
+        repair = LibraryRepair({"library_path": "/tmp/fake_lib"})
+        report = {
+            "issues": [
+                {
+                    "check": "duplicate_tracks",
+                    "details": {"artist": "Terror", "album": "Keepers Of The Faith", "title": "Return to strength"},
+                }
+            ]
+        }
+
+        result = repair.repair(report, dry_run=True, auto_only=False)
+        assert result["unsupported_checks"] == []
+        assert result["summary"]["unsupported"] == 0
+        assert result["summary"]["skipped"] == 1
+        assert result["item_results"][0]["check_type"] == "duplicate_tracks"
+        assert result["item_results"][0]["outcome"] == "skipped"
+
+    def test_preview_returns_executable_duplicate_album_action(self):
+        from crate.repair import LibraryRepair
+
+        repair = LibraryRepair({"library_path": "/tmp/fake_lib"})
+        report = {
+            "issues": [
+                {
+                    "id": 9,
+                    "check": "duplicate_albums",
+                    "details": {"artist": "Birds In Row", "album": "UGLY", "paths": ["/music/a", "/music/b"]},
+                }
+            ]
+        }
+
+        with patch.object(
+            repair,
+            "_fix_duplicate_albums",
+            return_value={
+                "action": "delete_loose",
+                "target": "Birds In Row/UGLY",
+                "details": {"reason": "identical track list"},
+                "applied": False,
+                "fs_write": True,
+                "message": "Would delete loose duplicate album folder for Birds In Row/UGLY",
+            },
+        ) as mock_fix:
+            result = repair.preview(report, auto_only=False)
+
+        mock_fix.assert_called_once()
+        assert result["total"] == 1
+        assert result["executable"] == 1
+        assert result["plan_version"].startswith("repair-preview:")
+        assert result["items"][0]["check_type"] == "duplicate_albums"
+        assert result["items"][0]["plan_item_id"].startswith("repair-plan:")
+        assert result["items"][0]["item_key"] == "issue:9"
+        assert result["items"][0]["executable"] is True
+        assert result["items"][0]["risk"] == "destructive"
+        assert result["items"][0]["scope"] == "hybrid"
+        assert result["items"][0]["requires_confirmation"] is True
+        assert result["items"][0]["message"] == "Would delete loose duplicate album folder for Birds In Row/UGLY"
+
+    def test_preview_returns_executable_duplicate_track_action(self):
+        from crate.repair import LibraryRepair
+
+        repair = LibraryRepair({"library_path": "/tmp/fake_lib"})
+        report = {
+            "issues": [
+                {
+                    "id": 11,
+                    "check": "duplicate_tracks",
+                    "details": {
+                        "artist": "Terror",
+                        "album": "Still Suffer",
+                        "title": "A Deeper Struggle",
+                        "paths": ["/music/a.m4a", "/music/b.m4a"],
+                    },
+                }
+            ]
+        }
+
+        with patch.object(
+            repair,
+            "_fix_duplicate_tracks",
+            return_value={
+                "action": "delete_duplicate_tracks",
+                "target": "Terror/Still Suffer/A Deeper Struggle",
+                "details": {
+                    "keep_path": "/music/a.m4a",
+                    "remove_paths": ["/music/b.m4a"],
+                    "duplicate_count": 2,
+                    "reason": "same album/title/track number and matching duration",
+                    "enrich_artist": "Terror",
+                },
+                "applied": False,
+                "fs_write": True,
+                "message": "Would delete 1 duplicate track file(s) for Terror/Still Suffer/A Deeper Struggle",
+            },
+        ) as mock_fix:
+            result = repair.preview(report, auto_only=False)
+
+        mock_fix.assert_called_once()
+        assert result["total"] == 1
+        assert result["executable"] == 1
+        assert result["items"][0]["check_type"] == "duplicate_tracks"
+        assert result["items"][0]["item_key"] == "issue:11"
+        assert result["items"][0]["plan_item_id"].startswith("repair-plan:")
+        assert result["items"][0]["executable"] is True
+        assert result["items"][0]["risk"] == "destructive"
+        assert result["items"][0]["scope"] == "hybrid"
+        assert result["items"][0]["requires_confirmation"] is True
+        assert result["items"][0]["message"] == (
+            "Would delete 1 duplicate track file(s) for Terror/Still Suffer/A Deeper Struggle"
+        )
+
+    def test_preview_returns_executable_artist_layout_fix_action(self):
+        from crate.repair import LibraryRepair
+
+        repair = LibraryRepair({"library_path": "/tmp/fake_lib"})
+        report = {
+            "issues": [
+                {
+                    "check": "artist_layout_fix",
+                    "auto_fixable": True,
+                    "details": {"artist": "Quicksand"},
+                    "description": "Artist layout fix needed for Quicksand",
+                }
+            ]
+        }
+
+        with patch.object(
+            repair,
+            "_fix_artist_layout",
+            return_value={
+                "action": "fix_artist_layout",
+                "target": "Quicksand",
+                "details": {"target_artist_dir": "/music/b81635c8-3132-57d2-8d22-920251dc2627"},
+                "applied": False,
+                "fs_write": True,
+                "message": "Would consolidate 4 album directories into canonical entity_uid layout",
+            },
+        ) as mock_fix:
+            result = repair.preview(report, auto_only=False)
+
+        mock_fix.assert_called_once()
+        assert result["total"] == 1
+        assert result["executable"] == 1
+        assert result["plan_version"].startswith("repair-preview:")
+        assert result["items"][0]["check_type"] == "artist_layout_fix"
+        assert result["items"][0]["plan_item_id"].startswith("repair-plan:")
+        assert result["items"][0]["executable"] is True
+        assert result["items"][0]["risk"] == "caution"
+        assert result["items"][0]["scope"] == "hybrid"
+        assert result["items"][0]["requires_confirmation"] is True
+        assert result["items"][0]["message"] == "Would consolidate 4 album directories into canonical entity_uid layout"
+
 
 class TestFieldNormalization:
     """Test that repair handles both check/check_type and details/details_json field names."""
@@ -77,6 +255,211 @@ class TestFieldNormalization:
             repair.repair(report, dry_run=True)
             issue_arg = mock_fix.call_args[0][0]
             assert issue_arg["details"] == {"artist": "Dead Band"}
+
+
+class TestDuplicateTrackRepair:
+    def test_duplicate_track_dry_run_keeps_best_tagged_copy(self):
+        from crate.repair import LibraryRepair
+
+        with tempfile.TemporaryDirectory() as lib:
+            album_dir = Path(lib) / "Terror" / "Still Suffer"
+            album_dir.mkdir(parents=True)
+            keep_file = album_dir / "08 - A Deeper Struggle.m4a"
+            dupe_file = album_dir / "08 - A Deeper Struggle (1).m4a"
+            keep_file.write_bytes(b"\x00" * 2000)
+            dupe_file.write_bytes(b"\x00" * 1000)
+
+            tracks = [
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(keep_file),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 2000,
+                    "bitrate": 256000,
+                    "audio_fingerprint": "fingerprint-1",
+                },
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(dupe_file),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 1000,
+                    "bitrate": 128000,
+                    "audio_fingerprint": "fingerprint-1",
+                },
+            ]
+            tag_map = {
+                str(keep_file): {
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "tracknumber": "8",
+                },
+                str(dupe_file): {},
+            }
+
+            repair = LibraryRepair({"library_path": lib})
+            issue = {
+                "check": "duplicate_tracks",
+                "details": {
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "paths": [str(keep_file), str(dupe_file)],
+                },
+            }
+
+            with patch("crate.repair.get_tracks_by_paths", return_value=tracks), \
+                 patch("crate.repair.read_tags", side_effect=lambda path: tag_map[str(path)]):
+                result = repair._fix_duplicate_tracks(issue, dry_run=True)
+
+            assert result is not None
+            assert result["applied"] is False
+            assert result["details"]["keep_path"] == str(keep_file)
+            assert result["details"]["remove_paths"] == [str(dupe_file)]
+            assert result["details"]["duplicate_count"] == 2
+            assert result["details"]["enrich_artist"] == "Terror"
+
+    def test_duplicate_track_apply_deletes_redundant_file(self):
+        from crate.repair import LibraryRepair
+
+        with tempfile.TemporaryDirectory() as lib:
+            album_dir = Path(lib) / "Terror" / "Still Suffer"
+            album_dir.mkdir(parents=True)
+            keep_file = album_dir / "08 - A Deeper Struggle.m4a"
+            dupe_file = album_dir / "08 - A Deeper Struggle (1).m4a"
+            keep_file.write_bytes(b"\x00" * 2000)
+            dupe_file.write_bytes(b"\x00" * 1000)
+
+            tracks = [
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(keep_file),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 2000,
+                    "bitrate": 256000,
+                    "audio_fingerprint": "fingerprint-1",
+                },
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(dupe_file),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 1000,
+                    "bitrate": 128000,
+                    "audio_fingerprint": "fingerprint-1",
+                },
+            ]
+            tag_map = {
+                str(keep_file): {
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "tracknumber": "8",
+                },
+                str(dupe_file): {},
+            }
+
+            repair = LibraryRepair({"library_path": lib})
+            issue = {
+                "check": "duplicate_tracks",
+                "details": {
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "paths": [str(keep_file), str(dupe_file)],
+                },
+            }
+
+            with patch("crate.repair.get_tracks_by_paths", return_value=tracks), \
+                 patch("crate.repair.read_tags", side_effect=lambda path: tag_map[str(path)]), \
+                 patch("crate.repair.delete_track") as mock_delete_track, \
+                 patch("crate.repair.log_audit") as mock_log_audit:
+                result = repair._fix_duplicate_tracks(issue, dry_run=False, task_id="task-1")
+
+            assert result is not None
+            assert result["applied"] is True
+            assert dupe_file.exists() is False
+            assert keep_file.exists() is True
+            mock_delete_track.assert_called_once_with(str(dupe_file))
+            mock_log_audit.assert_called_once()
+            assert result["details"]["removed_paths"] == [str(dupe_file)]
+            assert result["details"]["enrich_artist"] == "Terror"
+
+    def test_duplicate_track_stays_manual_when_fingerprints_conflict(self):
+        from crate.repair import LibraryRepair
+
+        with tempfile.TemporaryDirectory() as lib:
+            album_dir = Path(lib) / "Terror" / "Still Suffer"
+            album_dir.mkdir(parents=True)
+            first = album_dir / "08 - A Deeper Struggle.m4a"
+            second = album_dir / "08 - A Deeper Struggle (alt).m4a"
+            first.write_bytes(b"\x00" * 1000)
+            second.write_bytes(b"\x00" * 1000)
+
+            tracks = [
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(first),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 1000,
+                    "bitrate": 128000,
+                    "audio_fingerprint": "fp-1",
+                },
+                {
+                    "album_id": 7,
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "path": str(second),
+                    "track_number": 8,
+                    "disc_number": 1,
+                    "duration": 97.0,
+                    "size": 1000,
+                    "bitrate": 128000,
+                    "audio_fingerprint": "fp-2",
+                },
+            ]
+
+            repair = LibraryRepair({"library_path": lib})
+            issue = {
+                "check": "duplicate_tracks",
+                "details": {
+                    "artist": "Terror",
+                    "album": "Still Suffer",
+                    "title": "A Deeper Struggle",
+                    "paths": [str(first), str(second)],
+                },
+            }
+
+            with patch("crate.repair.get_tracks_by_paths", return_value=tracks), \
+                 patch("crate.repair.read_tags", return_value={}):
+                result = repair._fix_duplicate_tracks(issue, dry_run=True)
+
+            assert result is None
 
 
 class TestFolderNamingRepair:

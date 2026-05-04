@@ -25,6 +25,10 @@ TIDDL_CONFIG_DIR = os.environ.get("TIDDL_CONFIG_DIR", "/data/.tiddl")
 # tiddl 3.x uses ~/.tiddl — we set HOME to parent of .tiddl
 TIDDL_HOME = str(Path(TIDDL_CONFIG_DIR).parent)
 PROCESSING_DIR = "/tmp/tidal-processing"
+TIDDL_OUTPUT_TEMPLATE = (
+    "{album.artist}/{album.title}/"
+    "{item.volume:02d}-{item.number:02d} - {item.title_version}"
+)
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -219,18 +223,26 @@ def get_album_tracks(album_id: str, _retried: bool = False) -> list[dict]:
                 return artists[0].get("name", "")
             return ""
 
-        return [
-            {
-                "id": str(t.get("id", "")),
-                "title": t.get("title", ""),
-                "artist": _artist_name(t),
-                "track_number": t.get("trackNumber", 0),
-                "duration": t.get("duration", 0),
-                "url": f"https://tidal.com/track/{t.get('id', '')}",
-                "quality": t.get("mediaMetadata", {}).get("tags", []),
-            }
-            for t in items
-        ]
+        tracks = []
+        for t in items:
+            title = str(t.get("title") or "")
+            version = str(t.get("version") or "")
+            tracks.append(
+                {
+                    "id": str(t.get("id", "")),
+                    "title": title,
+                    "version": version,
+                    "display_title": f"{title} ({version})" if version else title,
+                    "artist": _artist_name(t),
+                    "track_number": t.get("trackNumber", 0),
+                    "volume_number": t.get("volumeNumber", 0),
+                    "duration": t.get("duration", 0),
+                    "isrc": t.get("isrc", ""),
+                    "url": f"https://tidal.com/track/{t.get('id', '')}",
+                    "quality": t.get("mediaMetadata", {}).get("tags", []),
+                }
+            )
+        return tracks
     except Exception as e:
         log.warning("Failed to fetch album tracks: %s", e)
         return []
@@ -470,6 +482,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
         "tiddl", "download",
         "--path", str(processing_dir),
         "-q", q,
+        "--output", TIDDL_OUTPUT_TEMPLATE,
         "url", url,
     ]
 

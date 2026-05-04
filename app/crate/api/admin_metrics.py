@@ -24,6 +24,9 @@ _DASHBOARD_TIMESERIES = {
     "api.errors": "api.request.errors",
     "api.slow": "api.request.slow",
     "stream.requests": "stream.requests",
+    "stream.transcode.duration": "stream.transcode.duration",
+    "stream.transcode.completed": "stream.transcode.completed",
+    "stream.transcode.failed": "stream.transcode.failed",
     "home.compute.ms": "home.compute.ms",
     "home.endpoint_compute.ms": "home.endpoint_compute.ms",
     "worker.queue.depth": "worker.queue.depth",
@@ -39,6 +42,9 @@ _SUMMARY_METRICS = {
     "stream_requests": ("stream.requests", 5),
     "stream_latency": ("stream.latency", 5),
     "stream_concurrent": ("stream.concurrent", 5),
+    "stream_transcode_duration": ("stream.transcode.duration", 60),
+    "stream_transcode_completed": ("stream.transcode.completed", 60),
+    "stream_transcode_failed": ("stream.transcode.failed", 60),
     "home_cache_hit": ("home.cache.hit", 15),
     "home_cache_miss": ("home.cache.miss", 15),
     "home_cache_waited": ("home.cache.waited", 15),
@@ -155,6 +161,40 @@ def _list_running_tasks(limit: int = 10) -> list[dict]:
     return list_tasks(status="running", limit=limit)
 
 
+def _build_playback_delivery() -> dict:
+    try:
+        from crate.config import load_config
+        from crate.db.queries.streaming_admin import get_playback_delivery_snapshot
+        from crate.worker_handlers.playback import get_stream_transcode_runtime
+
+        payload = get_playback_delivery_snapshot(limit=5)
+        payload["runtime"] = get_stream_transcode_runtime(load_config())
+        return payload
+    except Exception:
+        return {
+            "stats": {
+                "tracks": 0,
+                "lossless_tracks": 0,
+                "hires_tracks": 0,
+                "variants": 0,
+                "variant_tracks": 0,
+                "ready": 0,
+                "pending": 0,
+                "running": 0,
+                "failed": 0,
+                "missing": 0,
+                "ready_tracks": 0,
+                "cached_bytes": 0,
+                "ready_source_bytes": 0,
+                "estimated_saved_bytes": 0,
+                "coverage_percent": 0,
+                "avg_prepare_seconds": None,
+            },
+            "runtime": {"active": 0, "limit": 1, "slots": []},
+            "recent_variants": [],
+        }
+
+
 def _build_metrics_dashboard(period: str, minutes: int) -> dict:
     from crate.db.cache_store import get_cache, set_cache
     from crate.metrics import query_historical, query_recent, query_recent_rolled
@@ -177,6 +217,7 @@ def _build_metrics_dashboard(period: str, minutes: int) -> dict:
         "summary": _build_metrics_summary(),
         "system": _build_metrics_system(),
         "tasks": _list_running_tasks(limit=10),
+        "playback_delivery": _build_playback_delivery(),
         "timeseries": timeseries,
     }
     set_cache(cache_key, payload, ttl=10)

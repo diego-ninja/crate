@@ -40,7 +40,16 @@ class SnapshotMetadataResponse(BaseModel):
 class IdentityFieldsMixin(BaseModel):
     """Normalize UUID-like identifiers and prefer canonical entity UIDs."""
 
-    @field_validator("entity_uid", "storage_id", "track_entity_uid", "track_storage_id", mode="before", check_fields=False)
+    @field_validator(
+        "entity_uid",
+        "storage_id",
+        "track_entity_uid",
+        "track_storage_id",
+        "artist_entity_uid",
+        "album_entity_uid",
+        mode="before",
+        check_fields=False,
+    )
     @classmethod
     def _coerce_uuid_like(cls, value: Any) -> str | None:
         return str(value) if value is not None else None

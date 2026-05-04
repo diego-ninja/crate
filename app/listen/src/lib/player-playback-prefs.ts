@@ -5,6 +5,55 @@ const SMART_CROSSFADE_KEY = "listen-player-smart-crossfade";
 const INFINITE_PLAYBACK_KEY = "listen-player-infinite-playback";
 const SMART_PLAYLIST_SUGGESTIONS_KEY = "listen-player-smart-playlist-suggestions";
 const SMART_PLAYLIST_SUGGESTIONS_CADENCE_KEY = "listen-player-smart-playlist-suggestions-cadence";
+const PLAYBACK_DELIVERY_POLICY_KEY = "listen-player-delivery-policy";
+
+export type PlaybackDeliveryPolicy = "original" | "balanced" | "data_saver";
+
+const PLAYBACK_DELIVERY_POLICIES = new Set<PlaybackDeliveryPolicy>([
+  "original",
+  "balanced",
+  "data_saver",
+]);
+
+function isMobileRuntime(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || window.innerWidth < 768;
+}
+
+function normalizePlaybackDeliveryPolicy(value: string | null | undefined): PlaybackDeliveryPolicy | null {
+  const normalized = (value || "").trim().toLowerCase().replace(/-/g, "_");
+  return PLAYBACK_DELIVERY_POLICIES.has(normalized as PlaybackDeliveryPolicy)
+    ? normalized as PlaybackDeliveryPolicy
+    : null;
+}
+
+export function getDefaultPlaybackDeliveryPolicy(): PlaybackDeliveryPolicy {
+  return isMobileRuntime() ? "balanced" : "original";
+}
+
+export function getPlaybackDeliveryPolicyPreference(): PlaybackDeliveryPolicy {
+  try {
+    return normalizePlaybackDeliveryPolicy(localStorage.getItem(PLAYBACK_DELIVERY_POLICY_KEY))
+      ?? getDefaultPlaybackDeliveryPolicy();
+  } catch {
+    return getDefaultPlaybackDeliveryPolicy();
+  }
+}
+
+export function setPlaybackDeliveryPolicyPreference(policy: PlaybackDeliveryPolicy) {
+  const value = normalizePlaybackDeliveryPolicy(policy) ?? getDefaultPlaybackDeliveryPolicy();
+  try {
+    localStorage.setItem(PLAYBACK_DELIVERY_POLICY_KEY, value);
+    window.dispatchEvent(
+      new CustomEvent(PLAYER_PLAYBACK_PREFS_EVENT, {
+        detail: { playbackDeliveryPolicy: value },
+      }),
+    );
+  } catch {
+    // ignore localStorage failures in private mode or restricted environments
+  }
+}
 
 export function getCrossfadeDurationPreference(): number {
   try {

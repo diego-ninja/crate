@@ -13,11 +13,18 @@ def get_play_history_rows(user_id: int, *, limit: int, has_legacy_stream_id_colu
             lt.entity_uid::text AS track_entity_uid,
             COALESCE(lt.path, upe.track_path) AS track_path,
             COALESCE(lt.title, upe.title) AS title,
-            COALESCE(lt.artist, upe.artist) AS artist,
-            ar.id AS artist_id,
-            ar.slug AS artist_slug,
+            COALESCE(ar_by_album.name, ar_by_albumartist.name, ar_by_track.name, ar_by_event.name, lt.albumartist, alb.artist, lt.artist, upe.artist) AS artist,
+            COALESCE(ar_by_album.id, ar_by_albumartist.id, ar_by_track.id, ar_by_event.id) AS artist_id,
+            COALESCE(
+                ar_by_album.entity_uid::text,
+                ar_by_albumartist.entity_uid::text,
+                ar_by_track.entity_uid::text,
+                ar_by_event.entity_uid::text
+            ) AS artist_entity_uid,
+            COALESCE(ar_by_album.slug, ar_by_albumartist.slug, ar_by_track.slug, ar_by_event.slug) AS artist_slug,
             COALESCE(lt.album, upe.album) AS album,
             alb.id AS album_id,
+            alb.entity_uid::text AS album_entity_uid,
             alb.slug AS album_slug,
             upe.ended_at AS played_at
         FROM user_play_events upe
@@ -38,7 +45,18 @@ def get_play_history_rows(user_id: int, *, limit: int, has_legacy_stream_id_colu
         """
     query_sql += """
         LEFT JOIN library_albums alb ON alb.id = lt.album_id
-        LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, upe.artist)
+        LEFT JOIN library_artists ar_by_album
+          ON COALESCE(alb.artist, '') <> ''
+         AND LOWER(ar_by_album.name) = LOWER(alb.artist)
+        LEFT JOIN library_artists ar_by_albumartist
+          ON COALESCE(lt.albumartist, '') <> ''
+         AND LOWER(ar_by_albumartist.name) = LOWER(lt.albumartist)
+        LEFT JOIN library_artists ar_by_track
+          ON COALESCE(lt.artist, '') <> ''
+         AND LOWER(ar_by_track.name) = LOWER(lt.artist)
+        LEFT JOIN library_artists ar_by_event
+          ON COALESCE(upe.artist, '') <> ''
+         AND LOWER(ar_by_event.name) = LOWER(upe.artist)
         WHERE upe.user_id = :user_id
         ORDER BY upe.ended_at DESC
         LIMIT :lim
@@ -74,15 +92,29 @@ def resolve_play_history_album_fallback(normalized_pairs: list[tuple[str, str]])
                     lt.entity_uid::text AS track_entity_uid,
                     lt.path,
                     lt.title,
-                    lt.artist,
+                    COALESCE(ar_by_album.name, ar_by_albumartist.name, ar_by_track.name, lt.albumartist, alb.artist, lt.artist) AS artist,
                     alb.id AS album_id,
+                    alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug,
                     alb.name AS album,
-                    ar.id AS artist_id,
-                    ar.slug AS artist_slug
+                    COALESCE(ar_by_album.id, ar_by_albumartist.id, ar_by_track.id) AS artist_id,
+                    COALESCE(
+                        ar_by_album.entity_uid::text,
+                        ar_by_albumartist.entity_uid::text,
+                        ar_by_track.entity_uid::text
+                    ) AS artist_entity_uid,
+                    COALESCE(ar_by_album.slug, ar_by_albumartist.slug, ar_by_track.slug) AS artist_slug
                 FROM library_tracks lt
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
-                LEFT JOIN library_artists ar ON ar.name = lt.artist
+                LEFT JOIN library_artists ar_by_album
+                  ON COALESCE(alb.artist, '') <> ''
+                 AND LOWER(ar_by_album.name) = LOWER(alb.artist)
+                LEFT JOIN library_artists ar_by_albumartist
+                  ON COALESCE(lt.albumartist, '') <> ''
+                 AND LOWER(ar_by_albumartist.name) = LOWER(lt.albumartist)
+                LEFT JOIN library_artists ar_by_track
+                  ON COALESCE(lt.artist, '') <> ''
+                 AND LOWER(ar_by_track.name) = LOWER(lt.artist)
                 JOIN input_pairs ip
                   ON LOWER(lt.artist) = ip.artist
                  AND LOWER(lt.title) = ip.title
@@ -137,10 +169,13 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
         item["track_id"] = hit["track_id"]
         item["track_entity_uid"] = hit.get("track_entity_uid")
         item["track_path"] = item.get("track_path") or hit.get("path")
+        item["artist"] = hit.get("artist") or item.get("artist")
         item["album_id"] = hit.get("album_id")
+        item["album_entity_uid"] = hit.get("album_entity_uid")
         item["album_slug"] = hit.get("album_slug")
         item["album"] = item.get("album") or hit.get("album")
         item["artist_id"] = item.get("artist_id") or hit.get("artist_id")
+        item["artist_entity_uid"] = item.get("artist_entity_uid") or hit.get("artist_entity_uid")
         item["artist_slug"] = item.get("artist_slug") or hit.get("artist_slug")
 
     return rows

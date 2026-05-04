@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveTrackInfoUrl } from "./track-info";
+import { mergeTrackQualityParts, resolveTrackInfoUrl } from "./track-info";
 
 describe("resolveTrackInfoUrl", () => {
   it("prefers entity_uid over legacy ids when available", () => {
@@ -22,5 +22,21 @@ describe("resolveTrackInfoUrl", () => {
         path: "Artist/Album/Track.flac",
       }),
     ).toBe("/api/tracks/42/info");
+  });
+});
+
+describe("mergeTrackQualityParts", () => {
+  it("does not let a partial later source wipe out known lossless metadata", () => {
+    expect(
+      mergeTrackQualityParts(
+        { format: "flac", bitrate: 1411, sampleRate: 44100, bitDepth: 16 },
+        { format: "flac", bitrate: 1411, sampleRate: undefined, bitDepth: undefined },
+      ),
+    ).toEqual({
+      format: "flac",
+      bitrate: 1411,
+      sampleRate: 44100,
+      bitDepth: 16,
+    });
   });
 });

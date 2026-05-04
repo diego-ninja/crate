@@ -152,9 +152,11 @@ def infer_canonical_genre(
 
     scores: dict[str, float] = defaultdict(float)
     reasons: dict[str, list[str]] = defaultdict(list)
+    lexical_scores: dict[str, float] = {}
 
     for slug in catalog:
         best_lexical = max((_lexical_match_score(raw_norm, term) for term in get_genre_alias_terms(slug)), default=0.0)
+        lexical_scores[slug] = best_lexical
         if best_lexical >= 0.42:
             lexical_score = best_lexical * 2.1
             scores[slug] += lexical_score
@@ -180,6 +182,22 @@ def infer_canonical_genre(
                 scores[top_level_slug] += top_level_weight
                 reasons[top_level_slug].append(f"{label}-family {score:.2f}")
 
+    # If the raw tag strongly resembles a specific child genre and the local
+    # evidence points to that child's broader family, prefer the specific node
+    # over the generic top-level bucket.
+    for slug, best_lexical in lexical_scores.items():
+        if best_lexical < 0.72 or bool(catalog[slug]["top_level"]):
+            continue
+        top_level_slug = get_top_level_slug(slug)
+        if not top_level_slug or top_level_slug == slug:
+            continue
+        family_score = scores.get(top_level_slug, 0.0)
+        if family_score <= 0:
+            continue
+        refinement_bonus = min(family_score * 0.55, 1.2 + best_lexical * 0.45)
+        scores[slug] += refinement_bonus
+        reasons[slug].append(f"family-specific {family_score:.2f}")
+
     if not scores:
         return None
 
@@ -195,7 +213,7 @@ def infer_canonical_genre(
     runner_up_score = ordered[1][1] if len(ordered) > 1 else 0.0
     margin = best_score - runner_up_score
     best_is_top_level = bool(catalog[best_slug]["top_level"])
-    best_lexical = max((_lexical_match_score(raw_norm, term) for term in get_genre_alias_terms(best_slug)), default=0.0)
+    best_lexical = lexical_scores.get(best_slug, 0.0)
 
     if not best_is_top_level and (best_lexical >= 0.78 or (best_score >= 2.15 and margin >= 0.18)):
         confidence = min(0.99, 0.55 + best_lexical * 0.25 + min(best_score, 4.0) * 0.06)

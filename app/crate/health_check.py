@@ -23,13 +23,19 @@ from crate.db.queries.health import (
     get_tracks_tag_sample,
     get_zombie_artists,
 )
+from crate.repair_catalog import REPAIR_CATALOG, REPAIR_CATALOG_BY_CHECK, RepairCatalogEntry
 from crate.storage_layout import looks_like_entity_uid
 from crate.utils import PHOTO_NAMES, normalize_key
+from crate.worker_handlers.migration import build_artist_layout_fix_issue, preview_fix_artist
 
 log = logging.getLogger(__name__)
 
 
 class LibraryHealthCheck:
+    CHECK_METHODS: tuple[tuple[str, str], ...] = tuple(
+        (entry.check_type, entry.scanner_method) for entry in REPAIR_CATALOG
+    )
+
     def __init__(self, config: dict):
         self.library_path = Path(config["library_path"])
         self.extensions = set(
@@ -37,35 +43,55 @@ class LibraryHealthCheck:
         )
 
     def run(self, progress_callback=None, persist: bool = True) -> dict:
+        return self._run_entries(REPAIR_CATALOG, progress_callback=progress_callback, persist=persist)
+
+    def run_selected(
+        self,
+        check_types: set[str] | list[str] | tuple[str, ...],
+        *,
+        progress_callback=None,
+        persist: bool = True,
+    ) -> dict:
+        selected = []
+        for check_type in check_types:
+            entry = REPAIR_CATALOG_BY_CHECK.get(str(check_type))
+            if entry is not None:
+                selected.append(entry)
+        return self._run_entries(selected, progress_callback=progress_callback, persist=persist)
+
+    def _persist_issues(self, issues: list[dict], entries: list[RepairCatalogEntry]) -> None:
+        by_type: dict[str, set[str]] = defaultdict(set)
+        for issue in issues:
+            desc = issue.get("description") or str(issue.get("details", {})
+                ).replace("{", "").replace("}", "").replace("'", "")[:200]
+            by_type[issue["check"]].add(desc)
+            upsert_health_issue(
+                check_type=issue["check"],
+                severity=issue.get("severity", "medium"),
+                description=desc,
+                details=issue.get("details"),
+                auto_fixable=issue.get("auto_fixable", False),
+            )
+        for entry in entries:
+            descriptions = by_type.get(entry.check_type, set())
+            resolve_stale_issues(descriptions, entry.check_type)
+
+    def _run_entries(self, entries: list[RepairCatalogEntry] | tuple[RepairCatalogEntry, ...], *, progress_callback=None, persist: bool = True) -> dict:
         start = time.monotonic()
         issues = []
-
         checks = [
-            ("duplicate_folders", self._check_duplicate_folders),
-            ("canonical_mismatch", self._check_canonical_mismatch),
-            ("fk_orphan_albums", self._check_fk_orphan_albums),
-            ("fk_orphan_tracks", self._check_fk_orphan_tracks),
-            ("stale_artists", self._check_stale_artists),
-            ("stale_albums", self._check_stale_albums),
-            ("stale_tracks", self._check_stale_tracks),
-            ("zombie_artists", self._check_zombie_artists),
-            ("has_photo_desync", self._check_has_photo_desync),
-            ("duplicate_albums", self._check_duplicate_albums),
-            ("duplicate_tracks", self._check_duplicate_tracks),
-            ("unindexed_files", self._check_unindexed_files),
-            ("tag_mismatch", self._check_tag_mismatch),
-            ("folder_naming", self._check_folder_naming),
-            ("missing_cover", self._check_missing_covers),
+            (entry, getattr(self, entry.scanner_method))
+            for entry in entries
         ]
 
-        for i, (name, check_fn) in enumerate(checks):
+        for i, (entry, check_fn) in enumerate(checks):
             if progress_callback:
-                progress_callback({"check": name, "done": i, "total": len(checks)})
+                progress_callback({"check": entry.check_type, "done": i, "total": len(checks)})
             try:
-                found = check_fn()
+                found = [self._normalize_issue(entry, issue) for issue in check_fn()]
                 issues.extend(found)
             except Exception:
-                log.exception("Health check '%s' failed", name)
+                log.exception("Health check '%s' failed", entry.check_type)
 
         duration_ms = int((time.monotonic() - start) * 1000)
         summary = {}
@@ -73,33 +99,22 @@ class LibraryHealthCheck:
             key = issue["check"]
             summary[key] = summary.get(key, 0) + 1
 
-        # Persist to health_issues table
         if persist:
-            # Group by check type for stale resolution
-            by_type: dict[str, set[str]] = defaultdict(set)
-            for issue in issues:
-                # Build description from details if not present
-                desc = issue.get("description") or str(issue.get("details", {})
-                    ).replace("{", "").replace("}", "").replace("'", "")[:200]
-                by_type[issue["check"]].add(desc)
-                upsert_health_issue(
-                    check_type=issue["check"],
-                    severity=issue.get("severity", "medium"),
-                    description=desc,
-                    details=issue.get("details"),
-                    auto_fixable=issue.get("auto_fixable", False),
-                )
-            # Auto-resolve issues that no longer exist in this scan
-            for check_name, _ in checks:
-                descriptions = by_type.get(check_name, set())
-                resolve_stale_issues(descriptions, check_name)
+            self._persist_issues(issues, [entry for entry, _ in checks])
 
         return {
             "issues": issues,
             "summary": summary,
+            "check_count": len(checks),
             "scanned_at": datetime.now(timezone.utc).isoformat(),
             "duration_ms": duration_ms,
         }
+
+    def _normalize_issue(self, entry: RepairCatalogEntry, issue: dict) -> dict:
+        normalized = dict(issue)
+        normalized["check"] = entry.check_type
+        normalized["auto_fixable"] = entry.auto_fixable
+        return normalized
 
     def _first_audio_albumartist(self, folder: Path) -> str | None:
         for f in sorted(folder.iterdir()):
@@ -156,6 +171,23 @@ class LibraryHealthCheck:
                         "tag_name": tag_name,
                     },
                 })
+        return issues
+
+    def _check_artist_layout_fix(self) -> list[dict]:
+        issues = []
+        preview_config = {
+            "library_path": str(self.library_path),
+            "audio_extensions": sorted(self.extensions),
+        }
+        for artist in get_all_artists():
+            try:
+                preview = preview_fix_artist(self.library_path, artist, preview_config)
+            except Exception:
+                log.exception("Artist layout preview failed for %s", artist.get("name"))
+                continue
+            issue = build_artist_layout_fix_issue(preview)
+            if issue:
+                issues.append(issue)
         return issues
 
     def _check_fk_orphan_albums(self) -> list[dict]:
@@ -270,11 +302,11 @@ class LibraryHealthCheck:
             {
                 "check": "duplicate_albums",
                 "severity": "medium",
-                "auto_fixable": False,
                 "details": {
                     "artist": r["artist"],
                     "album": r["album_name"],
                     "count": r["cnt"],
+                    "paths": r.get("paths", []),
                 },
             }
             for r in rows
@@ -288,7 +320,6 @@ class LibraryHealthCheck:
             {
                 "check": "duplicate_tracks",
                 "severity": "medium",
-                "auto_fixable": True,
                 "details": {
                     "artist": r["artist"],
                     "album": r["album"],

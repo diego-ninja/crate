@@ -45,8 +45,8 @@ export function useTaskPoll() {
         stopPolling(taskId);
         if (task.status === "completed") {
           onComplete(task.result);
-        } else if (task.status === "failed") {
-          onFailed?.(task.error);
+        } else if (task.status === "failed" || task.status === "cancelled") {
+          onFailed?.(task.error || (task.status === "cancelled" ? "Task was cancelled" : undefined));
         }
       })
       .catch((error: Error) => {

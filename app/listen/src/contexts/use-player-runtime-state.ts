@@ -21,6 +21,7 @@ import {
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getPlaybackDeliveryPolicyPreference,
   getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
@@ -51,6 +52,7 @@ export function usePlayerRuntimeState() {
   const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
     getSmartPlaylistSuggestionsCadencePreference,
   );
+  const [playbackDeliveryPolicy, setPlaybackDeliveryPolicy] = useState(getPlaybackDeliveryPolicyPreference);
 
   const currentTrack = queue[currentIndex];
 
@@ -198,6 +200,7 @@ export function usePlayerRuntimeState() {
     infinitePlaybackEnabled,
     smartPlaylistSuggestionsEnabled,
     smartPlaylistSuggestionsCadence,
+    playbackDeliveryPolicy,
     setPlaySource,
     setRepeatState,
     setShuffleState,
@@ -209,6 +212,7 @@ export function usePlayerRuntimeState() {
     setInfinitePlaybackEnabled,
     setSmartPlaylistSuggestionsEnabled,
     setSmartPlaylistSuggestionsCadence,
+    setPlaybackDeliveryPolicy,
     crossfadeTimerRef,
     queueRef,
     currentIndexRef,

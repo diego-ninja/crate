@@ -7,6 +7,7 @@ import {
   type EnrichmentData,
 } from "@/hooks/use-artist-data";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
+import { ArtistRepairDialog } from "@/components/artist/ArtistRepairDialog";
 import { ArtistDiscographySection } from "@/components/artist/ArtistDiscographySection";
 import { ArtistAboutSection } from "@/components/artist/ArtistAboutSection";
 import { ArtistLoadingState } from "@/components/artist/ArtistLoadingState";
@@ -32,6 +33,12 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
+interface ArtistRepairPlanSummary {
+  total: number;
+}
+
+type ArtistMetadataAction = "lyrics" | "portable" | "export" | null;
+
 // ── Main Component ──
 
 export function Artist() {
@@ -53,7 +60,6 @@ export function Artist() {
   // Data fetching hooks (replace manual useEffect + useState)
   const topTracks = useTopTracks(data?.id, data?.entity_uid);
   const [enriching, setEnriching] = useState(false);
-  const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [upcomingShows, setUpcomingShows] = useState<ArtistShowEvent[]>([]);
@@ -74,7 +80,14 @@ export function Artist() {
   const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id, data?.entity_uid);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
+  const [metadataAction, setMetadataAction] = useState<ArtistMetadataAction>(null);
+  const [issueCountOverride, setIssueCountOverride] = useState<number | null>(null);
   const { isAdmin } = useAuth();
+  const repairPlanEndpoint = isAdmin
+    ? artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "repair-plan") || null
+    : null;
+  const { data: repairPlanSummary } = useApi<ArtistRepairPlanSummary>(repairPlanEndpoint);
 
   useEffect(() => {
     if (artistId == null || !data?.slug) return;
@@ -132,7 +145,8 @@ export function Artist() {
   const totalTracks = data.total_tracks ?? data.albums.reduce((s, a) => s + a.tracks, 0);
   const totalSize = data.total_size_mb ?? data.albums.reduce((s, a) => s + a.size_mb, 0);
   const letter = artistName.charAt(0).toUpperCase();
-  const issueCount = data.issue_count ?? 0;
+  const issueCount = issueCountOverride ?? repairPlanSummary?.total ?? data.issue_count ?? 0;
+  const showRepairAction = issueCount > 0;
 
   const sortedAlbums = [...data.albums].sort((a, b) => {
     if (sort === "year") return (b.year || "").localeCompare(a.year || "");
@@ -189,34 +203,7 @@ export function Artist() {
   }
 
   async function repairArtist() {
-    try {
-      const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "repair");
-      if (!endpoint) throw new Error("artist reference missing");
-      await api(endpoint, "POST");
-      toast.success(`Repair started for ${issueCount} issue${issueCount !== 1 ? "s" : ""}`);
-    } catch {
-      toast.error("Failed to start repair");
-    }
-  }
-
-  async function migrateToV2() {
-    if (!data) return;
-    setMigrating(true);
-    try {
-      const { task_id } = await api<{ task_id: string }>("/api/manage/migrate-storage-v2", "POST", { artist: data.name });
-      toast.success(`V2 migration started for ${data.name}`);
-      const task = await waitForTask(task_id, 300000);
-      setMigrating(false);
-      if (task.status === "completed") {
-        toast.success(`${data.name} migrated to V2`);
-        window.location.reload();
-      } else if (task.status === "failed") {
-        toast.error("V2 migration failed");
-      }
-    } catch {
-      setMigrating(false);
-      toast.error("Failed to start V2 migration");
-    }
+    setShowRepairDialog(true);
   }
 
   async function downloadMissingDiscography() {
@@ -236,6 +223,34 @@ export function Artist() {
     }
   }
 
+  async function queueArtistMetadataAction(action: Exclude<ArtistMetadataAction, null>) {
+    setMetadataAction(action);
+    try {
+      if (action === "lyrics") {
+        await api("/api/manage/sync-lyrics", "POST", { artist: artistName, limit: 1000 });
+        toast.success("Lyrics sync queued");
+      } else if (action === "portable") {
+        await api("/api/manage/portable-metadata", "POST", {
+          artist: artistName,
+          write_audio_tags: true,
+          write_sidecars: true,
+        });
+        toast.success("Portable metadata queued");
+      } else {
+        await api("/api/manage/portable-metadata/export-rich", "POST", {
+          artist: artistName,
+          include_audio: false,
+          write_rich_tags: false,
+        });
+        toast.success("Rich metadata export queued");
+      }
+    } catch {
+      toast.error("Failed to queue metadata task");
+    } finally {
+      setMetadataAction(null);
+    }
+  }
+
   return (
     <div className="-mt-16 md:-mt-[6.5rem]">
         <ArtistHeroSection
@@ -249,6 +264,7 @@ export function Artist() {
         totalTracks={totalTracks}
         totalSizeMb={totalSize}
         issueCount={issueCount}
+        showRepairAction={showRepairAction}
         musicbrainz={mb}
         lastfmListeners={lastfm?.listeners}
         upcomingShow={upcomingShows[0]}
@@ -256,9 +272,6 @@ export function Artist() {
         genreProfile={data.genre_profile}
         tags={allTags}
         enriching={enriching}
-        isV2={data?.is_v2}
-        migrating={migrating}
-        onMigrateV2={() => void migrateToV2()}
         isAdmin={isAdmin}
         photoLoaded={photoLoaded}
         photoError={photoError}
@@ -286,13 +299,23 @@ export function Artist() {
         onRepair={() => {
           void repairArtist();
         }}
+        metadataAction={metadataAction}
+        onSyncLyrics={() => {
+          void queueArtistMetadataAction("lyrics");
+        }}
+        onWritePortableMetadata={() => {
+          void queueArtistMetadataAction("portable");
+        }}
+        onExportRichMetadata={() => {
+          void queueArtistMetadataAction("export");
+        }}
         onDelete={() => setShowDeleteConfirm(true)}
       />
 
       <ArtistTabsNav tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* ═══ CONTENT ═══ */}
-      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 pb-12 pt-6 md:px-8">
 
         {/* ── Overview Tab ── */}
         {activeTab === "overview" && (
@@ -416,6 +439,14 @@ export function Artist() {
             toast.error(message);
           }
         }}
+      />
+      <ArtistRepairDialog
+        open={showRepairDialog}
+        onOpenChange={setShowRepairDialog}
+        artistName={artistName}
+        artistId={data.id}
+        artistEntityUid={data.entity_uid}
+        onIssueCountChange={setIssueCountOverride}
       />
     </div>
   );

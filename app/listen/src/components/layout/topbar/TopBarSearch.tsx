@@ -172,6 +172,7 @@ export function TopBarSearch() {
   useEffect(() => {
     if (query.trim()) {
       setExpanded(true);
+      setShowDropdown(true);
     }
   }, [query]);
 

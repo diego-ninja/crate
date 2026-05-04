@@ -86,6 +86,27 @@ def read_tags(filepath: Path) -> dict:
     return tags
 
 
+def read_audio_quality(filepath: Path) -> dict[str, int | float | None]:
+    """Read lightweight technical audio metadata from a file."""
+    try:
+        audio = mutagen.File(filepath)
+    except Exception:
+        return {
+            "duration": None,
+            "bitrate": None,
+            "sample_rate": None,
+            "bit_depth": None,
+        }
+
+    info = audio.info if audio else None
+    return {
+        "duration": float(getattr(info, "length", 0) or 0) or None,
+        "bitrate": int(getattr(info, "bitrate", 0) or 0) or None,
+        "sample_rate": int(getattr(info, "sample_rate", 0) or 0) or None,
+        "bit_depth": int(getattr(info, "bits_per_sample", 0) or 0) or None,
+    }
+
+
 def get_audio_files(directory: Path, extensions: list[str]) -> list[Path]:
     """Get all audio files in a directory (non-recursive)."""
     files = []

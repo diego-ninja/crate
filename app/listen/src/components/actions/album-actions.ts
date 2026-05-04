@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ArrowDownToLine, Heart, Loader2, Play, Radio, Share2, Shuffle } from "lucide-react";
+import { ArrowDownToLine, Download, Heart, Loader2, Play, Radio, Share2, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 
 import type { ItemActionMenuEntry } from "@/components/actions/ItemActionMenu";
@@ -12,7 +12,7 @@ import {
 import { usePlayerActions, type PlaySource } from "@/contexts/PlayerContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
-import { albumPagePath } from "@/lib/library-routes";
+import { albumDownloadApiPath, albumPagePath, downloadApiUrl } from "@/lib/library-routes";
 import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { shuffleArray } from "@/lib/utils";
@@ -124,6 +124,22 @@ export function useAlbumActionEntries(input: AlbumMenuData): ItemActionMenuEntry
           } catch (error) {
             toast.error((error as Error).message || "Failed to update offline copy");
           }
+        },
+      }),
+      action({
+        key: "download",
+        label: "Download album ZIP",
+        icon: Download,
+        disabled: input.albumId == null && !input.albumEntityUid,
+        onSelect: async () => {
+          const path = albumDownloadApiPath({
+            albumId: input.albumId,
+            albumEntityUid: input.albumEntityUid,
+            artistName: input.artist,
+            albumName: input.album,
+          });
+          const url = downloadApiUrl(path);
+          if (url) window.location.assign(url);
         },
       }),
       action({

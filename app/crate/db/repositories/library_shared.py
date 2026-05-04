@@ -112,7 +112,7 @@ def track_to_dict(track) -> dict | None:
     entity_uid = str(track.entity_uid) if getattr(track, "entity_uid", None) else None
     return {
         "id": track.id,
-        "storage_id": None if entity_uid else (str(track.storage_id) if track.storage_id else None),
+        "storage_id": str(track.storage_id) if track.storage_id else None,
         "entity_uid": entity_uid,
         "album_id": track.album_id,
         "artist": track.artist,

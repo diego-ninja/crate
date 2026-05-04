@@ -185,5 +185,50 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON library_tracks(bpm) WHERE bpm IS NOT NULL")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_energy ON library_tracks(energy) WHERE energy IS NOT NULL")
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS track_lyrics (
+            id SERIAL PRIMARY KEY,
+            provider TEXT NOT NULL DEFAULT 'lrclib',
+            artist_key TEXT NOT NULL,
+            title_key TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            title TEXT NOT NULL,
+            track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+            track_entity_uid UUID,
+            synced_lyrics TEXT,
+            plain_lyrics TEXT,
+            found BOOLEAN NOT NULL DEFAULT TRUE,
+            source_json JSONB DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_track_lyrics_lookup
+        ON track_lyrics(provider, artist_key, title_key)
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_track_lyrics_track ON track_lyrics(track_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_track_lyrics_entity ON track_lyrics(track_entity_uid)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_track_lyrics_updated ON track_lyrics(updated_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS album_portable_metadata (
+            album_id INTEGER PRIMARY KEY REFERENCES library_albums(id) ON DELETE CASCADE,
+            album_entity_uid UUID,
+            sidecar_path TEXT,
+            sidecar_written_at TIMESTAMPTZ,
+            audio_tags_written_at TIMESTAMPTZ,
+            tracks INTEGER NOT NULL DEFAULT 0,
+            tags_written INTEGER NOT NULL DEFAULT 0,
+            tag_errors INTEGER NOT NULL DEFAULT 0,
+            export_path TEXT,
+            exported_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_album_portable_metadata_sidecar ON album_portable_metadata(sidecar_written_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_album_portable_metadata_tags ON album_portable_metadata(audio_tags_written_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_album_portable_metadata_export ON album_portable_metadata(exported_at DESC)")
+
 
 __all__ = ["create_library_catalog_schema"]

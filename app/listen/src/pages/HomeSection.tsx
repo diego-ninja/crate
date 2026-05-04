@@ -56,6 +56,9 @@ export function HomeSection() {
   const { sectionId } = useParams<{ sectionId: HomeSectionId }>();
   const { data, loading } = useApi<HomeSectionDetailPayload>(
     sectionId ? `/api/me/home/sections/${sectionId}?limit=42` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
 
   const recommendedTracks = useMemo(

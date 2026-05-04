@@ -1,6 +1,8 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from crate.worker_handlers.acquisition import (
+    _handle_tidal_download,
     _handle_library_upload,
     _locate_soulseek_download_file,
     _select_soulseek_task_downloads,
@@ -155,4 +157,40 @@ def test_library_upload_syncs_each_album_and_emits_grouped_completion(monkeypatc
                 },
             ],
         }
+    ]
+
+
+def test_tidal_download_task_raises_when_inner_returns_error(monkeypatch, tmp_path):
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    status_updates: list[dict] = []
+
+    monkeypatch.setattr(
+        "crate.worker_handlers.acquisition._tidal_download_inner",
+        lambda *args, **kwargs: {"error": "Partial Tidal download: got 0/4 tracks", "phase": "download"},
+    )
+    monkeypatch.setattr(
+        "crate.worker_handlers.acquisition.update_tidal_download",
+        lambda download_id, **kwargs: status_updates.append({"download_id": download_id, **kwargs}),
+    )
+
+    try:
+        _handle_tidal_download(
+            "task-tidal-1",
+            {
+                "url": "https://tidal.com/album/123",
+                "download_id": 99,
+                "quality": "max",
+            },
+            {"library_path": str(library_root)},
+        )
+    except RuntimeError as exc:
+        assert "Partial Tidal download: got 0/4 tracks" in str(exc)
+        assert "phase: download" in str(exc)
+    else:
+        raise AssertionError("Expected _handle_tidal_download to raise for error results")
+
+    assert status_updates == [
+        {"download_id": 99, "status": "downloading", "task_id": "task-tidal-1"},
+        {"download_id": 99, "status": "failed", "error": "Partial Tidal download: got 0/4 tracks (phase: download)"},
     ]

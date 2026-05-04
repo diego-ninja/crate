@@ -203,6 +203,10 @@ def _is_home_discovery_invalidation(scope: str, user_id: int) -> bool:
 
 async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_initial: bool = True):
     heartbeat_counter = 0
+
+    def heartbeat_payload() -> str:
+        return f"event: heartbeat\ndata: {json_dumps({'ts': time.time()})}\n\n: heartbeat\n\n"
+
     if include_initial:
         yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
 
@@ -221,7 +225,7 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
             heartbeat_counter += 1
             if heartbeat_counter >= 30:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield heartbeat_payload()
     except Exception:
         while True:
             await asyncio.sleep(1)
@@ -239,7 +243,7 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
                 heartbeat_counter = 0
             elif heartbeat_counter >= 30:
                 heartbeat_counter = 0
-                yield ": heartbeat\n\n"
+                yield heartbeat_payload()
 
 
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
@@ -942,7 +946,7 @@ async def home_discovery_stream(request: Request, initial: bool = Query(True)):
 def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     mix = _get_cached_home_endpoint_response(
-        cache_key=f"home_mix:{user['id']}:{mix_id}:{limit}",
+        cache_key=f"home_mix:v2:{user['id']}:{mix_id}:{limit}",
         max_age_seconds=300,
         ttl=300,
         compute=lambda: get_home_playlist(user["id"], mix_id, limit=limit),
@@ -961,7 +965,7 @@ def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, 
 def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     playlist = _get_cached_home_endpoint_response(
-        cache_key=f"home_playlist:{user['id']}:{playlist_id}:{limit}",
+        cache_key=f"home_playlist:v2:{user['id']}:{playlist_id}:{limit}",
         max_age_seconds=300,
         ttl=300,
         compute=lambda: get_home_playlist(user["id"], playlist_id, limit=limit),

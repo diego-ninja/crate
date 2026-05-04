@@ -50,7 +50,42 @@ def merge_album_folder(old_path: str, new_path: str, album_name: str) -> None:
         )
 
 
+def get_tracks_by_paths(paths: list[str]) -> list[dict]:
+    if not paths:
+        return []
+    with transaction_scope() as session:
+        rows = session.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    entity_uid::text AS entity_uid,
+                    album_id,
+                    artist,
+                    album,
+                    title,
+                    filename,
+                    path,
+                    track_number,
+                    disc_number,
+                    format,
+                    bitrate,
+                    sample_rate,
+                    bit_depth,
+                    duration,
+                    size,
+                    audio_fingerprint
+                FROM library_tracks
+                WHERE path = ANY(:paths)
+                """
+            ),
+            {"paths": paths},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
 __all__ = [
+    "get_tracks_by_paths",
     "merge_album_folder",
     "reassign_album_artist",
     "update_album_path_and_name",

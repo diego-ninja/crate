@@ -1,6 +1,15 @@
 import { apiSseUrl } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
 import { recordAssetInvalidationScope } from "@/lib/library-routes";
+import {
+  markSseChannelClosed,
+  markSseChannelError,
+  markSseChannelEvent,
+  markSseChannelOpen,
+  onSseChannelState,
+  onSseReconnect,
+  type SseChannelState,
+} from "@/lib/sse";
 
 // ── Cache Store ────────────────────────────────────────────────
 
@@ -208,11 +217,21 @@ function _evictOldest(count: number): void {
 
 let eventSource: EventSource | null = null;
 const invalidationListeners = new Set<(scope: string) => void>();
+const CACHE_EVENTS_CHANNEL = "cache-invalidations";
+const CACHE_EVENTS_DEGRADE_AFTER_MS = 75_000;
 
 /** Subscribe to cache invalidation events. Returns unsubscribe function. */
 export function onCacheInvalidation(fn: (scope: string) => void): () => void {
   invalidationListeners.add(fn);
   return () => invalidationListeners.delete(fn);
+}
+
+export function onCacheReconnect(fn: (state: SseChannelState) => void): () => void {
+  return onSseReconnect(CACHE_EVENTS_CHANNEL, fn);
+}
+
+export function onCacheEventsHealthChange(fn: (state: SseChannelState) => void): () => void {
+  return onSseChannelState(CACHE_EVENTS_CHANNEL, fn);
 }
 
 /** Connect to the SSE cache invalidation stream. Call once at app startup.
@@ -229,9 +248,18 @@ export function connectCacheEvents(): () => void {
   try {
     eventSource = new EventSource(url, { withCredentials: !isNative });
 
+    eventSource.onopen = () => {
+      markSseChannelOpen(CACHE_EVENTS_CHANNEL, {
+        degradeAfterMs: CACHE_EVENTS_DEGRADE_AFTER_MS,
+      });
+    };
+
     eventSource.onmessage = (event) => {
       const scope = event.data?.trim();
       if (!scope) return;
+      markSseChannelEvent(CACHE_EVENTS_CHANNEL, {
+        degradeAfterMs: CACHE_EVENTS_DEGRADE_AFTER_MS,
+      });
       recordAssetInvalidationScope(scope);
       cacheInvalidate(scope);
       for (const fn of invalidationListeners) {
@@ -239,7 +267,16 @@ export function connectCacheEvents(): () => void {
       }
     };
 
+    eventSource.addEventListener("heartbeat", () => {
+      markSseChannelEvent(CACHE_EVENTS_CHANNEL, {
+        degradeAfterMs: CACHE_EVENTS_DEGRADE_AFTER_MS,
+      });
+    });
+
     eventSource.onerror = () => {
+      markSseChannelError(CACHE_EVENTS_CHANNEL, {
+        degradeAfterMs: CACHE_EVENTS_DEGRADE_AFTER_MS,
+      });
       // EventSource auto-reconnects with Last-Event-ID. Just log.
       console.debug("[cache] SSE connection lost, reconnecting...");
     };
@@ -248,6 +285,9 @@ export function connectCacheEvents(): () => void {
   }
 
   return () => {
+    markSseChannelClosed(CACHE_EVENTS_CHANNEL, {
+      degradeAfterMs: CACHE_EVENTS_DEGRADE_AFTER_MS,
+    });
     eventSource?.close();
     eventSource = null;
   };

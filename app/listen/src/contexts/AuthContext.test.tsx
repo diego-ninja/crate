@@ -201,6 +201,6 @@ describe("AuthProvider", () => {
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith("/stats", { replace: true });
     });
-    expect(apiMock).toHaveBeenCalledWith("/api/auth/me");
+    expect(apiMock.mock.calls.some(([url]) => url === "/api/auth/me")).toBe(true);
   });
 });

@@ -114,6 +114,9 @@ export function Album() {
       : routeArtistSlug && routeAlbumSlug
         ? albumApiPath({ artistSlug: routeArtistSlug, albumSlug: routeAlbumSlug })
         : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const { playlistOptions: playlists, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
@@ -400,7 +403,7 @@ export function Album() {
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
       {/* Header */}
       <div className="px-4 sm:px-6 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 5rem)" }}>
-        <div className="flex flex-col sm:flex-row gap-6">
+        <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 sm:flex-row">
           {/* Cover */}
           <div className="flex-shrink-0 w-[200px] sm:w-[240px] lg:w-[280px] mx-auto sm:mx-0">
             <div className="aspect-square rounded-lg overflow-hidden bg-white/5 shadow-2xl">
@@ -470,100 +473,76 @@ export function Album() {
       </div>
 
       {/* Action Row */}
-      <div className="flex items-center gap-2 px-4 sm:px-6 pb-4">
-        <button
-          className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
-          onClick={() => handlePlay()}
-          aria-label="Play"
-        >
-          <Play size={16} fill="currentColor" />
-          Play
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={handleShuffle}
-          aria-label="Shuffle"
-        >
-          <Shuffle size={16} />
-        </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
-          onClick={handleAlbumRadio}
-          aria-label="Album Radio"
-        >
-          <Radio size={16} />
-        </button>
-        <button
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-            offlineState === "ready"
-              ? "border border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
-              : offlineBusy
-                ? "border border-primary/25 bg-primary/10 text-primary"
-                : offlineState === "error"
-                  ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
-                  : "border border-white/15 text-foreground hover:bg-white/5"
-          }`}
-          onClick={handleToggleOffline}
-          disabled={!offlineSupported || offlineBusy}
-          aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
-          title={offlineButtonLabel}
-        >
-          {offlineState === "ready" ? (
-            <CheckCircle2 size={16} />
-          ) : offlineBusy ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : offlineState === "error" ? (
-            <AlertCircle size={16} />
-          ) : (
-            <ArrowDownToLine size={16} />
-          )}
-        </button>
-        <button
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-            saved
-              ? "border border-primary/30 bg-primary/15 text-primary"
-              : "border border-white/15 text-foreground hover:bg-white/5"
-          }`}
-          onClick={handleToggleSaved}
-          aria-label={saved ? "Remove from collection" : "Add to collection"}
-        >
-          <Heart size={16} className={saved ? "fill-current" : ""} />
-        </button>
-        <div className="relative" ref={menuRef}>
+      <div className="px-4 sm:px-6 pb-4">
+        <div className="mx-auto flex w-full max-w-[1480px] items-center gap-2">
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-label="More"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+            onClick={() => handlePlay()}
+            aria-label="Play"
           >
-            <MoreHorizontal size={16} />
+            <Play size={16} fill="currentColor" />
+            Play
           </button>
-          {menuOpen && isDesktop && (
-            <AppPopover className="absolute top-full right-0 mt-2 w-72 overflow-hidden rounded-2xl">
-              <AlbumMenuContent
-                data={data}
-                coverUrl={coverUrl}
-                displayName={displayName}
-                saved={saved}
-                playlists={playlists}
-                playlistPickerOpen={playlistPickerOpen}
-                onTogglePlaylistPicker={handleTogglePlaylistPicker}
-                onPlay={() => { handlePlay(); setMenuOpen(false); }}
-                onPlayNext={handlePlayNextAlbum}
-                onCreatePlaylist={handleCreatePlaylistFromAlbum}
-                onAddToPlaylist={handleAddToPlaylist}
-                onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
-                offlineSupported={offlineSupported}
-                offlineState={offlineState}
-                offlineLabel={offlineButtonLabel}
-                onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
-                onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
-                onShare={async () => { await handleShare(); setMenuOpen(false); }}
-              />
-            </AppPopover>
-          )}
-          {menuOpen && !isDesktop && (
-            <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
-              <ModalBody className="pb-4">
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={handleShuffle}
+            aria-label="Shuffle"
+          >
+            <Shuffle size={16} />
+          </button>
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
+            onClick={handleAlbumRadio}
+            aria-label="Album Radio"
+          >
+            <Radio size={16} />
+          </button>
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              offlineState === "ready"
+                ? "border border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+                : offlineBusy
+                  ? "border border-primary/25 bg-primary/10 text-primary"
+                  : offlineState === "error"
+                    ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
+                    : "border border-white/15 text-foreground hover:bg-white/5"
+            }`}
+            onClick={handleToggleOffline}
+            disabled={!offlineSupported || offlineBusy}
+            aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
+            title={offlineButtonLabel}
+          >
+            {offlineState === "ready" ? (
+              <CheckCircle2 size={16} />
+            ) : offlineBusy ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : offlineState === "error" ? (
+              <AlertCircle size={16} />
+            ) : (
+              <ArrowDownToLine size={16} />
+            )}
+          </button>
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+              saved
+                ? "border border-primary/30 bg-primary/15 text-primary"
+                : "border border-white/15 text-foreground hover:bg-white/5"
+            }`}
+            onClick={handleToggleSaved}
+            aria-label={saved ? "Remove from collection" : "Add to collection"}
+          >
+            <Heart size={16} className={saved ? "fill-current" : ""} />
+          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-label="More"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {menuOpen && isDesktop && (
+              <AppPopover className="absolute top-full right-0 mt-2 w-72 overflow-hidden rounded-2xl">
                 <AlbumMenuContent
                   data={data}
                   coverUrl={coverUrl}
@@ -584,22 +563,50 @@ export function Album() {
                   onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
                   onShare={async () => { await handleShare(); setMenuOpen(false); }}
                 />
-              </ModalBody>
-            </AppModal>
-          )}
+              </AppPopover>
+            )}
+            {menuOpen && !isDesktop && (
+              <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
+                <ModalBody className="pb-4">
+                  <AlbumMenuContent
+                    data={data}
+                    coverUrl={coverUrl}
+                    displayName={displayName}
+                    saved={saved}
+                    playlists={playlists}
+                    playlistPickerOpen={playlistPickerOpen}
+                    onTogglePlaylistPicker={handleTogglePlaylistPicker}
+                    onPlay={() => { handlePlay(); setMenuOpen(false); }}
+                    onPlayNext={handlePlayNextAlbum}
+                    onCreatePlaylist={handleCreatePlaylistFromAlbum}
+                    onAddToPlaylist={handleAddToPlaylist}
+                    onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                    offlineSupported={offlineSupported}
+                    offlineState={offlineState}
+                    offlineLabel={offlineButtonLabel}
+                    onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
+                    onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
+                    onShare={async () => { await handleShare(); setMenuOpen(false); }}
+                  />
+                </ModalBody>
+              </AppModal>
+            )}
+          </div>
         </div>
       </div>
 
       {offlineStatusDetail ? (
         <div className="px-4 sm:px-6 pb-4">
-          <p className="text-xs text-muted-foreground">
-            {offlineStatusDetail}
-          </p>
+          <div className="mx-auto w-full max-w-[1480px]">
+            <p className="text-xs text-muted-foreground">
+              {offlineStatusDetail}
+            </p>
+          </div>
         </div>
       ) : null}
 
       {/* Track List */}
-      <div className="px-4 sm:px-6 pb-8">
+      <div className="mx-auto w-full max-w-[1480px] px-4 sm:px-6 pb-8">
         {hasMultipleDiscs ? (
           [...tracksByDisc.entries()]
             .sort(([a], [b]) => a - b)

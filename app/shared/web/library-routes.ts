@@ -90,6 +90,14 @@ function resolveTrackPath(input: TrackRouteInput) {
   return null;
 }
 
+function resolveAlbumEntityUid(input: AlbumRouteInput) {
+  return input.albumEntityUid || null;
+}
+
+function resolveAlbumLibraryId(input: AlbumRouteInput) {
+  return input.albumId ?? null;
+}
+
 function encodeTrackPath(path: string) {
   const normalized = path.startsWith("/music/") ? path.slice(7) : path;
   return encodeURIComponent(normalized).replace(/%2F/g, "/");
@@ -303,6 +311,16 @@ export function trackInfoApiPath(input: TrackRouteInput) {
   return "";
 }
 
+export function trackPlaybackApiPath(input: TrackRouteInput) {
+  const entityUid = resolveTrackEntityUid(input);
+  if (entityUid) return `/api/tracks/by-entity/${encodeEntityUid(entityUid)}/playback`;
+
+  const trackId = resolveTrackLibraryId(input);
+  if (trackId != null) return `/api/tracks/${trackId}/playback`;
+
+  return "";
+}
+
 export function trackEqFeaturesApiPath(input: TrackRouteInput) {
   const entityUid = resolveTrackEntityUid(input);
   if (entityUid) return `/api/tracks/by-entity/${encodeEntityUid(entityUid)}/eq-features`;
@@ -342,6 +360,16 @@ export function trackDownloadApiPath(input: TrackRouteInput) {
 
   const path = resolveTrackPath(input);
   if (path) return `/api/download/track/${encodeTrackPath(path)}`;
+
+  return "";
+}
+
+export function albumDownloadApiPath(input: AlbumRouteInput) {
+  const entityUid = resolveAlbumEntityUid(input);
+  if (entityUid) return `/api/albums/by-entity/${encodeEntityUid(entityUid)}/download`;
+
+  const albumId = resolveAlbumLibraryId(input);
+  if (albumId != null) return `/api/albums/${albumId}/download`;
 
   return "";
 }

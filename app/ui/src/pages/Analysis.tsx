@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import {
   Activity,
+  Archive,
   AudioWaveform,
+  FileInput,
+  FileJson,
   Fingerprint,
   Gauge,
   Loader2,
   Music,
   RefreshCw,
   Sparkles,
+  Tags,
   Waves,
   Zap,
 } from "lucide-react";
@@ -21,7 +25,46 @@ import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ActionKey = "analysis" | "bliss" | "popularity" | "fingerprints" | null;
+type ActionKey = "analysis" | "bliss" | "popularity" | "fingerprints" | "lyrics" | "portable" | "rehydrate" | "richExport" | null;
+
+const EMPTY_TRACK = {};
+
+function numberOrZero(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function normalizeStatus(status: AnalysisStatusSnapshot): AnalysisStatusSnapshot {
+  return {
+    total: numberOrZero(status.total),
+    analysis_done: numberOrZero(status.analysis_done),
+    analysis_pending: numberOrZero(status.analysis_pending),
+    analysis_active: numberOrZero(status.analysis_active),
+    analysis_failed: numberOrZero(status.analysis_failed),
+    bliss_done: numberOrZero(status.bliss_done),
+    bliss_pending: numberOrZero(status.bliss_pending),
+    bliss_active: numberOrZero(status.bliss_active),
+    bliss_failed: numberOrZero(status.bliss_failed),
+    fingerprint_done: numberOrZero(status.fingerprint_done),
+    fingerprint_pending: numberOrZero(status.fingerprint_pending),
+    fingerprint_chromaprint: numberOrZero(status.fingerprint_chromaprint),
+    fingerprint_pcm: numberOrZero(status.fingerprint_pcm),
+    chromaprint_available: Boolean(status.chromaprint_available),
+    fingerprint_strategy: status.fingerprint_strategy || "unavailable",
+    total_albums: numberOrZero(status.total_albums),
+    lyrics_cached: numberOrZero(status.lyrics_cached),
+    lyrics_found: numberOrZero(status.lyrics_found),
+    lyrics_missing: numberOrZero(status.lyrics_missing),
+    portable_sidecar_albums: numberOrZero(status.portable_sidecar_albums),
+    portable_audio_tag_albums: numberOrZero(status.portable_audio_tag_albums),
+    portable_audio_tag_tracks: numberOrZero(status.portable_audio_tag_tracks),
+    portable_tag_errors: numberOrZero(status.portable_tag_errors),
+    rich_export_albums: numberOrZero(status.rich_export_albums),
+    rich_export_tracks: numberOrZero(status.rich_export_tracks),
+    last_analyzed: status.last_analyzed || EMPTY_TRACK,
+    last_bliss: status.last_bliss || EMPTY_TRACK,
+  };
+}
 
 function formatPercent(done: number, total: number) {
   if (total <= 0) return 0;
@@ -176,13 +219,14 @@ function RecentTrackCard({
 
 export function Analysis() {
   const { data: opsSnapshot, loading, error, refresh } = useOpsSnapshot();
-  const status = opsSnapshot?.analysis ?? null;
+  const rawStatus = opsSnapshot?.analysis ?? null;
+  const status = useMemo(() => (rawStatus ? normalizeStatus(rawStatus) : null), [rawStatus]);
   const [activeAction, setActiveAction] = useState<ActionKey>(null);
 
-  async function queueAction(path: string, action: Exclude<ActionKey, null>, success: string) {
+  async function queueAction(path: string, action: Exclude<ActionKey, null>, success: string, body?: Record<string, unknown>) {
     setActiveAction(action);
     try {
-      await api(path, "POST");
+      await api(path, "POST", body);
       toast.success(success);
       setTimeout(() => void refresh(true), 800);
     } catch {
@@ -198,6 +242,9 @@ export function Analysis() {
         analysisPercent: 0,
         blissPercent: 0,
         fingerprintPercent: 0,
+        lyricsPercent: 0,
+        portableSidecarPercent: 0,
+        portableTagPercent: 0,
         activeJobs: 0,
         failedJobs: 0,
       };
@@ -207,6 +254,9 @@ export function Analysis() {
       analysisPercent: formatPercent(status.analysis_done, status.total),
       blissPercent: formatPercent(status.bliss_done, status.total),
       fingerprintPercent: formatPercent(status.fingerprint_done, status.total),
+      lyricsPercent: formatPercent(status.lyrics_cached, status.total),
+      portableSidecarPercent: formatPercent(status.portable_sidecar_albums, status.total_albums),
+      portableTagPercent: formatPercent(status.portable_audio_tag_tracks, status.total),
       activeJobs: status.analysis_active + status.bliss_active,
       failedJobs: status.analysis_failed + status.bliss_failed,
     };
@@ -286,6 +336,8 @@ export function Analysis() {
         <CratePill icon={Gauge}>{metrics.analysisPercent}% audio covered</CratePill>
         <CratePill icon={Waves}>{metrics.blissPercent}% bliss covered</CratePill>
         <CratePill icon={Fingerprint}>{metrics.fingerprintPercent}% fingerprinted</CratePill>
+        <CratePill icon={FileJson}>{metrics.lyricsPercent}% lyrics cached</CratePill>
+        <CratePill icon={Tags}>{metrics.portableSidecarPercent}% portable albums</CratePill>
         <CratePill className={status.chromaprint_available ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100"}>
           {status.chromaprint_available ? "Chromaprint ready" : "PCM fallback"}
         </CratePill>
@@ -303,8 +355,8 @@ export function Analysis() {
           caption={`${status.fingerprint_done.toLocaleString()} tracks fingerprinted`}
           tone={status.chromaprint_available ? "success" : "warning"}
         />
-        <OpsStatTile icon={Activity} label="Active Workers" value={metrics.activeJobs.toLocaleString()} caption="Analysis + bliss jobs currently running" tone={metrics.activeJobs > 0 ? "success" : "default"} />
-        <OpsStatTile icon={Zap} label="Failures" value={metrics.failedJobs.toLocaleString()} caption="Tracks that need another pass or repair" tone={metrics.failedJobs > 0 ? "warning" : "default"} />
+        <OpsStatTile icon={FileJson} label="Lyrics Cache" value={`${metrics.lyricsPercent}%`} caption={`${status.lyrics_found.toLocaleString()} tracks with lyrics`} tone="success" />
+        <OpsStatTile icon={Tags} label="Portable Metadata" value={`${metrics.portableSidecarPercent}%`} caption={`${status.portable_audio_tag_tracks.toLocaleString()} tracks tagged`} tone={status.portable_tag_errors > 0 ? "warning" : "default"} />
       </div>
 
       <OpsPanel
@@ -372,6 +424,125 @@ export function Analysis() {
                 <MiniMetric label="Chromaprint" value={status.fingerprint_chromaprint.toLocaleString()} />
                 <MiniMetric label="PCM Fallback" value={status.fingerprint_pcm.toLocaleString()} tone={status.fingerprint_pcm > 0 ? "muted" : "default"} />
               </div>
+            </div>
+          </div>
+        </div>
+      </OpsPanel>
+
+      <OpsPanel
+        icon={FileJson}
+        title="Portable library state"
+        description="Lyrics cache, portable sidecars, identity tags and export coverage."
+        action={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queueAction("/api/manage/sync-lyrics", "lyrics", "Lyrics sync queued", { limit: 1000 })}
+              disabled={activeAction !== null}
+              className="gap-2"
+            >
+              {activeAction === "lyrics" ? <Loader2 size={14} className="animate-spin" /> : <FileJson size={14} />}
+              Sync lyrics
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queueAction("/api/manage/portable-metadata", "portable", "Portable metadata write queued", { write_audio_tags: true, write_sidecars: true })}
+              disabled={activeAction !== null}
+              className="gap-2"
+            >
+              {activeAction === "portable" ? <Loader2 size={14} className="animate-spin" /> : <Tags size={14} />}
+              Write metadata
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queueAction("/api/manage/portable-metadata/rehydrate", "rehydrate", "Portable metadata rehydrate queued")}
+              disabled={activeAction !== null}
+              className="gap-2"
+            >
+              {activeAction === "rehydrate" ? <Loader2 size={14} className="animate-spin" /> : <FileInput size={14} />}
+              Rehydrate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queueAction("/api/manage/portable-metadata/export-rich", "richExport", "Rich metadata export queued", { include_audio: false, write_rich_tags: false })}
+              disabled={activeAction !== null}
+              className="gap-2"
+            >
+              {activeAction === "richExport" ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+              Export index
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4 xl:grid-cols-3">
+          <div className="rounded-md border border-white/8 bg-black/20 p-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-violet-200">
+                  <FileJson size={16} />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-white">Lyrics</div>
+                  <div className="text-xs text-white/40">
+                    {status.lyrics_cached.toLocaleString()} cached lookups across {status.total.toLocaleString()} tracks
+                  </div>
+                </div>
+              </div>
+              <CrateChip className="text-[10px]">{metrics.lyricsPercent}% cache</CrateChip>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <MiniMetric label="Cached" value={status.lyrics_cached.toLocaleString()} />
+              <MiniMetric label="Found" value={status.lyrics_found.toLocaleString()} />
+              <MiniMetric label="Missing" value={status.lyrics_missing.toLocaleString()} tone={status.lyrics_missing > 0 ? "muted" : "default"} />
+            </div>
+          </div>
+
+          <div className="rounded-md border border-white/8 bg-black/20 p-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-emerald-200">
+                  <Tags size={16} />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-white">Portable metadata</div>
+                  <div className="text-xs text-white/40">
+                    {status.portable_sidecar_albums.toLocaleString()} sidecars across {status.total_albums.toLocaleString()} albums
+                  </div>
+                </div>
+              </div>
+              <CrateChip className="text-[10px]">{metrics.portableSidecarPercent}% albums</CrateChip>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-4">
+              <MiniMetric label="Sidecars" value={status.portable_sidecar_albums.toLocaleString()} />
+              <MiniMetric label="Tag albums" value={status.portable_audio_tag_albums.toLocaleString()} />
+              <MiniMetric label="Tag tracks" value={status.portable_audio_tag_tracks.toLocaleString()} />
+              <MiniMetric label="Errors" value={status.portable_tag_errors.toLocaleString()} tone={status.portable_tag_errors > 0 ? "danger" : "default"} />
+            </div>
+          </div>
+
+          <div className="rounded-md border border-white/8 bg-black/20 p-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.05] text-sky-200">
+                  <Archive size={16} />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-white">Rich exports</div>
+                  <div className="text-xs text-white/40">
+                    {status.rich_export_albums.toLocaleString()} albums exported as portable packages
+                  </div>
+                </div>
+              </div>
+              <CrateChip className="text-[10px]">{status.rich_export_tracks.toLocaleString()} tracks</CrateChip>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <MiniMetric label="Albums" value={status.rich_export_albums.toLocaleString()} />
+              <MiniMetric label="Tracks" value={status.rich_export_tracks.toLocaleString()} />
+              <MiniMetric label="Tag coverage" value={`${metrics.portableTagPercent}%`} />
             </div>
           </div>
         </div>

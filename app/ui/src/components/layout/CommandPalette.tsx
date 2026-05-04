@@ -24,6 +24,10 @@ import {
   Sparkles,
   Compass,
   FolderSync,
+  Archive,
+  FileInput,
+  FileJson,
+  Tags,
 } from "lucide-react";
 
 interface SearchResults {
@@ -236,6 +240,54 @@ export function CommandPalette() {
                 >
                   <BrainCircuit size={14} className="text-muted-foreground" />
                   Backfill Audio Fingerprints (Chromaprint)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/sync-lyrics", "POST", { limit: 1000 }),
+                      "Sync Lyrics",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <FileJson size={14} className="text-muted-foreground" />
+                  Sync Missing Lyrics
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata", "POST", { write_audio_tags: true, write_sidecars: true }),
+                      "Portable Metadata",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Tags size={14} className="text-muted-foreground" />
+                  Write Portable Metadata
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata/rehydrate", "POST"),
+                      "Portable Metadata Rehydrate",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <FileInput size={14} className="text-muted-foreground" />
+                  Rehydrate From Portable Metadata
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/portable-metadata/export-rich", "POST", { include_audio: false, write_rich_tags: false }),
+                      "Rich Metadata Export",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Archive size={14} className="text-muted-foreground" />
+                  Export Rich Metadata Index
                 </Command.Item>
                 <Command.Item
                   onSelect={() =>

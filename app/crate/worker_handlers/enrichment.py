@@ -276,6 +276,114 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
     return {"reset": name, "enrichment": result}
 
 
+def _emit_lyrics_track_event(task_id: str, data: dict) -> None:
+    if data.get("event") != "track_done":
+        return
+    status = str(data.get("status") or "none")
+    title = str(data.get("title") or "")
+    artist = str(data.get("artist") or "")
+    payload = {
+        "message": f"Lyrics {status.upper()} for {entity_label(artist=artist, title=title)}",
+        "track_id": data.get("track_id"),
+        "track_entity_uid": data.get("track_entity_uid"),
+        "album_id": data.get("album_id"),
+        "artist": artist,
+        "album": data.get("album"),
+        "title": title,
+        "path": data.get("path"),
+        "status": status,
+        "found": bool(data.get("found")),
+        "has_plain": bool(data.get("has_plain")),
+        "has_synced": bool(data.get("has_synced")),
+        "provider": data.get("provider") or "lrclib",
+        "updated_at": data.get("updated_at"),
+        "source": data.get("source"),
+        "skipped": bool(data.get("skipped")),
+        "error": bool(data.get("error")),
+        "done": data.get("done"),
+        "total": data.get("total"),
+        "index": data.get("index"),
+        "lyrics": {
+            "status": status,
+            "found": bool(data.get("found")),
+            "has_plain": bool(data.get("has_plain")),
+            "has_synced": bool(data.get("has_synced")),
+            "provider": data.get("provider") or "lrclib",
+            "updated_at": data.get("updated_at"),
+        },
+    }
+    emit_task_event(task_id, "lyrics_track", payload)
+
+
+def _handle_sync_lyrics(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.queries.lyrics import list_tracks_for_lyrics
+    from crate.lyrics import sync_lyrics_for_tracks
+
+    artist = params.get("artist")
+    album_id = params.get("album_id")
+    album_entity_uid = params.get("album_entity_uid")
+    track_id = params.get("track_id")
+    track_entity_uid = params.get("track_entity_uid")
+    force = bool(params.get("force", False))
+    limit = int(params.get("limit") or 500)
+    delay_seconds = float(params.get("delay_seconds", 0.2))
+    album_id = int(album_id) if album_id is not None else None
+    track_id = int(track_id) if track_id is not None else None
+
+    tracks = list_tracks_for_lyrics(
+        artist=artist,
+        album_id=album_id,
+        album_entity_uid=str(album_entity_uid) if album_entity_uid else None,
+        track_id=track_id,
+        track_entity_uid=str(track_entity_uid) if track_entity_uid else None,
+        limit=limit,
+        only_missing=not force,
+    )
+    progress = TaskProgress(phase="lyrics", phase_count=1, total=len(tracks))
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Syncing lyrics for {len(tracks)} tracks",
+            "artist": artist,
+            "album_id": album_id,
+            "album_entity_uid": album_entity_uid,
+            "track_id": track_id,
+            "track_entity_uid": track_entity_uid,
+            "force": force,
+        },
+    )
+
+    def _lyrics_progress(data: dict) -> None:
+        progress.done = data.get("done", progress.done)
+        progress.total = data.get("total", progress.total)
+        progress.item = entity_label(
+            artist=data.get("artist", ""),
+            title=data.get("title", ""),
+        )
+        emit_progress(task_id, progress)
+        _emit_lyrics_track_event(task_id, data)
+
+    result = sync_lyrics_for_tracks(
+        tracks,
+        force=force,
+        delay_seconds=delay_seconds,
+        progress_callback=_lyrics_progress,
+        cancel_callback=lambda: is_cancelled(task_id),
+    )
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Lyrics sync complete: {result.get('found', 0)} found, {result.get('missing', 0)} missing",
+            "result": result,
+        },
+    )
+    return result
+
+
 def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     """Enrich albums and tracks with MusicBrainz IDs."""
     lib = Path(config["library_path"])
@@ -694,6 +802,134 @@ def _process_new_content_missing_covers(
         result["steps"]["covers"] = "failed"
 
 
+def _process_new_content_portable_metadata(
+    task_id: str,
+    result: dict,
+    albums: list[dict],
+    artist_name: str,
+    album_folder: str,
+    params: dict,
+    p: TaskProgress,
+) -> None:
+    from crate.db.queries.portable_metadata import get_portable_album_payload
+    from crate.db.repositories.portable_metadata import mark_album_portable_metadata
+    from crate.portable_metadata import write_album_portable_metadata
+
+    p.phase = "portable_metadata"
+    p.phase_index += 1
+    p.done = 0
+    p.total = 0
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
+    try:
+        albums_written = 0
+        tags_written = 0
+        tag_errors = 0
+        write_audio_tags = bool(params.get("write_portable_audio_tags", True))
+        write_sidecars = bool(params.get("write_portable_sidecars", True))
+        target_albums = [
+            album
+            for album in albums
+            if not album_folder or album.get("name") == album_folder
+        ]
+        p.total = len(target_albums)
+        for index, album in enumerate(target_albums, start=1):
+            if is_cancelled(task_id):
+                break
+            p.done = index - 1
+            p.item = entity_label(artist=artist_name, album=album.get("name", ""))
+            emit_progress(task_id, p)
+            payload = get_portable_album_payload(int(album["id"]))
+            if not payload:
+                continue
+            write_result = write_album_portable_metadata(
+                payload,
+                write_audio_tags=write_audio_tags,
+                write_sidecars=write_sidecars,
+            )
+            mark_album_portable_metadata(
+                album_id=write_result.get("album_id"),
+                album_entity_uid=write_result.get("album_entity_uid"),
+                sidecar_path=write_result.get("sidecar_path"),
+                tracks=write_result.get("tracks") or 0,
+                tags_written=write_result.get("tags_written") or 0,
+                tag_errors=len(write_result.get("tag_errors") or []),
+                wrote_sidecar=write_sidecars and bool(write_result.get("sidecar_path")),
+                wrote_audio_tags=write_audio_tags,
+            )
+            albums_written += 1
+            tags_written += int(write_result.get("tags_written") or 0)
+            tag_errors += len(write_result.get("tag_errors") or [])
+        p.done = p.total
+        emit_progress(task_id, p, force=True)
+        result["steps"]["portable_metadata"] = {
+            "albums": albums_written,
+            "tags_written": tags_written,
+            "tag_errors": tag_errors,
+        }
+    except Exception:
+        log.warning("Portable metadata write failed for %s", artist_name, exc_info=True)
+        result["steps"]["portable_metadata"] = "failed"
+
+
+def _process_new_content_lyrics(
+    task_id: str,
+    result: dict,
+    albums: list[dict],
+    artist_name: str,
+    album_folder: str,
+    p: TaskProgress,
+) -> None:
+    from crate.lyrics import sync_lyrics_for_tracks
+
+    p.phase = "lyrics"
+    p.phase_index += 1
+    p.done = 0
+    p.total = 0
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
+    try:
+        tracks: list[dict] = []
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            tracks.extend(get_library_tracks(album["id"]))
+
+        def _lyrics_progress(data: dict) -> None:
+            p.done = data.get("done", p.done)
+            p.total = data.get("total", p.total)
+            p.item = entity_label(
+                artist=data.get("artist") or artist_name,
+                title=data.get("title", ""),
+            )
+            emit_progress(task_id, p)
+            _emit_lyrics_track_event(task_id, data)
+
+        sync_result = sync_lyrics_for_tracks(
+            tracks,
+            force=False,
+            delay_seconds=0.2,
+            progress_callback=_lyrics_progress,
+            cancel_callback=lambda: is_cancelled(task_id),
+        )
+        result["steps"]["lyrics"] = sync_result
+        emit_task_event(
+            task_id,
+            "step_done",
+            {
+                "message": (
+                    f"Lyrics synced: {sync_result.get('found', 0)} found, "
+                    f"{sync_result.get('missing', 0)} missing"
+                ),
+                "step": "lyrics",
+                "result": sync_result,
+            },
+        )
+    except Exception:
+        log.warning("Lyrics sync failed for %s", artist_name, exc_info=True)
+        result["steps"]["lyrics"] = "failed"
+
+
 def _process_new_content_update_artist_hash(artist_dir: Path, artist_name: str) -> None:
     if not artist_dir.is_dir():
         return
@@ -740,13 +976,14 @@ def _process_new_content_inner(
         except Exception:
             log.warning("Pre-enrichment sync failed for %s", artist_name, exc_info=True)
 
-    p = TaskProgress(phase="starting", phase_count=6, total=1, item=entity_label(artist=artist_name))
+    p = TaskProgress(phase="starting", phase_count=8, total=1, item=entity_label(artist=artist_name))
     emit_progress(task_id, p, force=True)
 
     _process_new_content_organize_folders(task_id, result, artist_name, lib, config, p)
     _process_new_content_enrich_artist(task_id, result, artist_name, config, p)
     albums = _process_new_content_album_genres(task_id, result, artist_name, album_folder, p)
     _process_new_content_album_mbids(task_id, result, albums, artist_name, album_folder, config, p)
+    _process_new_content_lyrics(task_id, result, albums, artist_name, album_folder, p)
 
     # Audio analysis and bliss are handled by background daemons (analysis_daemon.py).
     # New tracks enter library_tracks with analysis_state='pending' and bliss_state='pending'
@@ -756,6 +993,7 @@ def _process_new_content_inner(
 
     _process_new_content_popularity(task_id, result, albums, artist_name, album_folder, p)
     _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder, p)
+    _process_new_content_portable_metadata(task_id, result, albums, artist_name, album_folder, params, p)
     _process_new_content_update_artist_hash(artist_dir, artist_name)
 
     # Notify connected clients to refresh cached library data.
@@ -860,6 +1098,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
 ENRICHMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "enrich_artist": _handle_enrich_single,
     "enrich_artists": _handle_enrich_artists,
+    "sync_lyrics": _handle_sync_lyrics,
     "reset_enrichment": _handle_reset_enrichment,
     "enrich_mbids": _handle_enrich_mbids,
     "process_new_content": _handle_process_new_content,

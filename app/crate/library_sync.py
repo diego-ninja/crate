@@ -17,10 +17,9 @@ from crate.db.repositories.library import (
     get_library_albums,
     get_library_artist,
     get_library_artists,
-    upsert_album,
-    upsert_artist,
-    upsert_track,
 )
+from crate.db.repositories.library_writes import upsert_artist
+from crate.db.repositories.library_sync_writes import upsert_scanned_album
 from crate.db.jobs.sync import (
     delete_track_by_path,
     get_album_id_by_path,
@@ -33,7 +32,6 @@ from crate.db.jobs.sync import (
 )
 from crate.storage_layout import canonical_entity_uid, entity_uid_for, looks_like_entity_uid
 from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
-from crate.db.tx import transaction_scope
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +59,25 @@ def _ffprobe_duration_bitrate(filepath: Path) -> tuple[float, int]:
         return duration, bitrate
     except Exception:
         return 0.0, 0
+
+
+def _read_audio_info(filepath: Path, fmt: str, mf: mutagen.FileType | None = None) -> tuple[float, int, int, int]:
+    """Read duration/bitrate/sample rate/bit depth, with ffprobe fallback for Tidal M4A."""
+    if mf is None:
+        try:
+            mf = mutagen.File(filepath)
+        except Exception:
+            mf = None
+
+    duration = mf.info.length if mf and mf.info else 0.0
+    bitrate = getattr(mf.info, "bitrate", 0) if mf and mf.info else 0
+    sample_rate = getattr(mf.info, "sample_rate", 0) if mf and mf.info else 0
+    bit_depth = getattr(mf.info, "bits_per_sample", 0) if mf and mf.info else 0
+
+    if duration == 0.0 and fmt == "m4a":
+        duration, bitrate = _ffprobe_duration_bitrate(filepath)
+
+    return duration, bitrate, sample_rate, bit_depth
 
 
 @contextmanager
@@ -268,11 +285,11 @@ class LibrarySync:
 
         total_tracks = 0
         synced_paths = set()
+        sync_failures = 0
 
         for album_dir in album_dirs:
             try:
                 album_path = str(album_dir)
-                synced_paths.add(album_path)
 
                 existing_album = next((a for a in existing_albums if a["path"] == album_path), None)
                 audio_files, tree_mtime = self._scan_album_tree(album_dir)
@@ -292,6 +309,7 @@ class LibrarySync:
                     actual_row_count = get_album_track_count(existing_album["id"])
                     if actual_row_count == actual_track_count:
                         total_tracks += existing_album.get("track_count", 0)
+                        synced_paths.add(album_path)
                         continue
 
                 result = self._sync_album_unlocked(
@@ -301,13 +319,27 @@ class LibrarySync:
                     tree_mtime=tree_mtime,
                 )
                 total_tracks += result["track_count"]
+                synced_paths.add(album_path)
 
             except Exception:
+                sync_failures += 1
                 log.exception("Failed to sync album %s", album_dir.name)
 
         # Remove deleted albums
-        for path in existing_paths - synced_paths:
-            delete_album(path)
+        if sync_failures:
+            log.warning(
+                "Skipping deletion of existing albums for %s because %d album syncs failed",
+                artist_name,
+                sync_failures,
+            )
+        elif not album_dirs and existing_paths:
+            log.warning(
+                "Skipping deletion of existing albums for %s because scan found no album directories",
+                artist_name,
+            )
+        else:
+            for path in existing_paths - synced_paths:
+                delete_album(path)
 
         # Detect artist photo (check all folders)
         has_photo = int(any(
@@ -406,6 +438,20 @@ class LibrarySync:
                     stored_ts = stored_dt.timestamp() if stored_dt else 0.0
                     if stored_ts and fstat.st_mtime <= stored_ts:
                         duration = existing.get("duration") or 0.0
+                        bitrate = existing.get("bitrate")
+                        sample_rate = existing.get("sample_rate")
+                        bit_depth = existing.get("bit_depth")
+                        if (
+                            not duration
+                            or bitrate in (None, 0)
+                            or sample_rate in (None, 0)
+                            or (fmt in {"flac", "wav", "alac"} and bit_depth in (None, 0))
+                        ):
+                            scanned_duration, scanned_bitrate, scanned_sample_rate, scanned_bit_depth = _read_audio_info(f, fmt)
+                            duration = duration or scanned_duration
+                            bitrate = bitrate or scanned_bitrate or None
+                            sample_rate = sample_rate or scanned_sample_rate or None
+                            bit_depth = bit_depth or scanned_bit_depth or None
                         total_duration += duration
                         if not year and existing.get("year"):
                             year = existing["year"]
@@ -424,7 +470,9 @@ class LibrarySync:
                             "track_number": existing.get("track_number"),
                             "disc_number": existing.get("disc_number", 1),
                             "format": fmt,
-                            "bitrate": existing.get("bitrate"),
+                            "bitrate": bitrate,
+                            "sample_rate": sample_rate,
+                            "bit_depth": bit_depth,
                             "duration": duration,
                             "size": fstat.st_size,
                             "year": existing.get("year"),
@@ -446,15 +494,7 @@ class LibrarySync:
             except Exception:
                 mf = None
 
-            duration = mf.info.length if mf and mf.info else 0.0
-            bitrate = getattr(mf.info, "bitrate", 0) if mf and mf.info else 0
-            sample_rate = getattr(mf.info, "sample_rate", 0) if mf and mf.info else 0
-            bit_depth = getattr(mf.info, "bits_per_sample", 0) if mf and mf.info else 0
-
-            # M4A DASH containers (FLAC-in-MP4 from Tidal) report 0
-            # for both duration and bitrate.  Fall back to ffprobe.
-            if duration == 0.0 and fmt == "m4a":
-                duration, bitrate = _ffprobe_duration_bitrate(f)
+            duration, bitrate, sample_rate, bit_depth = _read_audio_info(f, fmt, mf)
 
             total_duration += duration
 
@@ -516,46 +556,34 @@ class LibrarySync:
 
         formats_list = sorted(formats.keys())
 
-        with transaction_scope() as session:
-            artist_name = upsert_artist(
-                {
-                    "name": artist_name,
-                    "entity_uid": canonical_entity_uid(artist_root.name),
-                    "folder_name": artist_root.name,
-                    "album_count": 0,
-                    "track_count": 0,
-                    "total_size": 0,
-                    "formats": [],
-                    "dir_mtime": artist_root.stat().st_mtime,
-                },
-                session=session,
-            )
-
-            album_id = upsert_album(
-                {
-                    "artist": artist_name,
-                    "name": album_name,
-                    "entity_uid": album_entity_uid,
-                    "path": str(album_dir),
-                    "track_count": len(track_data_list),
-                    "total_size": total_size,
-                    "total_duration": total_duration,
-                    "formats": formats_list,
-                    "year": year,
-                    "genre": genre,
-                    "has_cover": has_cover,
-                    "musicbrainz_albumid": mb_albumid,
-                    "tag_album": tag_album,
-                    "dir_mtime": tree_mtime,
-                },
-                session=session,
-            )
-
-            synced_paths = set()
-            for td in track_data_list:
-                td["album_id"] = album_id
-                upsert_track(td, session=session)
-                synced_paths.add(td["path"])
+        _, _, synced_paths = upsert_scanned_album(
+            artist_payload={
+                "name": artist_name,
+                "entity_uid": canonical_entity_uid(artist_root.name),
+                "folder_name": artist_root.name,
+                "album_count": 0,
+                "track_count": 0,
+                "total_size": 0,
+                "formats": [],
+                "dir_mtime": artist_root.stat().st_mtime,
+            },
+            album_payload={
+                "name": album_name,
+                "entity_uid": album_entity_uid,
+                "path": str(album_dir),
+                "track_count": len(track_data_list),
+                "total_size": total_size,
+                "total_duration": total_duration,
+                "formats": formats_list,
+                "year": year,
+                "genre": genre,
+                "has_cover": has_cover,
+                "musicbrainz_albumid": mb_albumid,
+                "tag_album": tag_album,
+                "dir_mtime": tree_mtime,
+            },
+            track_payloads=track_data_list,
+        )
 
         # Remove deleted tracks
         for old_path in set(existing_tracks_by_path.keys()) - synced_paths:

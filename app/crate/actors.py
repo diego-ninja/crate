@@ -34,6 +34,7 @@ MAX_RSS_MB = 1500  # 1.5 GB — matches previous worker recycling limit
 #   fast    — I/O-bound: HTTP APIs, light DB
 #   heavy   — CPU-bound: audio analysis, bliss vectors
 #   default — mixed: sync, pipeline, downloads, management
+#   playback — interactive playback delivery and stream variant preparation
 
 TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # User-initiated (priority 0) — these should run ASAP
@@ -56,6 +57,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # New content processing (priority 1)
     "process_new_content":  ("default", 1, 14400, 0),
     "enrich_artist":        ("fast",    1, 180, 2),
+    "sync_lyrics":          ("fast",    2, 7200, 1),
     "analyze_album_full":   ("fast",    1, 60, 0),  # just resets state for background daemon
 
     # Scheduled recurring (priority 2)
@@ -73,6 +75,9 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "wipe_library":         ("default", 2, 300, 0),
     "rebuild_library":      ("default", 2, 14400, 0),
     "resolve_duplicates":   ("default", 2, 600, 0),
+    "write_portable_metadata": ("default", 2, 14400, 0),
+    "rehydrate_portable_metadata": ("default", 2, 14400, 0),
+    "export_rich_metadata":  ("default", 2, 28800, 0),
 
     # Background batch (priority 3)
     "enrich_artists":       ("fast",    3, 86400, 0),
@@ -96,10 +101,14 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
 
     # Storage migration (priority 1 — user-initiated, long-running)
     "migrate_storage_v2":   ("default", 1, 14400, 0),
+    "fix_artist":           ("default", 1, 14400, 0),
     "verify_storage_v2":    ("default", 2, 3600, 0),
 
     # Library completeness check
     "compute_completeness": ("fast",    3, 3600, 0),
+
+    # Playback delivery
+    "prepare_stream_variant": ("playback", 0, 1200, 1),
 
     # Playlist generation
     "generate_system_playlist":         ("fast", 1, 600, 0),
@@ -111,7 +120,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
 DB_HEAVY_TASK_TYPES = frozenset({
     "library_sync", "library_pipeline", "wipe_library",
     "rebuild_library", "repair", "enrich_mbids",
-    "migrate_storage_v2",
+    "migrate_storage_v2", "fix_artist",
 })
 
 

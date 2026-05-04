@@ -34,7 +34,6 @@ describe("track action shared helpers", () => {
     expect(track).toEqual(expect.objectContaining({
       id: "entity-12",
       entityUid: "entity-12",
-      storageId: undefined,
       albumCover: expect.stringContaining("/api/albums/44/cover"),
       format: "m4a",
       bitrate: 320,
@@ -98,7 +97,6 @@ describe("track action shared helpers", () => {
       expect.objectContaining({
         id: "entity-7",
         entityUid: "entity-7",
-        storageId: undefined,
         title: "Track Seven",
         albumId: 77,
         albumSlug: "album",

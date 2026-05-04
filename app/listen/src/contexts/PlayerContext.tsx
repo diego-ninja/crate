@@ -9,9 +9,11 @@ import {
 import type { Track } from "@/contexts/player-types";
 import {
   PlayerActionsContext,
+  PlayerProgressContext,
   PlayerStateContext,
   type PlayerActionsValue,
   type PlayerContextValue,
+  type PlayerProgressValue,
   type PlayerStateValue,
 } from "@/contexts/player-context";
 import {
@@ -42,11 +44,14 @@ import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
 import {
   getInfinitePlaybackPreference,
+  getPlaybackDeliveryPolicyPreference,
   getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
+  type PlaybackDeliveryPolicy,
 } from "@/lib/player-playback-prefs";
+import { preparePlaybackDelivery } from "@/lib/playback-delivery";
 
 export type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 export type { CrossfadeTransition } from "@/contexts/player-context";
@@ -64,10 +69,17 @@ export function usePlayerActions(): PlayerActionsValue {
   return ctx;
 }
 
+export function usePlayerProgress(): PlayerProgressValue {
+  const ctx = useContext(PlayerProgressContext);
+  if (!ctx) throw new Error("usePlayerProgress must be used within PlayerProvider");
+  return ctx;
+}
+
 export function usePlayer(): PlayerContextValue {
   const state = usePlayerState();
+  const progress = usePlayerProgress();
   const actions = usePlayerActions();
-  return { ...state, ...actions };
+  return { ...state, ...progress, ...actions };
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
@@ -90,6 +102,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     infinitePlaybackEnabled,
     smartPlaylistSuggestionsEnabled,
     smartPlaylistSuggestionsCadence,
+    playbackDeliveryPolicy,
     setPlaySource,
     setRepeatState,
     setShuffleState,
@@ -101,6 +114,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setInfinitePlaybackEnabled,
     setSmartPlaylistSuggestionsEnabled,
     setSmartPlaylistSuggestionsCadence,
+    setPlaybackDeliveryPolicy,
     crossfadeTimerRef,
     queueRef,
     currentIndexRef,
@@ -368,6 +382,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         crossfadeSeconds?: number;
         smartCrossfadeEnabled?: boolean;
         infinitePlaybackEnabled?: boolean;
+        playbackDeliveryPolicy?: PlaybackDeliveryPolicy;
         smartPlaylistSuggestionsEnabled?: boolean;
         smartPlaylistSuggestionsCadence?: number;
       }>).detail;
@@ -381,6 +396,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setInfinitePlaybackEnabled(detail.infinitePlaybackEnabled);
       } else {
         setInfinitePlaybackEnabled(getInfinitePlaybackPreference());
+      }
+      if (detail?.playbackDeliveryPolicy) {
+        setPlaybackDeliveryPolicy(detail.playbackDeliveryPolicy);
+      } else {
+        setPlaybackDeliveryPolicy(getPlaybackDeliveryPolicyPreference());
       }
       if (typeof detail?.smartPlaylistSuggestionsEnabled === "boolean") {
         setSmartPlaylistSuggestionsEnabled(detail.smartPlaylistSuggestionsEnabled);
@@ -403,6 +423,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     syncEffectiveCrossfade();
   }, [syncEffectiveCrossfade, queue, currentIndex, playSource, repeat, shuffle, smartCrossfadeEnabled]);
+
+  useEffect(() => {
+    preparePlaybackDelivery(queue, currentIndex, playbackDeliveryPolicy);
+  }, [currentIndex, playbackDeliveryPolicy, queue]);
 
   const {
     pendingRestoreTimeRef,
@@ -551,8 +575,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useMediaSession({ currentTrack, isPlaying, currentTime, duration, pause, resume, next, prev, seek });
 
   const stateValue = useMemo<PlayerStateValue>(
-    () => ({ currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition }),
-    [analyserVersion, crossfadeTransition, currentTime, duration, isPlaying, isBuffering, volume],
+    () => ({ isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition }),
+    [analyserVersion, crossfadeTransition, isPlaying, isBuffering, volume],
+  );
+
+  const progressValue = useMemo<PlayerProgressValue>(
+    () => ({ currentTime, duration }),
+    [currentTime, duration],
   );
 
   const actionsValue = useMemo<PlayerActionsValue>(
@@ -613,7 +642,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   return (
     <PlayerActionsContext.Provider value={actionsValue}>
       <PlayerStateContext.Provider value={stateValue}>
-        {children}
+        <PlayerProgressContext.Provider value={progressValue}>
+          {children}
+        </PlayerProgressContext.Provider>
       </PlayerStateContext.Provider>
     </PlayerActionsContext.Provider>
   );

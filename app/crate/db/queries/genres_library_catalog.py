@@ -123,14 +123,7 @@ def list_unmapped_genres_for_inference(limit: int, focus_slug: str | None = None
                     FROM genres g
                     LEFT JOIN artist_genres ag ON g.id = ag.genre_id
                     LEFT JOIN album_genres alg ON g.id = alg.genre_id
-                    LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-                    WHERE gta.alias_slug IS NULL
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM genre_taxonomy_aliases gta_name
-                          WHERE LOWER(TRIM(gta_name.alias_name)) = LOWER(TRIM(g.name))
-                      )
-                      AND g.slug = :focus_slug
+                    WHERE g.slug = :focus_slug
                     GROUP BY g.id, g.entity_uid, g.name, g.slug
                     """
                 ),

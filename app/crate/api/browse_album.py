@@ -1,8 +1,10 @@
 from pathlib import Path
+import shutil
 
 import mutagen
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
 
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
@@ -21,8 +23,10 @@ from crate.db.repositories.library import (
     get_library_tracks,
 )
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
+from crate.db.queries.lyrics import get_album_track_lyrics_status
 from crate.db.repositories.tasks import create_task
 from crate.slugs import build_public_album_slug
+from crate.db.queries.streaming_admin import get_track_variant_summaries
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -148,6 +152,9 @@ def api_album(request: Request, artist: str, album: str):
                 cover_file = cover_name
                 break
 
+    track_ids = [track["id"] for track in tracks_data if track.get("id")]
+    variant_map = get_track_variant_summaries(track_ids)
+    lyrics_map = get_album_track_lyrics_status(album_data["id"])
     track_list = []
     album_tags = {}
     for track in tracks_data:
@@ -156,6 +163,7 @@ def api_album(request: Request, artist: str, album: str):
             {
                 "id": track["id"],
                 "entity_uid": entity_uid,
+                "storage_id": track.get("storage_id"),
                 "filename": track["filename"],
                 "format": track.get("format", ""),
                 "size_mb": round(track["size"] / (1024**2), 1) if track.get("size") else 0,
@@ -167,6 +175,18 @@ def api_album(request: Request, artist: str, album: str):
                 "popularity_score": track.get("popularity_score"),
                 "popularity_confidence": track.get("popularity_confidence"),
                 "rating": track.get("rating", 0) or 0,
+                "stream_variants": variant_map.get(track["id"], []),
+                "lyrics": lyrics_map.get(
+                    track["id"],
+                    {
+                        "status": "none",
+                        "found": False,
+                        "has_plain": False,
+                        "has_synced": False,
+                        "provider": "lrclib",
+                        "updated_at": None,
+                    },
+                ),
                 "tags": {
                     "title": track.get("title", ""),
                     "artist": track.get("artist", ""),
@@ -474,7 +494,7 @@ def api_cover_by_entity_uid(album_entity_uid: str, size: int | None = Query(None
 
 
 def api_download_album(request: Request, artist: str, album: str):
-    """Download an entire album as a ZIP file."""
+    """Download an entire album as a rich ZIP package."""
     _require_auth(request)
     import tempfile
     import zipfile
@@ -486,20 +506,89 @@ def api_download_album(request: Request, artist: str, album: str):
     if not album_dir:
         return Response(status_code=404)
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-    tmp.close()
+    tmp_dir = Path(tempfile.mkdtemp(prefix="crate-album-download."))
+    zip_path = tmp_dir / "album.zip"
 
     exts = extensions()
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zip_file:
-        for file_path in sorted(album_dir.iterdir()):
-            if file_path.is_file() and (
-                file_path.suffix.lower() in exts
-                or file_path.name.lower() in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg")
-            ):
-                zip_file.write(str(file_path), file_path.name)
+    album_row = find_album_row(artist, album)
+    export_dir: Path | None = None
+    cached_zip: Path | None = None
+    cache_key: str | None = None
+    if album_row:
+        try:
+            from crate.download_cache import (
+                album_cache_ttl_seconds,
+                album_download_cache_key,
+                download_cache_lock,
+                get_cached_download,
+                safe_download_filename,
+                store_cached_download,
+            )
+            from crate.db.queries.portable_metadata import get_portable_album_payload
+            from crate.portable_metadata import export_album_rich_metadata, find_album_artwork_file
+
+            payload = get_portable_album_payload(int(album_row["id"]))
+            if payload:
+                album_payload = payload.get("album") or {}
+                artwork_path = find_album_artwork_file(album_payload.get("path") or "")
+                cache_key = album_download_cache_key(payload, artwork_path=artwork_path)
+                cache_filename = safe_download_filename(f"{artist} - {album}.zip", "album.zip")
+                cached = get_cached_download("album", cache_key, cache_filename, ttl_seconds=album_cache_ttl_seconds())
+                if cached is None:
+                    with download_cache_lock("album", cache_key):
+                        cached = get_cached_download("album", cache_key, cache_filename, ttl_seconds=album_cache_ttl_seconds())
+                        if cached is None:
+                            export_result = export_album_rich_metadata(
+                                payload,
+                                export_root=tmp_dir / "rich",
+                                include_audio=True,
+                                write_rich_tags=True,
+                            )
+                            export_dir = Path(str(export_result["export_path"]))
+                            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
+                                for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
+                                    zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
+                            cached = store_cached_download(
+                                "album",
+                                cache_key,
+                                cache_filename,
+                                zip_path,
+                                metadata={
+                                    "album_id": album_row["id"],
+                                    "album_entity_uid": album_payload.get("entity_uid"),
+                                    "tracks": export_result.get("tracks"),
+                                    "artwork_files": export_result.get("artwork_files"),
+                                },
+                            )
+                if cached is not None:
+                    cached_zip = cached.path
+        except Exception:
+            export_dir = None
+
+    if cached_zip is not None:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        safe_name = f"{artist} - {album}.zip".replace("/", "-")
+        return FileResponse(path=str(cached_zip), filename=safe_name, media_type="application/zip")
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
+        if export_dir and export_dir.is_dir():
+            for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
+                zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
+        else:
+            for file_path in sorted(album_dir.iterdir()):
+                if file_path.is_file() and (
+                    file_path.suffix.lower() in exts
+                    or file_path.name.lower() in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg")
+                ):
+                    zip_file.write(str(file_path), file_path.name)
 
     safe_name = f"{artist} - {album}.zip".replace("/", "-")
-    return FileResponse(path=tmp.name, filename=safe_name, media_type="application/zip", background=None)
+    return FileResponse(
+        path=str(zip_path),
+        filename=safe_name,
+        media_type="application/zip",
+        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+    )
 
 
 @router.get(

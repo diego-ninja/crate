@@ -586,6 +586,45 @@ class TestGenreTaxonomyCleanup:
         assert all(item["slug"] != "rock-en-espaol" for item in items)
         assert get_unmapped_genre_count() == 0
 
+    def test_list_unmapped_genres_for_inference_includes_focused_genre_even_if_already_mapped(self, pg_db):
+        from crate.db.jobs.genre_taxonomy import assign_genre_alias_in_session
+        from crate.db.queries.genres_library_catalog import list_unmapped_genres_for_inference
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Instrumental Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Instrumental Artist",
+                "name": "Instrumental Album",
+                "path": "/music/Instrumental Artist/Instrumental Album",
+            }
+        )
+        with transaction_scope() as session:
+            pg_db.upsert_genre_taxonomy_node("rock", name="rock", session=session)
+            assert assign_genre_alias_in_session(session, "instrumental", "rock") is True
+            session.execute(
+                text(
+                    """
+                    INSERT INTO genres (id, name, slug)
+                    VALUES (354, 'instrumental', 'instrumental')
+                    """
+                )
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO album_genres (album_id, genre_id, weight, source)
+                    VALUES (:album_id, 354, 1.0, 'tags')
+                    """
+                ),
+                {"album_id": album_id},
+            )
+
+        items = list_unmapped_genres_for_inference(limit=20, focus_slug="instrumental")
+
+        assert len(items) == 1
+        assert items[0]["slug"] == "instrumental"
+
     def test_merge_duplicate_library_genres_merges_references_and_deletes_duplicates(self, pg_db):
         from crate.db.jobs.genre_taxonomy import merge_duplicate_library_genres_in_session
         from crate.db.tx import transaction_scope
@@ -1408,8 +1447,8 @@ class TestHomeCaching:
         assert {task["id"] for task in snapshot["running_tasks"]} == {running_id, delegated_id}
         assert {task["id"] for task in snapshot["pending_tasks"]} == {pending_id, heavy_pending_id}
         assert snapshot["queue_breakdown"] == {
-            "running": {"fast": 1, "default": 0, "heavy": 1},
-            "pending": {"fast": 0, "default": 1, "heavy": 1},
+            "running": {"fast": 1, "default": 0, "heavy": 1, "playback": 0},
+            "pending": {"fast": 0, "default": 1, "heavy": 1, "playback": 0},
         }
         assert snapshot["db_heavy_gate"] == {"active": 0, "pending": 2, "blocking": False}
         assert {task["id"] for task in snapshot["recent_tasks"]} >= {

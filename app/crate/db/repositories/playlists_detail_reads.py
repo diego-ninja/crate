@@ -20,6 +20,7 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
                     pt.playlist_id,
                     COALESCE(lt.id, pt.track_id) AS track_id,
                     COALESCE(lt.entity_uid::text, pt.track_entity_uid::text) AS track_entity_uid,
+                    COALESCE(lt.storage_id::text, pt.track_storage_id::text) AS track_storage_id,
                     COALESCE(lt.path, pt.track_path) AS track_path,
                     COALESCE(lt.title, NULLIF(pt.title, ''), lt.filename, 'Unknown') AS title,
                     COALESCE(lt.artist, NULLIF(pt.artist, ''), '') AS artist,
@@ -38,7 +39,7 @@ def get_playlist_tracks(playlist_id: int, *, session: Session | None = None) -> 
                     alb.slug AS album_slug
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
-                    SELECT id, entity_uid::text, path, title, filename, artist, album, album_id, duration
+                    SELECT id, entity_uid::text, storage_id::text, path, title, filename, artist, album, album_id, duration
                     FROM library_tracks lt
                     WHERE lt.id = pt.track_id
                        OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)

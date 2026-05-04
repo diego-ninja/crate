@@ -64,3 +64,24 @@ export function getTrackQualityFromInfo(info: TrackInfo | null) {
     bitDepth: info.bit_depth ?? undefined,
   };
 }
+
+export interface TrackQualityParts {
+  format?: string | null;
+  bitrate?: number | null;
+  sampleRate?: number | null;
+  bitDepth?: number | null;
+}
+
+export function mergeTrackQualityParts(
+  ...parts: Array<TrackQualityParts | null | undefined>
+): TrackQualityParts {
+  const merged: TrackQualityParts = {};
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.format != null) merged.format = part.format;
+    if (part.bitrate != null) merged.bitrate = part.bitrate;
+    if (part.sampleRate != null) merged.sampleRate = part.sampleRate;
+    if (part.bitDepth != null) merged.bitDepth = part.bitDepth;
+  }
+  return merged;
+}

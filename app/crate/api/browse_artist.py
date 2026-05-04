@@ -69,8 +69,9 @@ from crate.db.queries.shows import (
 )
 from crate.db.releases import get_new_releases
 from crate.db.similarities import get_artist_network
-from crate.lastfm import get_artist_info, get_cached_artist_info, get_cached_top_tracks
+from crate.lastfm import get_artist_info, get_cached_artist_info, get_top_tracks
 from crate.storage_layout import resolve_artist_dir
+from crate.track_versions import canonical_track_title_key, track_variant_rank
 
 log = logging.getLogger(__name__)
 
@@ -167,20 +168,7 @@ def _enrich_similar_artists(similar: list[dict]) -> list[dict]:
 
 
 def _normalize_song_title(value: str) -> str:
-    return (
-        (value or "")
-        .lower()
-        .replace("'", "'")
-        .replace("`", "'")
-        .replace("\"", "")
-        .replace("(", " ")
-        .replace(")", " ")
-        .replace("[", " ")
-        .replace("]", " ")
-        .replace("-", " ")
-        .replace("_", " ")
-        .strip()
-    )
+    return canonical_track_title_key(value or "")
 
 
 def _match_setlist_track(
@@ -195,43 +183,39 @@ def _match_setlist_track(
     def unused(track: dict) -> bool:
         return track.get("id") not in used_ids
 
-    exact = next(
-        (
-            track
-            for track in tracks
-            if unused(track) and (track.get("title") or "").lower() == song_title.lower()
-        ),
-        None,
-    )
-    if exact:
-        return exact
+    exact_title = (song_title or "").strip().casefold()
+    candidates: list[tuple[int, int, int, dict]] = []
 
-    normalized = next(
-        (
-            track
-            for track in tracks
-            if unused(track)
-            and " ".join(_normalize_song_title(track.get("title") or "").split()) == normalized_target
-        ),
-        None,
-    )
-    if normalized:
-        return normalized
+    for index, track in enumerate(tracks):
+        if not unused(track):
+            continue
+        title = str(track.get("title") or "")
+        track_exact = title.strip().casefold()
+        normalized_track = " ".join(_normalize_song_title(title).split())
+        if not normalized_track:
+            continue
 
-    contains = next(
-        (
-            track
-            for track in tracks
-            if unused(track)
-            and (
-                " ".join(_normalize_song_title(track.get("title") or "").split()).startswith(normalized_target)
-                or normalized_target.startswith(" ".join(_normalize_song_title(track.get("title") or "").split()))
-                or normalized_target in " ".join(_normalize_song_title(track.get("title") or "").split())
-            )
-        ),
-        None,
-    )
-    return contains
+        match_quality: int | None = None
+        if track_exact == exact_title:
+            match_quality = 0
+        elif normalized_track == normalized_target:
+            match_quality = 1
+        elif (
+            normalized_track.startswith(normalized_target)
+            or normalized_target.startswith(normalized_track)
+            or normalized_target in normalized_track
+        ):
+            match_quality = 2
+
+        if match_quality is None:
+            continue
+
+        candidates.append((match_quality, track_variant_rank(title), index, track))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    return candidates[0][3]
 
 
 def _build_artist_page_payload(
@@ -262,7 +246,7 @@ def _build_artist_page_payload(
         return artist_payload
 
     info_payload = _get_artist_page_info(artist_name)
-    top_tracks_payload = _get_artist_page_top_tracks(artist_name, count=top_tracks_count)
+    top_tracks_payload = _get_artist_top_tracks_payload(artist_name, count=top_tracks_count)
     shows_payload = _get_artist_page_shows(
         user_id=user_id,
         name=artist_name,
@@ -389,11 +373,11 @@ def _build_artist_top_tracks_payload(
     return [_format_artist_top_track(row) for row in ranked]
 
 
-def _get_artist_page_top_tracks(artist_name: str, *, count: int) -> list[dict]:
+def _get_artist_top_tracks_payload(artist_name: str, *, count: int) -> list[dict]:
     return _build_artist_top_tracks_payload(
         artist_name,
         count=count,
-        lastfm_top=get_cached_top_tracks(artist_name, limit=count * 2),
+        lastfm_top=get_top_tracks(artist_name, limit=max(count * 2, 100)),
     )
 
 
@@ -551,7 +535,7 @@ def api_artists(
     for row in rows:
         item = {
             "id": row.get("id"),
-            "entity_uid": row.get("entity_uid"),
+            "entity_uid": str(row["entity_uid"]) if row.get("entity_uid") is not None else None,
             "slug": row.get("slug"),
             "name": row["name"],
             "albums": row["album_count"],
@@ -790,46 +774,7 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     if not artist_name:
         return JSONResponse([], status_code=200)
 
-    all_tracks = {r["title"].lower(): r for r in get_artist_all_tracks(artist_name)}
-
-    from crate.lastfm import get_top_tracks
-    lastfm_top = get_top_tracks(artist_name, limit=count * 2) or []
-
-    ranked = []
-    seen_ids: set[int] = set()
-    for lfm in lastfm_top:
-        match = all_tracks.get(lfm["title"].lower())
-        if match and match["id"] not in seen_ids:
-            seen_ids.add(match["id"])
-            ranked.append(match)
-            if len(ranked) >= count:
-                break
-
-    if len(ranked) < count:
-        remaining = [t for t in all_tracks.values() if t["id"] not in seen_ids]
-        remaining.sort(key=lambda t: (t.get("year") or "0", t.get("track_number") or 0), reverse=True)
-        ranked.extend(remaining[:count - len(ranked)])
-
-    def _fmt(r: dict) -> dict:
-        return {
-            "id": str(r["id"]),
-            "track_id": r["id"],
-            "track_entity_uid": r.get("track_entity_uid"),
-            "title": r["title"],
-            "artist": r["artist"],
-            "artist_id": r["artist_id"],
-            "artist_entity_uid": r.get("artist_entity_uid"),
-            "artist_slug": r["artist_slug"],
-            "album": r["album"],
-            "album_id": r["album_id"],
-            "album_entity_uid": r.get("album_entity_uid"),
-            "album_slug": r["album_slug"],
-            "duration": r["duration"] or 0,
-            "track": r["track_number"] or 0,
-            "format": r["format"],
-        }
-
-    return [_fmt(r) for r in ranked]
+    return _get_artist_top_tracks_payload(artist_name, count=count)
 
 
 @router.get(

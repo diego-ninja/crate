@@ -1,7 +1,9 @@
 """Tests for the FastAPI API endpoints with mocked DB layer."""
 
-from unittest.mock import ANY, MagicMock, patch
 from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
+from uuid import UUID
 
 
 def _make_mock_session(fetchone_returns=None, fetchall_returns=None, fetchall_side_effects=None):
@@ -44,6 +46,9 @@ def _make_mock_session(fetchone_returns=None, fetchall_returns=None, fetchall_si
 class TestArtistsAPI:
     def test_get_artists_from_db(self, test_app):
         mock_row = {
+            "id": 7,
+            "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174000"),
+            "slug": "radiohead",
             "name": "Radiohead",
             "album_count": 9,
             "track_count": 100,
@@ -68,6 +73,7 @@ class TestArtistsAPI:
             assert "items" in data
             assert data["total"] == 1
             assert data["items"][0]["name"] == "Radiohead"
+            assert data["items"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
 
     def test_get_artists_pagination(self, test_app):
         rows = [{"name": f"Artist {i}", "album_count": 1, "track_count": 10,
@@ -123,6 +129,53 @@ class TestArtistsAPI:
 
 
 class TestArtistDetailAPI:
+    def test_artist_top_tracks_payload_uses_shared_candidate_pool(self):
+        from crate.api import browse_artist
+
+        all_tracks = [
+            {
+                "id": 1,
+                "track_entity_uid": "track-1",
+                "title": "Track One",
+                "artist": "Tool",
+                "artist_id": 7,
+                "artist_entity_uid": "artist-7",
+                "artist_slug": "tool",
+                "album": "Album A",
+                "album_id": 10,
+                "album_entity_uid": "album-10",
+                "album_slug": "album-a",
+                "duration": 300,
+                "track_number": 1,
+                "format": "flac",
+                "year": "2001",
+            },
+            {
+                "id": 2,
+                "track_entity_uid": "track-2",
+                "title": "Track Two",
+                "artist": "Tool",
+                "artist_id": 7,
+                "artist_entity_uid": "artist-7",
+                "artist_slug": "tool",
+                "album": "Album B",
+                "album_id": 11,
+                "album_entity_uid": "album-11",
+                "album_slug": "album-b",
+                "duration": 280,
+                "track_number": 2,
+                "format": "flac",
+                "year": "2002",
+            },
+        ]
+
+        with patch("crate.api.browse_artist.get_artist_all_tracks", return_value=all_tracks), \
+             patch("crate.api.browse_artist.get_top_tracks", return_value=[{"title": "Track Two"}, {"title": "Track One"}]) as mock_top_tracks:
+            payload = browse_artist._get_artist_top_tracks_payload("Tool", count=5)
+
+        assert [item["title"] for item in payload[:2]] == ["Track Two", "Track One"]
+        mock_top_tracks.assert_called_once_with("Tool", limit=100)
+
     def test_get_artist_found(self, test_app):
         mock_artist = {
             "name": "Tool",
@@ -257,7 +310,7 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Tool"), \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload) as mock_artist, \
              patch("crate.api.browse_artist._get_artist_page_info", return_value=info_payload) as mock_info, \
-             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=top_tracks_payload) as mock_top_tracks, \
+             patch("crate.api.browse_artist._get_artist_top_tracks_payload", return_value=top_tracks_payload) as mock_top_tracks, \
              patch("crate.api.browse_artist._get_artist_page_shows", return_value=shows_payload) as mock_shows, \
              patch("crate.api.browse_artist.get_top_artists", return_value=[{"artist_id": 3}, {"artist_id": 7}, {"artist_id": 9}]) as mock_top_artists, \
              patch("crate.api.enrichment.get_artist_page_enrichment", return_value=enrichment_payload) as mock_enrichment:
@@ -300,7 +353,7 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well") as mock_artist_name_from_ref, \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
              patch("crate.api.browse_artist._get_artist_page_info", return_value={"similar": []}), \
-             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist._get_artist_top_tracks_payload", return_value=[]), \
              patch("crate.api.browse_artist._get_artist_page_shows", return_value={"events": [], "configured": False, "source": "none"}), \
              patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
              patch("crate.api.enrichment.get_artist_page_enrichment", return_value={}):
@@ -330,7 +383,7 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well"), \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
              patch("crate.api.browse_artist._get_artist_page_info", return_value={"similar": []}), \
-             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist._get_artist_top_tracks_payload", return_value=[]), \
              patch("crate.api.browse_artist._get_artist_page_shows", return_value={"events": [], "configured": False, "source": "none"}) as mock_shows, \
              patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
              patch("crate.api.enrichment.get_artist_page_enrichment", return_value={}):
@@ -377,8 +430,10 @@ class TestArtistDetailAPI:
         ]
         album_payload = {
             "id": 14,
+            "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174014"),
             "slug": "quicksand-slip",
             "artist_id": 5,
+            "artist_entity_uid": UUID("123e4567-e89b-12d3-a456-426614174005"),
             "artist_slug": "quicksand",
             "artist": "Quicksand",
             "name": "Slip",
@@ -403,6 +458,8 @@ class TestArtistDetailAPI:
 
         assert resp.status_code == 200
         assert resp.json()["name"] == "Slip"
+        assert resp.json()["entity_uid"] == "123e4567-e89b-12d3-a456-426614174014"
+        assert resp.json()["artist_entity_uid"] == "123e4567-e89b-12d3-a456-426614174005"
         mock_api_album.assert_called_once_with(ANY, "Quicksand", "Slip")
 
 
@@ -464,12 +521,12 @@ class TestTimelineAPI:
         rows = [
             {
                 "id": 5,
-                "entity_uid": "123e4567-e89b-12d3-a456-426614174005",
+                "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174005"),
                 "slug": "ok-computer",
                 "year": "1997",
                 "artist": "Radiohead",
                 "artist_id": 1,
-                "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001",
+                "artist_entity_uid": UUID("123e4567-e89b-12d3-a456-426614174001"),
                 "artist_slug": "radiohead",
                 "name": "OK Computer",
                 "track_count": 12,
@@ -496,13 +553,13 @@ class TestSearchAPI:
 
     def test_search_from_db(self, test_app):
         mock_scope = _make_mock_session(fetchall_side_effects=[
-            [{"id": 1, "entity_uid": "123e4567-e89b-12d3-a456-426614174001", "slug": "radiohead", "name": "Radiohead", "album_count": 9, "has_photo": 1}],
-            [{"id": 5, "entity_uid": "123e4567-e89b-12d3-a456-426614174002", "slug": "ok-computer", "artist": "Radiohead", "name": "OK Computer",
-              "year": "1997", "has_cover": 1, "artist_id": 1, "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001", "artist_slug": "radiohead"}],
-            [{"id": 9, "entity_uid": "123e4567-e89b-12d3-a456-426614174000", "storage_id": "legacy-storage",
+            [{"id": 1, "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174001"), "slug": "radiohead", "name": "Radiohead", "album_count": 9, "has_photo": 1}],
+            [{"id": 5, "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174002"), "slug": "ok-computer", "artist": "Radiohead", "name": "OK Computer",
+              "year": "1997", "has_cover": 1, "artist_id": 1, "artist_entity_uid": UUID("123e4567-e89b-12d3-a456-426614174001"), "artist_slug": "radiohead"}],
+            [{"id": 9, "entity_uid": UUID("123e4567-e89b-12d3-a456-426614174000"), "storage_id": "legacy-storage",
               "slug": "paranoid-android", "title": "Paranoid Android", "artist": "Radiohead", "album_id": 5,
-              "album_entity_uid": "123e4567-e89b-12d3-a456-426614174002", "album_slug": "ok-computer",
-              "album": "OK Computer", "artist_id": 1, "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001", "artist_slug": "radiohead",
+              "album_entity_uid": UUID("123e4567-e89b-12d3-a456-426614174002"), "album_slug": "ok-computer",
+              "album": "OK Computer", "artist_id": 1, "artist_entity_uid": UUID("123e4567-e89b-12d3-a456-426614174001"), "artist_slug": "radiohead",
               "path": "/music/Radiohead/OK Computer/02 - Paranoid Android.flac", "duration": 387.0}],
         ])
 
@@ -1450,6 +1507,327 @@ class TestAdminMetricsAPI:
 
 
 class TestHealthAPI:
+    def test_album_metadata_tasks_accept_entity_uid_scope(self, test_app):
+        album_uid = "11111111-2222-4333-8444-555555555555"
+
+        with patch("crate.api.management.create_task", return_value="task-lyrics") as mock_create_task:
+            resp = test_app.post("/api/manage/sync-lyrics", json={"album_entity_uid": album_uid, "limit": 1})
+
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == "task-lyrics"
+        mock_create_task.assert_called_once_with(
+            "sync_lyrics",
+            {"album_entity_uid": album_uid, "force": False, "limit": 1, "delay_seconds": 0.2},
+        )
+
+        with patch("crate.api.management.create_task", return_value="task-metadata") as mock_create_task:
+            resp = test_app.post(
+                "/api/manage/portable-metadata",
+                json={"album_entity_uid": album_uid, "write_audio_tags": True, "write_sidecars": True, "limit": 1},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == "task-metadata"
+        mock_create_task.assert_called_once_with(
+            "write_portable_metadata",
+            {"album_entity_uid": album_uid, "write_audio_tags": True, "write_sidecars": True, "limit": 1},
+        )
+
+        with patch("crate.api.management.create_task", return_value="task-export") as mock_create_task:
+            resp = test_app.post(
+                "/api/manage/portable-metadata/export-rich",
+                json={"album_entity_uid": album_uid, "include_audio": False, "write_rich_tags": False, "limit": 1},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == "task-export"
+        mock_create_task.assert_called_once_with(
+            "export_rich_metadata",
+            {"album_entity_uid": album_uid, "include_audio": False, "write_rich_tags": False, "limit": 1},
+        )
+
+    def test_repair_catalog_endpoint(self, test_app):
+        resp = test_app.get("/api/manage/repair-catalog")
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        by_check = {item["check_type"]: item for item in items}
+        assert by_check["canonical_mismatch"]["auto_fixable"] is True
+        assert by_check["canonical_mismatch"]["support"] == "automatic"
+        assert by_check["canonical_mismatch"]["risk"] == "caution"
+        assert by_check["canonical_mismatch"]["scope"] == "hybrid"
+        assert by_check["canonical_mismatch"]["requires_confirmation"] is True
+        assert by_check["canonical_mismatch"]["supports_global_scope"] is False
+        assert by_check["artist_layout_fix"]["auto_fixable"] is True
+        assert by_check["artist_layout_fix"]["support"] == "automatic"
+        assert by_check["artist_layout_fix"]["risk"] == "caution"
+        assert by_check["artist_layout_fix"]["scope"] == "hybrid"
+        assert by_check["duplicate_albums"]["auto_fixable"] is True
+        assert by_check["duplicate_albums"]["support"] == "automatic"
+        assert by_check["duplicate_albums"]["risk"] == "destructive"
+        assert by_check["duplicate_albums"]["supports_global_scope"] is False
+        assert by_check["duplicate_tracks"]["auto_fixable"] is True
+        assert by_check["duplicate_tracks"]["support"] == "automatic"
+        assert by_check["duplicate_tracks"]["risk"] == "destructive"
+        assert by_check["duplicate_tracks"]["scope"] == "hybrid"
+        assert by_check["duplicate_tracks"]["requires_confirmation"] is True
+        assert by_check["duplicate_tracks"]["supports_global_scope"] is False
+
+    def test_fix_type_rejects_non_global_repairs(self, test_app):
+        resp = test_app.post("/api/manage/health-issues/fix-type/artist_layout_fix")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "task_id": None,
+            "fixable": 0,
+            "allowed": False,
+            "reason": "global_scope_not_supported",
+        }
+
+    def test_repair_preview_endpoint(self, test_app):
+        preview = {
+            "items": [
+                {
+                    "issue_id": 7,
+                    "item_key": "issue:7",
+                    "plan_item_id": "repair-plan:abc123",
+                    "check_type": "duplicate_albums",
+                    "severity": "medium",
+                    "description": "Duplicate album",
+                    "support": "automatic",
+                    "risk": "destructive",
+                    "scope": "hybrid",
+                    "requires_confirmation": True,
+                    "supports_batch": True,
+                    "supports_artist_scope": True,
+                    "supports_global_scope": False,
+                    "auto_fixable": True,
+                    "executable": True,
+                    "action": "delete_loose",
+                    "target": "Birds In Row/UGLY",
+                    "message": "Would delete loose duplicate album folder for Birds In Row/UGLY",
+                    "fs_write": True,
+                    "details": {"reason": "identical track list"},
+                    "issue": {"id": 7, "check": "duplicate_albums", "details": {"artist": "Birds In Row"}},
+                }
+            ],
+            "total": 1,
+            "executable": 1,
+            "manual_only": 0,
+            "plan_version": "repair-preview:123",
+            "generated_at": "2026-04-30T10:00:00+00:00",
+        }
+
+        with patch("crate.api.management._build_repair_preview", return_value=preview) as mock_preview:
+            resp = test_app.post("/api/manage/repair-preview", json={"issues": [{"id": 7}]})
+
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["check_type"] == "duplicate_albums"
+        assert resp.json()["items"][0]["risk"] == "destructive"
+        assert resp.json()["items"][0]["scope"] == "hybrid"
+        assert resp.json()["plan_version"] == "repair-preview:123"
+        mock_preview.assert_called_once_with([{"id": 7}], auto_only=False)
+
+    def test_repair_specific_issues_rejects_stale_plan_version(self, test_app):
+        preview = {
+            "items": [],
+            "total": 0,
+            "executable": 0,
+            "manual_only": 0,
+            "plan_version": "repair-preview:fresh",
+            "generated_at": "2026-04-30T10:00:00+00:00",
+        }
+
+        with patch("crate.api.management._build_repair_preview", return_value=preview), \
+             patch("crate.api.management.create_task") as mock_create_task:
+            resp = test_app.post(
+                "/api/manage/repair-issues",
+                json={"issues": [{"id": 7}], "dry_run": False, "plan_version": "repair-preview:stale"},
+            )
+
+        assert resp.status_code == 409
+        assert "stale" in resp.json()["detail"].lower()
+        mock_create_task.assert_not_called()
+
+    def test_repair_specific_issues_requires_confirmation_for_risky_items(self, test_app):
+        preview = {
+            "items": [
+                {
+                    "issue_id": 7,
+                    "item_key": "issue:7",
+                    "plan_item_id": "repair-plan:danger",
+                    "check_type": "duplicate_albums",
+                    "severity": "high",
+                    "description": "Duplicate album",
+                    "support": "automatic",
+                    "risk": "destructive",
+                    "scope": "hybrid",
+                    "requires_confirmation": True,
+                    "supports_batch": True,
+                    "supports_artist_scope": True,
+                    "supports_global_scope": False,
+                    "auto_fixable": True,
+                    "executable": True,
+                    "action": "delete_loose",
+                    "target": "Birds In Row/UGLY",
+                    "message": "Would delete loose duplicate album folder for Birds In Row/UGLY",
+                    "fs_write": True,
+                    "details": {"reason": "identical track list"},
+                    "issue": {"id": 7, "check": "duplicate_albums", "details": {"artist": "Birds In Row"}},
+                }
+            ],
+            "total": 1,
+            "executable": 1,
+            "manual_only": 0,
+            "plan_version": "repair-preview:danger",
+            "generated_at": "2026-04-30T10:00:00+00:00",
+        }
+
+        with patch("crate.api.management._build_repair_preview", return_value=preview), \
+             patch("crate.api.management.create_task") as mock_create_task:
+            resp = test_app.post(
+                "/api/manage/repair-issues",
+                json={
+                    "issues": [{"id": 7}],
+                    "dry_run": False,
+                    "plan_version": "repair-preview:danger",
+                    "plan_item_ids": ["repair-plan:danger"],
+                    "confirm_risky": False,
+                },
+            )
+
+        assert resp.status_code == 409
+        assert "confirmation" in resp.json()["detail"].lower()
+        mock_create_task.assert_not_called()
+
+    def test_fix_artist_by_entity_uid_enqueues_task(self, test_app):
+        with patch("crate.api.management.artist_name_from_entity_uid", return_value="Terror"), \
+             patch("crate.api.management.create_task", return_value="task-fix-1") as mock_create_task:
+            resp = test_app.post("/api/manage/artists/by-entity/30a0374c-54dc-5f41-b1ed-95c7fd4ec386/fix")
+
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == "task-fix-1"
+        mock_create_task.assert_called_once_with("fix_artist", {"artist": "Terror"})
+
+    def test_artist_repair_plan_by_entity_uid(self, test_app):
+        preview = {
+            "items": [
+                {
+                    "issue_id": None,
+                    "check_type": "artist_layout_fix",
+                    "severity": "high",
+                    "description": "Artist layout fix needed for Birds In Row",
+                    "support": "automatic",
+                    "auto_fixable": True,
+                    "executable": True,
+                    "action": "fix_artist_layout",
+                    "target": "Birds In Row",
+                    "message": "Would consolidate 1 album directory into canonical entity_uid layout",
+                    "fs_write": True,
+                    "details": {"target_artist_dir": "/music/695179a0-3863-50c2-9302-61f5cf144daa"},
+                    "issue": {"check": "artist_layout_fix", "details": {"artist": "Birds In Row"}},
+                }
+            ],
+            "total": 1,
+            "executable": 1,
+            "manual_only": 0,
+        }
+        fix_preview = {
+            "status": "needs_fix",
+            "applicable": True,
+            "artist": "Birds In Row",
+            "message": "Would consolidate 1 album directory into canonical entity_uid layout",
+            "target_artist_dir": "/music/695179a0-3863-50c2-9302-61f5cf144daa",
+            "candidate_dirs": ["/music/6e7e3e43-7834-4677-8192-8fd9fc47bf5e"],
+            "album_moves": [
+                {
+                    "album": "You, Me & the Violence",
+                    "source": "/music/6e7e3e43-7834-4677-8192-8fd9fc47bf5e/You, Me & the Violence",
+                    "target": "/music/695179a0-3863-50c2-9302-61f5cf144daa/564b0e79-0978-40ad-b764-059bf15410ff",
+                }
+            ],
+            "artist_files": [],
+            "folder_name_mismatch": False,
+            "skipped_existing": 0,
+            "skipped_foreign": 0,
+            "preview_errors": [],
+        }
+        with patch("crate.api.management.artist_name_from_entity_uid", return_value="Birds In Row"), \
+             patch("crate.api.management._build_repair_preview", return_value=preview) as mock_preview, \
+             patch("crate.api.management._build_artist_fix_preview", return_value=fix_preview) as mock_fix_preview, \
+             patch("crate.api.management.get_artist_issues", return_value=[]) as mock_get_issues:
+            resp = test_app.get("/api/manage/artists/by-entity/695179a0-3863-50c2-9302-61f5cf144daa/repair-plan")
+
+        assert resp.status_code == 200
+        assert resp.json()["artist"] == "Birds In Row"
+        assert resp.json()["total"] == 1
+        assert resp.json()["items"][0]["check_type"] == "artist_layout_fix"
+        assert resp.json()["items"][0]["executable"] is True
+        mock_get_issues.assert_called_once_with("Birds In Row")
+        mock_preview.assert_called_once()
+        preview_issues = mock_preview.call_args.args[0]
+        assert preview_issues == [
+            {
+                "check": "artist_layout_fix",
+                "severity": "high",
+                "description": "Artist layout fix needed for Birds In Row",
+                "auto_fixable": True,
+                "details": {
+                    "artist": "Birds In Row",
+                    "target_artist_dir": "/music/695179a0-3863-50c2-9302-61f5cf144daa",
+                    "candidate_dirs": ["/music/6e7e3e43-7834-4677-8192-8fd9fc47bf5e"],
+                    "album_move_count": 1,
+                    "artist_file_count": 0,
+                    "folder_name_mismatch": False,
+                    "skipped_existing": 0,
+                    "skipped_foreign": 0,
+                    "preview_errors": [],
+                },
+            }
+        ]
+        mock_fix_preview.assert_called_once_with("Birds In Row")
+
+    def test_artist_repair_plan_filters_stale_artist_layout_issue(self, test_app):
+        preview = {
+            "items": [],
+            "total": 0,
+            "executable": 0,
+            "manual_only": 0,
+        }
+        fix_preview = {
+            "status": "already_canonical",
+            "applicable": False,
+            "artist": "Quicksand",
+            "message": "Quicksand already uses canonical entity_uid layout",
+            "target_artist_dir": "/music/b81635c8-3132-57d2-8d22-920251dc2627",
+            "candidate_dirs": ["/music/b81635c8-3132-57d2-8d22-920251dc2627"],
+            "album_moves": [],
+            "artist_files": [],
+            "folder_name_mismatch": False,
+            "skipped_existing": 0,
+            "skipped_foreign": 0,
+            "preview_errors": [],
+        }
+        stale_issue = {
+            "id": 12,
+            "check_type": "artist_layout_fix",
+            "details_json": {"artist": "Quicksand"},
+        }
+        with patch("crate.api.management.artist_name_from_entity_uid", return_value="Quicksand"), \
+             patch("crate.api.management._build_repair_preview", return_value=preview) as mock_preview, \
+             patch("crate.api.management._build_artist_fix_preview", return_value=fix_preview), \
+             patch("crate.api.management.get_artist_issues", return_value=[stale_issue]), \
+             patch("crate.api.management.resolve_issue") as mock_resolve_issue, \
+             patch("crate.api.management.publish_health_surface_signal") as mock_publish_health:
+            resp = test_app.get("/api/manage/artists/by-entity/b81635c8-3132-57d2-8d22-920251dc2627/repair-plan")
+
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+        assert resp.json()["total"] == 0
+        assert mock_preview.call_args.args[0] == []
+        mock_resolve_issue.assert_called_once_with(12)
+        mock_publish_health.assert_called_once()
+
     def test_health_issues_reads_from_snapshot(self, test_app):
         snapshot = {
             "snapshot": {"scope": "ops:health", "subject_key": "surface:all:500", "version": 1, "stale": False, "generation_ms": 5},
@@ -1735,3 +2113,50 @@ def test_track_info_by_path_endpoint(test_app):
     assert data["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
     assert "storage_id" not in data
     assert data["title"] == "Dine Alone"
+
+
+def test_track_info_backfills_missing_quality_from_audio_file(test_app):
+    row = {
+        "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+        "path": "/music/Artist/Album/Track.flac",
+        "title": "Dine Alone",
+        "artist": "Quicksand",
+        "album": "Distant Populations",
+        "format": "flac",
+        "bitrate": None,
+        "sample_rate": None,
+        "bit_depth": None,
+        "bpm": 120.0,
+        "audio_key": "D",
+        "audio_scale": "minor",
+        "energy": 0.82,
+        "danceability": 0.44,
+        "valence": 0.55,
+        "acousticness": 0.03,
+        "instrumentalness": 0.0,
+        "loudness": -8.2,
+        "dynamic_range": 10.1,
+        "mood_json": {"aggressive": 0.9},
+        "bliss_vector": [0.1, 0.2, 0.3],
+        "lastfm_listeners": 10,
+        "lastfm_playcount": 20,
+        "popularity": 0.5,
+        "rating": 4,
+    }
+
+    with patch("crate.api.browse_media.get_track_info_cols_by_entity_uid", return_value=row), \
+         patch("crate.api.browse_media.safe_path", return_value=Path("/music/Artist/Album/Track.flac")), \
+         patch("pathlib.Path.is_file", return_value=True), \
+         patch("crate.api.browse_media.read_audio_quality", return_value={
+             "duration": 240.0,
+             "bitrate": 900000,
+             "sample_rate": 44100,
+             "bit_depth": 16,
+         }):
+        resp = test_app.get("/api/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/info")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["bitrate"] == 900000
+    assert data["sample_rate"] == 44100
+    assert data["bit_depth"] == 16

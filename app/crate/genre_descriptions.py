@@ -420,7 +420,11 @@ def enrich_genre_descriptions_batch(
     progress_callback: Callable[[dict], None] | None = None,
     event_callback: Callable[[dict], None] | None = None,
 ) -> dict:
-    from crate.db.genres import list_genre_taxonomy_nodes_for_external_enrichment, update_genre_external_metadata
+    from crate.db.genres import (
+        get_genre_taxonomy_node_id,
+        list_genre_taxonomy_nodes_for_external_enrichment,
+        update_genre_external_metadata,
+    )
 
     targets = list_genre_taxonomy_nodes_for_external_enrichment(
         limit=limit,
@@ -428,12 +432,17 @@ def enrich_genre_descriptions_batch(
         only_missing_external=not force,
     )
     if not targets:
+        reason = "no_targets"
+        if focus_slug and not get_genre_taxonomy_node_id(focus_slug):
+            reason = "focus_slug_not_taxonomy_node"
         return {
             "processed": 0,
             "updated": 0,
             "matched_musicbrainz": 0,
             "matched_wikidata": 0,
             "remaining_without_external": 0,
+            "reason": reason,
+            "focus_slug": focus_slug,
         }
 
     mb_index = _musicbrainz_genre_index()
@@ -563,6 +572,7 @@ def sync_musicbrainz_genre_graph_batch(
     event_callback: Callable[[dict], None] | None = None,
 ) -> dict:
     from crate.db.genres import (
+        get_genre_taxonomy_node_id,
         list_genre_taxonomy_nodes_for_musicbrainz_sync,
         update_genre_external_metadata,
         upsert_genre_taxonomy_edge,
@@ -571,12 +581,17 @@ def sync_musicbrainz_genre_graph_batch(
 
     targets = list_genre_taxonomy_nodes_for_musicbrainz_sync(limit=limit, focus_slug=focus_slug)
     if not targets:
+        reason = "no_targets"
+        if focus_slug and not get_genre_taxonomy_node_id(focus_slug):
+            reason = "focus_slug_not_taxonomy_node"
         return {
             "processed": 0,
             "matched_musicbrainz": 0,
             "nodes_touched": 0,
             "edges_synced": 0,
             "skipped": 0,
+            "reason": reason,
+            "focus_slug": focus_slug,
         }
 
     mb_index = _musicbrainz_genre_index()

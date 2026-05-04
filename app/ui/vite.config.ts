@@ -15,6 +15,9 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       "prop-types",
+      "leaflet",
+      "@react-leaflet/core",
+      "react-leaflet",
       "react-force-graph-2d",
     ],
     exclude: [

@@ -29,6 +29,7 @@ import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContex
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 
@@ -130,6 +131,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     duration,
   );
   const navigate = useNavigate();
+  const isDesktop = useIsDesktop();
+  const allowFullscreenVisualizer = isDesktop;
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
   const [lyrics, setLyrics] = useState<{ synced: LyricLine[] | null; plain: string | null } | null>(null);
@@ -158,19 +161,28 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const vizRef = useMusicVisualizer(
     canvasRef,
     `${currentTrack?.id ?? "none"}:${analyserVersion}`,
-    visible && activeTab === "player",
+    allowFullscreenVisualizer && visible && activeTab === "player",
     playbackState,
   );
-  const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player", crossfadeTransition);
+  const vizCfg = useVisualizerConfig(
+    vizRef,
+    currentTrack,
+    visible && activeTab === "player",
+    crossfadeTransition,
+    allowFullscreenVisualizer,
+  );
   const isCdMode = vizCfg.surfaceMode === "cd";
-  const isVisualizerMode = vizCfg.surfaceMode === "visualizer";
+  const isVisualizerMode = allowFullscreenVisualizer && vizCfg.surfaceMode === "visualizer";
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number; referenceSize: number } | null>(null);
 
   // Measure cover position relative to FS root. The canvas can grow beyond the
   // visualizer's reference size so peaks don't clip, while the effect itself
   // keeps roughly the same visual footprint.
   useEffect(() => {
-    if (!visible || activeTab !== "player") return;
+    if (!isVisualizerMode || !visible || activeTab !== "player") {
+      setCanvasRect(null);
+      return;
+    }
     const measure = () => {
       const cover = coverRef.current;
       const root = fsRootRef.current;
@@ -197,7 +209,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       resizeObs.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [visible, activeTab, showVizSettings, vizCfg.surfaceMode]);
+  }, [activeTab, isVisualizerMode, showVizSettings, visible]);
 
   // Animate in/out
   useEffect(() => {
@@ -270,10 +282,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); setShowEqualizer(false); } }, [visible]);
 
   useEffect(() => {
-    if (!isVisualizerMode && showVizSettings) {
+    if ((!allowFullscreenVisualizer || !isVisualizerMode) && showVizSettings) {
       setShowVizSettings(false);
     }
-  }, [isVisualizerMode, showVizSettings]);
+  }, [allowFullscreenVisualizer, isVisualizerMode, showVizSettings]);
 
   useDismissibleLayer({
     active: visible && (showVizSettings || showEqualizer),
@@ -337,20 +349,21 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       onTouchMove={onSwipeMove}
       onTouchEnd={onSwipeEnd}
     >
-      {/* WebGL canvas — positioned at root level, floats above cover */}
-      <div
-        className={`pointer-events-none absolute ${showVizSettings || showEqualizer ? "z-30" : "z-50"} ${
-          isVisualizerMode && activeTab === "player" && canvasRect ? "" : "hidden"
-        }`}
-        style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
-      >
-        <canvas
-          ref={canvasRef}
-          className="h-full w-full"
-          data-viz-reference-size={canvasRect ? String(canvasRect.referenceSize) : undefined}
-          style={{ background: "transparent" }}
-        />
-      </div>
+      {allowFullscreenVisualizer ? (
+        <div
+          className={`pointer-events-none absolute ${showVizSettings || showEqualizer ? "z-30" : "z-50"} ${
+            isVisualizerMode && activeTab === "player" && canvasRect ? "" : "hidden"
+          }`}
+          style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
+        >
+          <canvas
+            ref={canvasRef}
+            className="h-full w-full"
+            data-viz-reference-size={canvasRect ? String(canvasRect.referenceSize) : undefined}
+            style={{ background: "transparent" }}
+          />
+        </div>
+      ) : null}
 
       {/* Drag handle */}
       <div className="flex justify-center pt-3 pb-1">
@@ -369,6 +382,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
         <div className="flex items-center -mr-2">
           <PlayerSurfaceModeSwitch
+            allowVisualizer={allowFullscreenVisualizer}
             className="mr-1"
             mode={vizCfg.surfaceMode}
             onChange={(mode) => {
@@ -386,21 +400,23 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           >
             <SlidersHorizontal size={18} />
           </button>
-          <button
-            ref={vizSettingsButtonRef}
-            onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
-            aria-label="Visualizer settings"
-            disabled={!isVisualizerMode}
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              !isVisualizerMode
-                ? "text-white/20"
-                : showVizSettings
-                  ? "text-primary"
-                  : "text-white/40 active:text-white/60"
-            }`}
-          >
-            <Settings size={18} />
-          </button>
+          {allowFullscreenVisualizer ? (
+            <button
+              ref={vizSettingsButtonRef}
+              onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
+              aria-label="Visualizer settings"
+              disabled={!isVisualizerMode}
+              className={`w-11 h-11 flex items-center justify-center transition-colors ${
+                !isVisualizerMode
+                  ? "text-white/20"
+                  : showVizSettings
+                    ? "text-primary"
+                    : "text-white/40 active:text-white/60"
+              }`}
+            >
+              <Settings size={18} />
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -423,7 +439,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       </div>
 
       {/* Visualizer settings panel */}
-      {showVizSettings && (
+      {allowFullscreenVisualizer && showVizSettings && (
         <div
           ref={vizSettingsRef}
           className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"

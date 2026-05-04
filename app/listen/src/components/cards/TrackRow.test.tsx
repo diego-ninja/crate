@@ -96,7 +96,6 @@ describe("TrackRow playback behavior", () => {
         expect.objectContaining({
           id: "entity-1",
           entityUid: "entity-1",
-          storageId: undefined,
           format: "flac",
           bitrate: 1411,
           sampleRate: 44100,
@@ -105,7 +104,6 @@ describe("TrackRow playback behavior", () => {
         expect.objectContaining({
           id: "entity-2",
           entityUid: "entity-2",
-          storageId: undefined,
           format: "aac",
           bitrate: 320,
           sampleRate: 48000,

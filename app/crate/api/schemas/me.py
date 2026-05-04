@@ -218,7 +218,7 @@ class LibraryPlaylistsPageResponse(BaseModel):
     followed_curated_playlists: list[FollowedPlaylistResponse] = Field(default_factory=list)
 
 
-class FollowedArtistResponse(BaseModel):
+class FollowedArtistResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     artist_name: str
@@ -239,7 +239,7 @@ class FollowingStateResponse(BaseModel):
     following: bool
 
 
-class SavedAlbumResponse(BaseModel):
+class SavedAlbumResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     saved_at: datetime | str | None = None
@@ -446,7 +446,7 @@ class StatsDashboardResponse(BaseModel):
     replay: ReplayMixResponse
 
 
-class HomeArtworkRefResponse(BaseModel):
+class HomeArtworkRefResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     artist: str | None = None

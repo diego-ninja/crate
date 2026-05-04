@@ -9,14 +9,15 @@ import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
   Calendar,
   Disc3,
+  Archive,
+  FileJson,
   HardDrive,
   Headphones,
   MapPin,
   Music,
   AudioWaveform,
   RefreshCw,
-  FolderSync,
-  Loader2,
+  Tags,
   Trash2,
   Users,
   Wrench,
@@ -42,9 +43,7 @@ interface ArtistHeroSectionProps {
   totalTracks: number;
   totalSizeMb: number;
   issueCount?: number;
-  isV2?: boolean;
-  migrating?: boolean;
-  onMigrateV2?: () => void;
+  showRepairAction?: boolean;
   musicbrainz?: ArtistHeroMusicBrainz;
   lastfmListeners?: number;
   upcomingShow?: ArtistShowEvent;
@@ -66,6 +65,10 @@ interface ArtistHeroSectionProps {
   onEnrich: () => void;
   onAnalyze: () => void;
   onRepair: () => void;
+  metadataAction?: "lyrics" | "portable" | "export" | null;
+  onSyncLyrics?: () => void;
+  onWritePortableMetadata?: () => void;
+  onExportRichMetadata?: () => void;
   onDelete: () => void;
 }
 
@@ -80,9 +83,7 @@ export function ArtistHeroSection({
   totalTracks,
   totalSizeMb,
   issueCount,
-  isV2,
-  migrating,
-  onMigrateV2,
+  showRepairAction,
   musicbrainz,
   lastfmListeners,
   upcomingShow,
@@ -104,6 +105,10 @@ export function ArtistHeroSection({
   onEnrich,
   onAnalyze,
   onRepair,
+  metadataAction = null,
+  onSyncLyrics,
+  onWritePortableMetadata,
+  onExportRichMetadata,
   onDelete,
 }: ArtistHeroSectionProps) {
   const backgroundUrl = artistBackgroundApiUrl({ artistId, artistEntityUid, artistSlug, artistName }, { version: imageVersion });
@@ -119,26 +124,16 @@ export function ArtistHeroSection({
         key={bgCacheBust || "bg"}
         src={backgroundSrc}
         alt=""
-        className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
+        className={`absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] grayscale brightness-[0.5] contrast-110 transition-opacity duration-1000 ${bgLoaded ? "opacity-40" : "opacity-0"}`}
         onLoad={onBackgroundLoad}
         onError={() => {}}
       />
+      <div className="absolute inset-0 bg-black/28" />
       <div
         className="absolute inset-0"
         style={{
-          background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 25%, var(--gradient-bg-40) 50%, transparent 75%)",
-        }}
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 15%, var(--gradient-bg-40) 40%, transparent 70%)",
-        }}
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 30%)",
+          background:
+            "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.14) 34%, rgba(8, 10, 14, 0.46) 60%, var(--surface-app) 100%)",
         }}
       />
 
@@ -153,7 +148,7 @@ export function ArtistHeroSection({
       ) : null}
 
       <div className="absolute inset-0 flex items-end">
-        <div className="mx-auto flex w-full max-w-[1160px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
+        <div className="mx-auto flex w-full max-w-[1480px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
           <div className="relative group/photo w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-md overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
             {!photoError ? (
               <img
@@ -273,28 +268,59 @@ export function ArtistHeroSection({
               >
                 <AudioWaveform size={14} className="mr-1" /> Analyze
               </Button>
-              {(issueCount ?? 0) > 0 && (
+              {isAdmin && onSyncLyrics ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onSyncLyrics}
+                  disabled={metadataAction !== null}
+                >
+                  {metadataAction === "lyrics" ? (
+                    <RefreshCw size={14} className="mr-1 animate-spin" />
+                  ) : (
+                    <FileJson size={14} className="mr-1" />
+                  )}
+                  Lyrics
+                </Button>
+              ) : null}
+              {isAdmin && onWritePortableMetadata ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onWritePortableMetadata}
+                  disabled={metadataAction !== null}
+                >
+                  {metadataAction === "portable" ? (
+                    <RefreshCw size={14} className="mr-1 animate-spin" />
+                  ) : (
+                    <Tags size={14} className="mr-1" />
+                  )}
+                  Metadata
+                </Button>
+              ) : null}
+              {isAdmin && onExportRichMetadata ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onExportRichMetadata}
+                  disabled={metadataAction !== null}
+                >
+                  {metadataAction === "export" ? (
+                    <RefreshCw size={14} className="mr-1 animate-spin" />
+                  ) : (
+                    <Archive size={14} className="mr-1" />
+                  )}
+                  Export
+                </Button>
+              ) : null}
+              {showRepairAction && (
                 <Button
                   size="sm"
                   variant="outline"
                   className="text-amber-400 hover:bg-amber-500/10"
                   onClick={onRepair}
                 >
-                  <Wrench size={14} className="mr-1" /> Repair ({issueCount})
-                </Button>
-              )}
-              {isAdmin && isV2 === false && onMigrateV2 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-cyan-400 hover:bg-cyan-500/10"
-                  disabled={migrating}
-                  onClick={onMigrateV2}
-                >
-                  {migrating
-                    ? <Loader2 size={14} className="mr-1 animate-spin" />
-                    : <FolderSync size={14} className="mr-1" />}
-                  {migrating ? "Migrating..." : "Migrate to V2"}
+                  <Wrench size={14} className="mr-1" /> {(issueCount ?? 0) > 0 ? `Repair (${issueCount})` : "Repair"}
                 </Button>
               )}
               {isAdmin && (

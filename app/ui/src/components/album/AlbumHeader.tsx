@@ -4,10 +4,13 @@ import {
   BrainCircuit,
   Disc3,
   Download,
+  Archive,
+  FileJson,
   HardDrive,
   Loader2,
   Music,
   Clock,
+  Tags,
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +24,8 @@ import { api } from "@/lib/api";
 import { albumActionApiPath, albumArtworkApiPath, albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { formatDuration, formatSize } from "@/lib/utils";
+
+type AlbumMetadataAction = "lyrics" | "portable" | "export" | null;
 
 interface AlbumHeaderProps {
   albumId?: number;
@@ -50,8 +55,21 @@ interface AlbumHeaderProps {
   genreProfile?: GenreProfileItem[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
+  onMetadataTaskQueued?: (action: Exclude<AlbumMetadataAction, null>, taskId: string) => void;
   isAdmin?: boolean;
   children?: React.ReactNode;
+}
+
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error) || !error.message) return fallback;
+  try {
+    const parsed = JSON.parse(error.message) as { detail?: unknown; error?: unknown };
+    const detail = parsed.detail ?? parsed.error;
+    if (typeof detail === "string" && detail.trim()) return detail;
+  } catch {
+    // Use the original message below.
+  }
+  return error.message;
 }
 
 export function AlbumHeader({
@@ -73,6 +91,7 @@ export function AlbumHeader({
   popularityScore,
   genreProfile,
   onAnalysisComplete,
+  onMetadataTaskQueued,
   isAdmin = false,
   children,
 }: AlbumHeaderProps) {
@@ -80,6 +99,7 @@ export function AlbumHeader({
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [metadataAction, setMetadataAction] = useState<AlbumMetadataAction>(null);
   const [bgLoaded, setBgLoaded] = useState(false);
 
   const baseCoverUrl = albumCoverApiUrl({ albumId, albumEntityUid, albumSlug, artistName: artist, albumName: album });
@@ -96,8 +116,8 @@ export function AlbumHeader({
         : 0;
 
   async function handleEnrich() {
-    if (albumId == null) {
-      toast.error("Album ID missing");
+    if (albumId == null && !albumEntityUid) {
+      toast.error("Album reference missing");
       return;
     }
     setAnalyzing(true);
@@ -120,6 +140,49 @@ export function AlbumHeader({
     }
   }
 
+  async function queueAlbumMetadataAction(action: Exclude<AlbumMetadataAction, null>) {
+    if (albumId == null && !albumEntityUid) {
+      toast.error("Album reference missing");
+      return;
+    }
+
+    const albumReference = {
+      album_id: albumId,
+      album_entity_uid: albumEntityUid,
+    };
+
+    setMetadataAction(action);
+    try {
+      if (action === "lyrics") {
+        const response = await api<{ task_id: string }>("/api/manage/sync-lyrics", "POST", { ...albumReference, limit: 500 });
+        onMetadataTaskQueued?.(action, response.task_id);
+        toast.success("Lyrics sync queued");
+      } else if (action === "portable") {
+        const response = await api<{ task_id: string }>("/api/manage/portable-metadata", "POST", {
+          ...albumReference,
+          write_audio_tags: true,
+          write_sidecars: true,
+          limit: 1,
+        });
+        onMetadataTaskQueued?.(action, response.task_id);
+        toast.success("Portable metadata queued");
+      } else {
+        const response = await api<{ task_id: string }>("/api/manage/portable-metadata/export-rich", "POST", {
+          ...albumReference,
+          include_audio: false,
+          write_rich_tags: false,
+          limit: 1,
+        });
+        onMetadataTaskQueued?.(action, response.task_id);
+        toast.success("Rich metadata export queued");
+      }
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Failed to queue metadata task"));
+    } finally {
+      setMetadataAction(null);
+    }
+  }
+
   return (
     <div
       className="relative mb-6 h-[420px] overflow-hidden -mx-4 md:-mx-8 md:h-[560px]"
@@ -127,34 +190,24 @@ export function AlbumHeader({
       <img
         src={bgUrl}
         alt=""
-        className={`absolute inset-0 h-full w-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-55" : "opacity-0"}`}
+        className={`absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] grayscale brightness-[0.48] contrast-110 transition-opacity duration-1000 ${bgLoaded ? "opacity-36" : "opacity-0"}`}
         onLoad={() => setBgLoaded(true)}
         onError={(event) => {
           (event.target as HTMLImageElement).style.display = "none";
         }}
       />
+      <div className="absolute inset-0 bg-black/30" />
 
       <div
         className="absolute inset-0"
         style={{
-          background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 28%, var(--gradient-bg-40) 52%, transparent 78%)",
-        }}
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 18%, var(--gradient-bg-40) 42%, transparent 72%)",
-        }}
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 28%)",
+          background:
+            "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.14) 34%, rgba(8, 10, 14, 0.46) 60%, var(--surface-app) 100%)",
         }}
       />
 
       <div className="absolute inset-0 flex items-end">
-        <div className="mx-auto flex w-full max-w-[1160px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
+        <div className="mx-auto flex w-full max-w-[1480px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
           <div className="relative group/cover flex-shrink-0">
             <ImageLightbox src={coverUrl} alt={`${resolvedDisplayName} cover art`}>
               <div className="h-[150px] w-[150px] overflow-hidden rounded-md ring-2 ring-white/10 shadow-2xl shadow-black/50 md:h-[200px] md:w-[200px]">
@@ -277,6 +330,37 @@ export function AlbumHeader({
                   Download
                 </a>
               </Button>
+              {isAdmin ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void queueAlbumMetadataAction("lyrics")}
+                    disabled={metadataAction !== null}
+                  >
+                    {metadataAction === "lyrics" ? <Loader2 size={14} className="mr-1 animate-spin" /> : <FileJson size={14} className="mr-1" />}
+                    Lyrics
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void queueAlbumMetadataAction("portable")}
+                    disabled={metadataAction !== null}
+                  >
+                    {metadataAction === "portable" ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Tags size={14} className="mr-1" />}
+                    Metadata
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void queueAlbumMetadataAction("export")}
+                    disabled={metadataAction !== null}
+                  >
+                    {metadataAction === "export" ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Archive size={14} className="mr-1" />}
+                    Export
+                  </Button>
+                </>
+              ) : null}
               {children}
             </div>
           </div>

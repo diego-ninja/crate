@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from crate.api.schemas.common import IdentityFieldsMixin
+
 
 class GenreArtistRef(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -35,7 +37,7 @@ class GenreAlbumRef(BaseModel):
     weight: float | None = None
 
 
-class GenreSummaryResponse(BaseModel):
+class GenreSummaryResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
@@ -106,7 +108,7 @@ class EqPresetUpdateResponse(BaseModel):
     eq_preset_resolved: dict[str, Any] | None = None
 
 
-class InvalidGenreTaxonomyNodeResponse(BaseModel):
+class InvalidGenreTaxonomyNodeResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
@@ -125,7 +127,7 @@ class GenreTaxonomyInvalidStatusResponse(BaseModel):
     items: list[InvalidGenreTaxonomyNodeResponse] = Field(default_factory=list)
 
 
-class GenreTaxonomyTreeNodeResponse(BaseModel):
+class GenreTaxonomyTreeNodeResponse(IdentityFieldsMixin):
     entity_uid: str | None = None
     slug: str
     name: str

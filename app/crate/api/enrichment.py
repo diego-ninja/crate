@@ -117,6 +117,17 @@ def get_artist_page_enrichment(name: str) -> dict:
                 "total_shows": len(setlist),
             }
         }
+    try:
+        live_setlist = setlistfm.get_probable_setlist(name)
+    except Exception:
+        live_setlist = None
+    if live_setlist:
+        return {
+            "setlist": {
+                "probable_setlist": live_setlist,
+                "total_shows": len(live_setlist),
+            }
+        }
     return {}
 
 

@@ -63,12 +63,18 @@ export function ArtistTopTracks() {
   const { playAll } = usePlayerActions();
   const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
     routeArtistSlug ? artistApiPath({ artistSlug: routeArtistSlug }) : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
     routeArtistSlug
       ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/top-tracks?count=50`
       : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
 
   useEffect(() => {
@@ -116,7 +122,7 @@ export function ArtistTopTracks() {
   }
 
   return (
-    <div className="space-y-6 pt-16">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button

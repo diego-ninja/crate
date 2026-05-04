@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@crate/ui/primitives/AppModal";
 import { QrCodeImage } from "@crate/ui/primitives/QrCodeImage";
 import { useAuth } from "@/contexts/AuthContext";
-import { type Track, usePlayer } from "@/contexts/PlayerContext";
+import { type Track, usePlayerActions, usePlayerProgress, usePlayerState } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { api, apiWsUrl } from "@/lib/api";
 
@@ -144,16 +144,16 @@ export function JamSession() {
   const navigate = useNavigate();
   const { roomId } = useParams<{ roomId: string }>();
   const { user } = useAuth();
+  const { currentTime } = usePlayerProgress();
+  const { isPlaying } = usePlayerState();
   const {
     currentTrack,
-    currentTime,
-    isPlaying,
     play,
     playAll,
     pause,
     resume,
     seek,
-  } = usePlayer();
+  } = usePlayerActions();
   const { data, loading, error } = useApi<JamRoom>(
     roomId ? `/api/jam/rooms/${roomId}` : null,
   );

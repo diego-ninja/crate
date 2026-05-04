@@ -14,10 +14,15 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "delete_album": "Album Deletion",
     "migrate_storage": "Storage Migration",
     "migrate_storage_v2": "Storage Migration v2",
+    "fix_artist": "Artist Fix",
+    "write_portable_metadata": "Portable Metadata",
+    "rehydrate_portable_metadata": "Portable Metadata Rehydrate",
+    "export_rich_metadata": "Rich Metadata Export",
     # Enrichment
     "enrich_artists": "Artist Enrichment",
     "enrich_artist": "Artist Enrichment",
     "enrich_all": "Full Enrichment",
+    "sync_lyrics": "Lyrics Sync",
     # Analysis
     "audio_analysis": "Audio Analysis",
     "bliss_analysis": "Bliss Similarity",
@@ -38,6 +43,8 @@ TASK_TYPE_LABELS: dict[str, str] = {
     # Popularity
     "update_popularity": "Popularity Update",
     "fetch_popularity": "Popularity Fetch",
+    # Playback delivery
+    "prepare_stream_variant": "Prepare Playback Stream",
     # Playlists
     "generate_system_playlist": "Playlist Generation",
     "refresh_system_smart_playlists": "Refresh Smart Playlists",
@@ -53,9 +60,14 @@ TASK_TYPE_ICONS: dict[str, str] = {
     "delete_album": "\U0001f5d1",
     "migrate_storage": "\U0001f4e6",
     "migrate_storage_v2": "\U0001f4e6",
+    "fix_artist": "\U0001f527",
+    "write_portable_metadata": "\U0001f4be",
+    "rehydrate_portable_metadata": "\U0001f4e5",
+    "export_rich_metadata": "\U0001f4e6",
     "enrich_artists": "\U0001f50e",
     "enrich_artist": "\U0001f50e",
     "enrich_all": "\U0001f50e",
+    "sync_lyrics": "\U0001f4dd",
     "audio_analysis": "\U0001f3b5",
     "bliss_analysis": "\U0001f9ec",
     "analyze_batch": "\U0001f3b5",
@@ -71,6 +83,7 @@ TASK_TYPE_ICONS: dict[str, str] = {
     "generate_playlist": "\U0001f3b6",
     "update_popularity": "\U0001f4ca",
     "fetch_popularity": "\U0001f4ca",
+    "prepare_stream_variant": "\U0001f3a7",
 }
 
 

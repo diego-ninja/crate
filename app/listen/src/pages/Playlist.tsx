@@ -92,6 +92,9 @@ export function Playlist() {
   const { id } = useParams<{ id: string }>();
   const { data, loading, refetch } = useApi<PlaylistData>(
     id ? `/api/playlists/${id}` : null,
+    "GET",
+    undefined,
+    { safetyNetMs: 120_000 },
   );
   const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
   const { playAll } = usePlayerActions();

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Sparkles, Radio, Disc3, UserRound, ChevronLeft, ChevronRight, Info } from "lucide-react";
 
 import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
@@ -30,6 +30,7 @@ import type {
 } from "./home-model";
 
 const numberFormatter = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const HERO_BACKGROUND_VERSION = "home-hero-bg-v2";
 
 function statValue(value: number): string {
   return numberFormatter.format(value || 0);
@@ -98,6 +99,125 @@ function radioArtwork(station: HomeRadioStation): string | null {
   }, { size: 256 }) || null;
 }
 
+function heroBackgroundSrc(hero: HomeHeroArtist): string | undefined {
+  const backgroundUrl = artistBackgroundApiUrl({
+    artistId: hero.id,
+    artistSlug: hero.slug,
+    artistName: hero.name,
+  }, { size: 1280 });
+  return backgroundUrl
+    ? `${backgroundUrl}${backgroundUrl.includes("?") ? "&" : "?"}v=${HERO_BACKGROUND_VERSION}`
+    : undefined;
+}
+
+function requestBackgroundWork(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+
+  if (idleWindow.requestIdleCallback) {
+    const handle = idleWindow.requestIdleCallback(callback, { timeout: 1500 });
+    return () => idleWindow.cancelIdleCallback?.(handle);
+  }
+
+  const handle = window.setTimeout(callback, 600);
+  return () => window.clearTimeout(handle);
+}
+
+function sameSet(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
+
+function useHeroBackgroundPreloader(heroes: HomeHeroArtist[], activeIndex: number): Set<string> {
+  const sources = useMemo(
+    () => heroes.map(heroBackgroundSrc).filter((src): src is string => Boolean(src)),
+    [heroes],
+  );
+  const [readySources, setReadySources] = useState<Set<string>>(() => new Set());
+  const readyRef = useRef<Set<string>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const allowed = new Set(sources);
+    readyRef.current = new Set([...readyRef.current].filter((src) => allowed.has(src)));
+    inFlightRef.current = new Set([...inFlightRef.current].filter((src) => allowed.has(src)));
+    setReadySources((prev) => {
+      const next = new Set([...prev].filter((src) => allowed.has(src)));
+      return sameSet(prev, next) ? prev : next;
+    });
+  }, [sources]);
+
+  useEffect(() => {
+    if (!sources.length || typeof window === "undefined") return;
+
+    let cancelled = false;
+    const started = new Set<string>();
+    const timeouts: number[] = [];
+
+    const markReady = (src: string) => {
+      readyRef.current.add(src);
+      setReadySources((prev) => {
+        if (prev.has(src)) return prev;
+        const next = new Set(prev);
+        next.add(src);
+        return next;
+      });
+    };
+
+    const loadSource = (src: string | undefined, priority: "high" | "low") => {
+      if (!src || readyRef.current.has(src) || inFlightRef.current.has(src)) return;
+      inFlightRef.current.add(src);
+      started.add(src);
+
+      const img = new Image();
+      img.decoding = "async";
+      if ("fetchPriority" in img) {
+        (img as HTMLImageElement & { fetchPriority: "high" | "low" | "auto" }).fetchPriority = priority;
+      }
+      img.onload = () => {
+        inFlightRef.current.delete(src);
+        if (!cancelled) markReady(src);
+      };
+      img.onerror = () => {
+        inFlightRef.current.delete(src);
+      };
+      img.src = src;
+    };
+
+    const current = sources[Math.max(0, Math.min(activeIndex, sources.length - 1))];
+    const next = sources.length > 1 ? sources[(activeIndex + 1) % sources.length] : undefined;
+    const immediate = new Set([current, next].filter((src): src is string => Boolean(src)));
+
+    immediate.forEach((src) => loadSource(src, "high"));
+
+    const cancelBackgroundWork = requestBackgroundWork(() => {
+      sources
+        .filter((src) => !immediate.has(src))
+        .forEach((src, index) => {
+          const timeout = window.setTimeout(() => {
+            if (!cancelled) loadSource(src, "low");
+          }, index * 220);
+          timeouts.push(timeout);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelBackgroundWork();
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+      started.forEach((src) => inFlightRef.current.delete(src));
+    };
+  }, [activeIndex, sources]);
+
+  return readySources;
+}
+
 export function HomeTasteHero({
   heroes,
   isFollowing,
@@ -117,6 +237,7 @@ export function HomeTasteHero({
   const autoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchRef = useRef<{ x: number; t: number } | null>(null);
   const count = heroes.length;
+  const readyBackgrounds = useHeroBackgroundPreloader(heroes, idx);
 
   const go = (to: number) => setIdx(((to % count) + count) % count);
 
@@ -156,6 +277,36 @@ export function HomeTasteHero({
 
   if (!count) return null;
 
+  const slides = heroes.map((hero, i) => {
+    const backgroundSrc = heroBackgroundSrc(hero);
+    const backgroundReady = Boolean(backgroundSrc && readyBackgrounds.has(backgroundSrc));
+    const renderPreparedBackground =
+      i === idx ||
+      i === (idx + 1) % count ||
+      i === (idx - 1 + count) % count;
+
+    return (
+      <div
+        key={hero.id}
+        className={cn(
+          "transition-opacity duration-500 ease-in-out",
+          i === idx ? "relative z-10 opacity-100" : "pointer-events-none absolute inset-0 z-0 opacity-0",
+        )}
+        aria-hidden={i !== idx}
+      >
+        <HeroSlide
+          hero={hero}
+          backgroundSrc={backgroundReady && renderPreparedBackground ? backgroundSrc : undefined}
+          following={isFollowing(hero.id)}
+          onOpenArtist={() => onOpenArtist(hero)}
+          onPlay={() => onPlay(hero)}
+          onToggleFollow={() => onToggleFollow(hero)}
+          onInfo={() => onInfo(hero)}
+        />
+      </div>
+    );
+  });
+
   return (
     <div
       className="relative"
@@ -165,25 +316,7 @@ export function HomeTasteHero({
       onTouchEnd={onTouchEnd}
     >
       {/* Stack all slides — only active one is visible */}
-      {heroes.map((hero, i) => (
-        <div
-          key={hero.id}
-          className={cn(
-            "transition-opacity duration-500 ease-in-out",
-            i === idx ? "relative z-10 opacity-100" : "pointer-events-none absolute inset-0 z-0 opacity-0",
-          )}
-          aria-hidden={i !== idx}
-        >
-          <HeroSlide
-            hero={hero}
-            following={isFollowing(hero.id)}
-            onOpenArtist={() => onOpenArtist(hero)}
-            onPlay={() => onPlay(hero)}
-            onToggleFollow={() => onToggleFollow(hero)}
-            onInfo={() => onInfo(hero)}
-          />
-        </div>
-      ))}
+      {slides}
 
       {/* Nav arrows */}
       {count > 1 && (
@@ -226,6 +359,7 @@ export function HomeTasteHero({
 
 function HeroSlide({
   hero,
+  backgroundSrc,
   following,
   onOpenArtist,
   onPlay,
@@ -233,30 +367,13 @@ function HeroSlide({
   onInfo,
 }: {
   hero: HomeHeroArtist;
+  backgroundSrc?: string;
   following: boolean;
   onOpenArtist: () => void;
   onPlay: () => void;
   onToggleFollow: () => void;
   onInfo: () => void;
 }) {
-  const backgroundUrl = artistBackgroundApiUrl({
-    artistId: hero.id,
-    artistSlug: hero.slug,
-    artistName: hero.name,
-  }, { size: 1280 });
-  const backgroundSrc = backgroundUrl
-    ? `${backgroundUrl}${backgroundUrl.includes("?") ? "&" : "?"}v=home-hero-bg-v2`
-    : undefined;
-  const [bgLoaded, setBgLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!backgroundSrc) return;
-    const img = new Image();
-    img.src = backgroundSrc;
-    img.onload = () => setBgLoaded(true);
-    img.onerror = () => setBgLoaded(false);
-  }, [backgroundSrc]);
-
   const genres = (hero as any).genres as string[] | undefined;
 
   return (
@@ -268,11 +385,12 @@ function HeroSlide({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenArtist(); } }}
     >
       <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(6,10,14,0.98)_0%,rgba(10,16,22,0.96)_52%,rgba(4,9,13,0.98)_100%)]" />
-      {bgLoaded && backgroundSrc ? (
+      {backgroundSrc ? (
         <img
           src={backgroundSrc}
           alt=""
           aria-hidden="true"
+          decoding="async"
           className="absolute inset-0 h-full w-full object-cover object-top"
         />
       ) : null}
@@ -363,7 +481,7 @@ export function RecentEntityRow({
             className="h-full w-full rounded-xl"
           />
         ) : artworkUrl ? (
-          <img src={artworkUrl} alt="" className="h-full w-full object-cover" />
+          <img src={artworkUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-white/5">
             {item.type === "artist" ? (
@@ -869,12 +987,15 @@ export function openRecentItemPath(item: HomeRecentItem): string {
   if (item.type === "artist") {
     return artistPagePath({
       artistId: item.artist_id,
+      artistEntityUid: item.artist_entity_uid,
       artistSlug: item.artist_slug,
       artistName: item.artist_name,
     });
   }
   return albumPagePath({
     albumId: item.album_id,
+    albumEntityUid: item.album_entity_uid,
+    artistEntityUid: item.artist_entity_uid,
     albumSlug: item.album_slug,
     artistName: item.artist_name,
     albumName: item.album_name,
