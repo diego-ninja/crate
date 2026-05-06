@@ -6,6 +6,7 @@ import logging
 
 from crate.db.domain_events import list_domain_events, mark_domain_events_processed
 from crate.db.home import get_cached_home_discovery
+from crate.db.home_warming import list_recent_home_user_ids
 from crate.db.ops_snapshot import get_cached_ops_snapshot
 from crate.db.queries.tasks import has_inflight_acquisition_for_artist
 from crate.content import queue_process_new_content_if_needed
@@ -51,6 +52,14 @@ def _queue_post_acquisition_processing(payload: dict) -> bool:
 
     queue_process_new_content_if_needed(artist_name, force=True)
     return True
+
+
+def warm_recent_home_discovery_snapshots(*, window_minutes: int = 30, limit: int = 10) -> int:
+    warmed = 0
+    for user_id in list_recent_home_user_ids(window_minutes=window_minutes, limit=limit):
+        get_cached_home_discovery(user_id, fresh=True)
+        warmed += 1
+    return warmed
 
 
 def process_domain_events(*, limit: int = 100) -> dict[str, int]:

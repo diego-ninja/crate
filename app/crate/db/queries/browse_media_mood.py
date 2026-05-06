@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from sqlalchemy import text
 
 from crate.db.tx import read_scope
+
+_MOOD_COLUMNS = {
+    "acousticness",
+    "bpm",
+    "danceability",
+    "energy",
+    "instrumentalness",
+    "valence",
+}
 
 
 def _convert_mood_params(conditions: list[str], params: list) -> tuple[list[str], dict]:
@@ -20,6 +32,23 @@ def _convert_mood_params(conditions: list[str], params: list) -> tuple[list[str]
     return named_conditions, named_params
 
 
+def _mood_filter_expression(filters: Mapping[str, Any], prefix: str) -> tuple[str, dict[str, Any]]:
+    clauses = ["bpm IS NOT NULL"]
+    params: dict[str, Any] = {}
+    for index, (key, value) in enumerate(filters.items()):
+        try:
+            column, suffix = key.rsplit("_", 1)
+        except ValueError as exc:
+            raise ValueError(f"Invalid mood filter: {key}") from exc
+        if column not in _MOOD_COLUMNS or suffix not in {"min", "max"}:
+            raise ValueError(f"Invalid mood filter: {key}")
+        param_name = f"{prefix}_{index}"
+        operator = ">=" if suffix == "min" else "<="
+        clauses.append(f"{column} {operator} :{param_name}")
+        params[param_name] = value
+    return " AND ".join(clauses), params
+
+
 def count_mood_tracks(conditions: list[str], params: list) -> int:
     named_conditions, named_params = _convert_mood_params(conditions, params)
     with read_scope() as session:
@@ -28,6 +57,30 @@ def count_mood_tracks(conditions: list[str], params: list) -> int:
             named_params,
         ).mappings().first()
         return row["cnt"]
+
+
+def count_mood_presets(presets: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
+    if not presets:
+        return {}
+
+    select_parts: list[str] = []
+    params: dict[str, Any] = {}
+    aliases: dict[str, str] = {}
+    for index, (name, filters) in enumerate(presets.items()):
+        alias = f"mood_{index}"
+        expression, expression_params = _mood_filter_expression(filters, alias)
+        select_parts.append(f"COUNT(*) FILTER (WHERE {expression}) AS {alias}")
+        params.update(expression_params)
+        aliases[name] = alias
+
+    with read_scope() as session:
+        row = session.execute(
+            text(f"SELECT {', '.join(select_parts)} FROM library_tracks WHERE bpm IS NOT NULL"),
+            params,
+        ).mappings().first()
+
+    counts = dict(row or {})
+    return {name: int(counts.get(alias) or 0) for name, alias in aliases.items()}
 
 
 def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dict]:
@@ -65,6 +118,7 @@ def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dic
 
 
 __all__ = [
+    "count_mood_presets",
     "count_mood_tracks",
     "get_mood_tracks",
 ]

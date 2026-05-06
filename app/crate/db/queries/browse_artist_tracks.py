@@ -5,11 +5,17 @@ from sqlalchemy import text
 from crate.db.tx import read_scope
 
 
-def get_artist_all_tracks(artist_name: str) -> list[dict]:
+def get_artist_all_tracks(artist_name: str, limit: int | None = None) -> list[dict]:
+    params: dict[str, object] = {"artist_name": artist_name}
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT :limit"
+        params["limit"] = max(1, int(limit))
+
     with read_scope() as session:
         rows = session.execute(
             text(
-                """
+                f"""
                 SELECT
                     t.id, t.title, t.artist, t.album, t.path, t.duration,
                     t.track_number, t.format,
@@ -22,9 +28,14 @@ def get_artist_all_tracks(artist_name: str) -> list[dict]:
                 LEFT JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = t.artist
                 WHERE t.artist = :artist_name
+                ORDER BY COALESCE(t.lastfm_playcount, 0) DESC,
+                    a.year DESC NULLS LAST,
+                    t.track_number ASC NULLS LAST,
+                    t.title ASC
+                {limit_sql}
                 """
             ),
-            {"artist_name": artist_name},
+            params,
         ).mappings().all()
         return [dict(row) for row in rows]
 

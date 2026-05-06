@@ -165,6 +165,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
     last_import_check = 0
     last_cleanup = 0
     last_status_update = 0
+    last_analysis_status_update = 0
     last_metrics_flush = 0
     last_shadow_backfill = 0
     last_media_worker_bridge = 0
@@ -299,6 +300,26 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                     pass
             except Exception:
                 pass
+
+        # Analysis coverage is expensive to compute; refresh it off the HTTP path.
+        if now - last_analysis_status_update > 120:
+            last_analysis_status_update = now
+            try:
+                from crate.analysis_daemon import get_analysis_status
+                from crate.db.ops_runtime import set_ops_runtime_state
+                from crate.db.queries.management import get_last_analyzed_track, get_last_bliss_track
+
+                status = get_analysis_status()
+                set_ops_runtime_state(
+                    "analysis_status",
+                    {
+                        **status,
+                        "last_analyzed": get_last_analyzed_track(),
+                        "last_bliss": get_last_bliss_track(),
+                    },
+                )
+            except Exception:
+                log.debug("Analysis status refresh failed", exc_info=True)
 
         # Metrics flush every 5 minutes
         if now - last_metrics_flush > 300:

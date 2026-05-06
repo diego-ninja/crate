@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+import json
+
+from sqlalchemy import text
+
 from crate.db.home_cache import _get_or_compute_home_cache
 from crate.db.queries.home import get_followed_artist_genre_names
-from crate.db.queries.user_library import (
-    get_followed_artists,
-    get_saved_albums,
-    get_top_albums,
-    get_top_artists,
-    get_top_genres,
-)
 from crate.db.releases import get_new_releases
+from crate.db.tx import read_scope
 from crate.genre_taxonomy import choose_mix_seed_genres, summarize_taste_genres
 
 
@@ -40,6 +38,141 @@ def _derive_home_genres(top_genres: list[dict], fallback_names: list[str], limit
     )
 
 
+def _coerce_json_rows(value) -> list[dict]:
+    if isinstance(value, list):
+        return [dict(item) for item in value if isinstance(item, dict)]
+    if isinstance(value, str):
+        try:
+            loaded = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(loaded, list):
+            return [dict(item) for item in loaded if isinstance(item, dict)]
+    return []
+
+
+def _load_home_context_rows(
+    user_id: int,
+    *,
+    top_artist_limit: int,
+    top_album_limit: int,
+    top_genre_limit: int,
+) -> dict[str, list[dict]]:
+    with read_scope() as session:
+        row = session.execute(
+            text(
+                """
+                WITH followed AS (
+                    SELECT
+                        uf.artist_name,
+                        uf.created_at,
+                        la.id AS artist_id,
+                        la.entity_uid::text AS artist_entity_uid,
+                        la.slug AS artist_slug,
+                        la.album_count,
+                        la.track_count,
+                        la.has_photo
+                    FROM user_follows uf
+                    LEFT JOIN library_artists la ON la.name = uf.artist_name
+                    WHERE uf.user_id = :user_id
+                    ORDER BY uf.created_at DESC
+                ),
+                saved_albums AS (
+                    SELECT
+                        usa.created_at AS saved_at,
+                        la.id,
+                        la.entity_uid::text AS album_entity_uid,
+                        la.slug,
+                        la.artist,
+                        art.id AS artist_id,
+                        art.entity_uid::text AS artist_entity_uid,
+                        art.slug AS artist_slug,
+                        la.name,
+                        la.year,
+                        la.has_cover,
+                        la.track_count,
+                        la.total_duration
+                    FROM user_saved_albums usa
+                    JOIN library_albums la ON la.id = usa.album_id
+                    LEFT JOIN library_artists art ON art.name = la.artist
+                    WHERE usa.user_id = :user_id
+                    ORDER BY usa.created_at DESC
+                ),
+                top_artists AS (
+                    SELECT
+                        uas.artist_name,
+                        la.id AS artist_id,
+                        la.slug AS artist_slug,
+                        uas.play_count,
+                        uas.complete_play_count,
+                        uas.minutes_listened,
+                        uas.first_played_at,
+                        uas.last_played_at
+                    FROM user_artist_stats uas
+                    LEFT JOIN library_artists la ON la.name = uas.artist_name
+                    WHERE uas.user_id = :user_id AND uas.stat_window = '90d'
+                    ORDER BY uas.play_count DESC, uas.minutes_listened DESC, uas.last_played_at DESC
+                    LIMIT :top_artist_limit
+                ),
+                top_albums AS (
+                    SELECT
+                        uas.artist,
+                        art.id AS artist_id,
+                        art.slug AS artist_slug,
+                        uas.album,
+                        alb.id AS album_id,
+                        alb.slug AS album_slug,
+                        uas.play_count,
+                        uas.complete_play_count,
+                        uas.minutes_listened,
+                        uas.first_played_at,
+                        uas.last_played_at
+                    FROM user_album_stats uas
+                    LEFT JOIN library_albums alb ON alb.artist = uas.artist AND alb.name = uas.album
+                    LEFT JOIN library_artists art ON art.name = uas.artist
+                    WHERE uas.user_id = :user_id AND uas.stat_window = '90d'
+                    ORDER BY uas.play_count DESC, uas.minutes_listened DESC, uas.last_played_at DESC
+                    LIMIT :top_album_limit
+                ),
+                top_genres AS (
+                    SELECT
+                        genre_name,
+                        play_count,
+                        complete_play_count,
+                        minutes_listened,
+                        first_played_at,
+                        last_played_at
+                    FROM user_genre_stats
+                    WHERE user_id = :user_id AND stat_window = '90d'
+                    ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+                    LIMIT :top_genre_limit
+                )
+                SELECT
+                    COALESCE((SELECT jsonb_agg(to_jsonb(followed) ORDER BY followed.created_at DESC) FROM followed), '[]'::jsonb) AS followed,
+                    COALESCE((SELECT jsonb_agg(to_jsonb(saved_albums) ORDER BY saved_albums.saved_at DESC) FROM saved_albums), '[]'::jsonb) AS saved_albums,
+                    COALESCE((SELECT jsonb_agg(to_jsonb(top_artists) ORDER BY top_artists.play_count DESC, top_artists.minutes_listened DESC, top_artists.last_played_at DESC) FROM top_artists), '[]'::jsonb) AS top_artists,
+                    COALESCE((SELECT jsonb_agg(to_jsonb(top_albums) ORDER BY top_albums.play_count DESC, top_albums.minutes_listened DESC, top_albums.last_played_at DESC) FROM top_albums), '[]'::jsonb) AS top_albums,
+                    COALESCE((SELECT jsonb_agg(to_jsonb(top_genres) ORDER BY top_genres.play_count DESC, top_genres.minutes_listened DESC, top_genres.last_played_at DESC) FROM top_genres), '[]'::jsonb) AS top_genres
+                """
+            ),
+            {
+                "user_id": user_id,
+                "top_artist_limit": top_artist_limit,
+                "top_album_limit": top_album_limit,
+                "top_genre_limit": top_genre_limit,
+            },
+        ).mappings().first()
+
+    data = dict(row or {})
+    return {
+        "followed": _coerce_json_rows(data.get("followed")),
+        "saved_albums": _coerce_json_rows(data.get("saved_albums")),
+        "top_artists": _coerce_json_rows(data.get("top_artists")),
+        "top_albums": _coerce_json_rows(data.get("top_albums")),
+        "top_genres": _coerce_json_rows(data.get("top_genres")),
+    }
+
+
 def get_home_context(
     user_id: int,
     *,
@@ -47,11 +180,17 @@ def get_home_context(
     top_album_limit: int = 12,
     top_genre_limit: int = 8,
 ) -> dict:
-    followed = get_followed_artists(user_id)
-    saved_albums = get_saved_albums(user_id)
-    top_artists = get_top_artists(user_id, window="90d", limit=top_artist_limit)
-    top_albums = get_top_albums(user_id, window="90d", limit=top_album_limit)
-    top_genres = get_top_genres(user_id, window="90d", limit=top_genre_limit)
+    rows = _load_home_context_rows(
+        user_id,
+        top_artist_limit=top_artist_limit,
+        top_album_limit=top_album_limit,
+        top_genre_limit=top_genre_limit,
+    )
+    followed = rows["followed"]
+    saved_albums = rows["saved_albums"]
+    top_artists = rows["top_artists"]
+    top_albums = rows["top_albums"]
+    top_genres = rows["top_genres"]
 
     followed_names_lower = [(row.get("artist_name") or "").lower() for row in followed if row.get("artist_name")]
     top_artist_names_lower = [(row.get("artist_name") or "").lower() for row in top_artists if row.get("artist_name")]

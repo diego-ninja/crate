@@ -10,6 +10,7 @@ from crate.db.queries.home_catalog import (
 from crate.db.queries.home_playlists import get_recent_playlist_rows_with_artwork
 from crate.db.queries.home_tracks import (
     get_artist_core_track_rows,
+    get_artists_core_track_rows,
     get_discovery_track_rows,
     get_recent_interest_track_rows,
     get_track_candidates_for_album_ids,
@@ -17,6 +18,7 @@ from crate.db.queries.home_tracks import (
 
 __all__ = [
     "get_artist_core_track_rows",
+    "get_artists_core_track_rows",
     "get_artist_genres_map",
     "get_discovery_track_rows",
     "get_followed_artist_genre_names",

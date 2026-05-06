@@ -6,6 +6,7 @@ from crate.db.queries.analytics_overview_distributions import (
     get_format_distribution,
     get_genre_distribution,
     get_sizes_by_format_gb,
+    get_track_distribution_summary,
 )
 from crate.db.queries.analytics_overview_stats import (
     get_avg_tracks_per_album,
@@ -38,5 +39,6 @@ __all__ = [
     "get_stats_top_genres",
     "get_timeline_albums",
     "get_top_artists_by_albums",
+    "get_track_distribution_summary",
     "get_total_duration_hours",
 ]

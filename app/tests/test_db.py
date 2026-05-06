@@ -460,6 +460,94 @@ class TestPlaylistTrackEntityRefs:
 
 
 class TestAnalyticsQueries:
+    def test_count_mood_presets_counts_multiple_presets_in_one_read(self, pg_db):
+        from crate.db.queries.browse_media_mood import count_mood_presets
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Mood Browse Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Mood Browse Artist",
+                "name": "Mood Browse Album",
+                "path": "/music/Mood Browse Artist/Mood Browse Album",
+                "track_count": 3,
+                "total_size": 3000,
+                "total_duration": 540.0,
+                "formats": ["flac"],
+            }
+        )
+        for index, title in enumerate(["Fast", "Calm", "Bright"], start=1):
+            pg_db.upsert_track(
+                {
+                    "album_id": album_id,
+                    "artist": "Mood Browse Artist",
+                    "album": "Mood Browse Album",
+                    "filename": f"{index:02d}-{title.lower()}.flac",
+                    "title": title,
+                    "path": f"/music/Mood Browse Artist/Mood Browse Album/{index:02d}-{title.lower()}.flac",
+                    "duration": 180.0,
+                    "size": 1000,
+                    "format": "flac",
+                }
+            )
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT id, title
+                    FROM library_tracks
+                    WHERE album_id = :album_id
+                    """
+                ),
+                {"album_id": album_id},
+            ).mappings().all()
+            values = {
+                "Fast": {"bpm": 160, "energy": 0.9, "danceability": 0.6, "valence": 0.2},
+                "Calm": {"bpm": 80, "energy": 0.2, "danceability": 0.3, "valence": 0.4},
+                "Bright": {"bpm": 120, "energy": 0.5, "danceability": 0.7, "valence": 0.8},
+            }
+            for row in rows:
+                audio = values[row["title"]]
+                session.execute(
+                    text(
+                        """
+                        UPDATE library_tracks
+                        SET bpm = :bpm,
+                            energy = :energy,
+                            danceability = :danceability,
+                            valence = :valence
+                        WHERE id = :id
+                        """
+                    ),
+                    {"id": row["id"], **audio},
+                )
+
+        counts = count_mood_presets(
+            {
+                "energetic": {"energy_min": 0.7, "danceability_min": 0.5},
+                "chill": {"energy_max": 0.4, "valence_min": 0.3},
+                "happy": {"valence_min": 0.6, "energy_min": 0.4},
+            }
+        )
+
+        assert counts == {"energetic": 1, "chill": 1, "happy": 1}
+
+    def test_get_all_artist_genre_map_can_scope_to_artist_names(self, pg_db):
+        from crate.db.queries.browse_artist_genres import get_all_artist_genre_map
+
+        pg_db.upsert_artist({"name": "Scoped Genre A"})
+        pg_db.upsert_artist({"name": "Scoped Genre B"})
+        pg_db.set_artist_genres(
+            "Scoped Genre A",
+            [("post-punk", 0.9, "test"), ("noise rock", 0.5, "test")],
+        )
+        pg_db.set_artist_genres("Scoped Genre B", [("ambient", 0.7, "test")])
+
+        genre_map = get_all_artist_genre_map(["Scoped Genre A"], limit=1)
+
+        assert genre_map == {"Scoped Genre A": ["post-punk"]}
+
     def test_get_insights_mood_distribution_aggregates_in_sql_with_shadow_fallback(self, pg_db):
         from crate.db.queries.analytics_audio_feature_queries import get_insights_mood_distribution
         from crate.db.tx import transaction_scope
@@ -1583,12 +1671,15 @@ class TestHomeCaching:
     def test_get_home_context_skips_fallback_genre_query_when_top_genres_exist(self):
         from crate.db.home import _get_home_context
 
-        with patch("crate.db.home.get_followed_artists", return_value=[{"artist_name": "Converge"}]), \
-             patch("crate.db.home.get_saved_albums", return_value=[]), \
-             patch("crate.db.home.get_top_artists", return_value=[{"artist_name": "Converge"}]), \
-             patch("crate.db.home.get_top_albums", return_value=[]), \
-             patch("crate.db.home.get_top_genres", return_value=[{"genre_name": "Metalcore", "play_count": 10}]), \
-             patch("crate.db.home.get_followed_artist_genre_names", side_effect=AssertionError("fallback genre query should not run")):
+        rows = {
+            "followed": [{"artist_name": "Converge"}],
+            "saved_albums": [],
+            "top_artists": [{"artist_name": "Converge"}],
+            "top_albums": [],
+            "top_genres": [{"genre_name": "Metalcore", "play_count": 10}],
+        }
+        with patch("crate.db.home_context._load_home_context_rows", return_value=rows), \
+             patch("crate.db.home_context.get_followed_artist_genre_names", side_effect=AssertionError("fallback genre query should not run")):
             context = _get_home_context(1)
 
         assert context["top_genres_lower"]

@@ -115,26 +115,55 @@ def get_task_activity_snapshot(*, running_limit: int = 100, pending_limit: int =
                     FROM tasks
                     ORDER BY updated_at DESC
                     LIMIT :recent_limit
+                ),
+                task_counts AS MATERIALIZED (
+                    SELECT
+                        COUNT(*) FILTER (
+                            WHERE status IN ('running', 'delegated', 'completing')
+                        ) AS running_count,
+                        COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+                        jsonb_build_object(
+                            'fast', COUNT(*) FILTER (
+                                WHERE status IN ('running', 'delegated', 'completing') AND pool = 'fast'
+                            ),
+                            'default', COUNT(*) FILTER (
+                                WHERE status IN ('running', 'delegated', 'completing')
+                                  AND COALESCE(pool, 'default') = 'default'
+                            ),
+                            'heavy', COUNT(*) FILTER (
+                                WHERE status IN ('running', 'delegated', 'completing') AND pool = 'heavy'
+                            ),
+                            'maintenance', COUNT(*) FILTER (
+                                WHERE status IN ('running', 'delegated', 'completing') AND pool = 'maintenance'
+                            ),
+                            'playback', COUNT(*) FILTER (
+                                WHERE status IN ('running', 'delegated', 'completing') AND pool = 'playback'
+                            )
+                        ) AS running_by_pool,
+                        jsonb_build_object(
+                            'fast', COUNT(*) FILTER (WHERE status = 'pending' AND pool = 'fast'),
+                            'default', COUNT(*) FILTER (
+                                WHERE status = 'pending' AND COALESCE(pool, 'default') = 'default'
+                            ),
+                            'heavy', COUNT(*) FILTER (WHERE status = 'pending' AND pool = 'heavy'),
+                            'maintenance', COUNT(*) FILTER (WHERE status = 'pending' AND pool = 'maintenance'),
+                            'playback', COUNT(*) FILTER (WHERE status = 'pending' AND pool = 'playback')
+                        ) AS pending_by_pool,
+                        COUNT(*) FILTER (
+                            WHERE status = 'running' AND type = ANY(:db_heavy_types)
+                        ) AS db_heavy_running_count,
+                        COUNT(*) FILTER (
+                            WHERE status = 'pending' AND type = ANY(:db_heavy_types)
+                        ) AS db_heavy_pending_count
+                    FROM tasks
                 )
                 SELECT
-                    (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing')) AS running_count,
-                    (SELECT COUNT(*) FROM tasks WHERE status = 'pending') AS pending_count,
-                    jsonb_build_object(
-                        'fast', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'fast'),
-                        'default', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND COALESCE(pool, 'default') = 'default'),
-                        'heavy', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'heavy'),
-                        'maintenance', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'maintenance'),
-                        'playback', (SELECT COUNT(*) FROM tasks WHERE status IN ('running', 'delegated', 'completing') AND pool = 'playback')
-                    ) AS running_by_pool,
-                    jsonb_build_object(
-                        'fast', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'fast'),
-                        'default', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND COALESCE(pool, 'default') = 'default'),
-                        'heavy', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'heavy'),
-                        'maintenance', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'maintenance'),
-                        'playback', (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND pool = 'playback')
-                    ) AS pending_by_pool,
-                    (SELECT COUNT(*) FROM tasks WHERE status = 'running' AND type = ANY(:db_heavy_types)) AS db_heavy_running_count,
-                    (SELECT COUNT(*) FROM tasks WHERE status = 'pending' AND type = ANY(:db_heavy_types)) AS db_heavy_pending_count,
+                    task_counts.running_count,
+                    task_counts.pending_count,
+                    task_counts.running_by_pool,
+                    task_counts.pending_by_pool,
+                    task_counts.db_heavy_running_count,
+                    task_counts.db_heavy_pending_count,
                     COALESCE(
                         (SELECT jsonb_agg(to_jsonb(running) ORDER BY running.priority ASC, running.updated_at DESC) FROM running),
                         '[]'::jsonb
@@ -147,6 +176,7 @@ def get_task_activity_snapshot(*, running_limit: int = 100, pending_limit: int =
                         (SELECT jsonb_agg(to_jsonb(recent) ORDER BY recent.updated_at DESC) FROM recent),
                         '[]'::jsonb
                     ) AS recent_tasks
+                FROM task_counts
                 """
             ),
             params,

@@ -44,3 +44,36 @@ def test_build_live_activity_payload_prefers_worker_runtime_state(monkeypatch):
     ]
     assert status["scanning"] is True
     assert status["progress"] == {"phase": "scan"}
+
+
+def test_build_analysis_payload_uses_stale_runtime_state_without_recomputing(monkeypatch):
+    from crate.db import ops_snapshot_pipeline
+
+    calls: list[int | None] = []
+
+    def fake_get_ops_runtime_state(key, *, max_age_seconds=None):
+        calls.append(max_age_seconds)
+        if max_age_seconds is None:
+            return {"total": 10, "analysis_done": 8}
+        return None
+
+    monkeypatch.setattr(ops_snapshot_pipeline, "get_ops_runtime_state", fake_get_ops_runtime_state)
+
+    payload = ops_snapshot_pipeline.build_analysis_payload()
+
+    assert payload["total"] == 10
+    assert payload["analysis_done"] == 8
+    assert payload["stale"] is True
+    assert calls == [180, None]
+
+
+def test_build_analysis_payload_returns_empty_when_runtime_state_missing(monkeypatch):
+    from crate.db import ops_snapshot_pipeline
+
+    monkeypatch.setattr(ops_snapshot_pipeline, "get_ops_runtime_state", lambda key, *, max_age_seconds=None: None)
+
+    payload = ops_snapshot_pipeline.build_analysis_payload()
+
+    assert payload["unavailable"] is True
+    assert payload["stale"] is True
+    assert payload["total"] == 0

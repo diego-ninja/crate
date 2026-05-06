@@ -24,7 +24,7 @@ from crate.db.repositories.library import (
     get_library_artist_by_slug,
     get_library_tracks,
 )
-from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
+from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genre_profile
 from crate.db.queries.lyrics import get_album_track_lyrics_status
 from crate.db.repositories.tasks import create_task
 from crate.slugs import build_public_album_slug
@@ -230,8 +230,9 @@ def api_album(request: Request, artist: str, album: str):
     total_size = sum(track.get("size", 0) or 0 for track in tracks_data)
     total_length = sum(track["length_sec"] for track in track_list)
 
-    album_genres = get_album_genres_list(album_data["id"])
-    genre_profile = build_genre_profile(get_album_genre_profile(album_data["id"]), limit=6)
+    genre_rows = get_album_genre_profile(album_data["id"], limit=8)
+    album_genres = [row["name"] for row in genre_rows]
+    genre_profile = build_genre_profile(genre_rows, limit=6)
 
     if album_genres:
         album_tags["genre"] = ", ".join(album_genres)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from crate.db.home_builder_discovery import _build_artist_core_rows
-from crate.db.home_builder_shared import _artwork_artists, _artwork_tracks
+from crate.db.home_builder_shared import _artwork_artists, _artwork_tracks, _select_diverse_tracks_with_backfill
+from crate.db.queries.home import get_artists_core_track_rows
 
 
 def _build_radio_stations(top_artists: list[dict], top_albums: list[dict], limit: int) -> list[dict]:
@@ -74,17 +75,35 @@ def _build_favorite_artists(top_artists: list[dict], limit: int) -> list[dict]:
 
 def _build_core_playlists(user_id: int, top_artists: list[dict], limit: int, track_limit: int = 8) -> list[dict]:
     essentials: list[dict] = []
-    for row in top_artists:
+    candidates = [
+        row
+        for row in top_artists
+        if row.get("artist_id") is not None and (row.get("artist_name") or "")
+    ]
+    artist_ids = [int(row["artist_id"]) for row in candidates[: max(limit * 2, limit)]]
+    rows_by_artist: dict[int, list[dict]] = {}
+    for track in get_artists_core_track_rows(artist_ids=artist_ids, per_artist_limit=track_limit):
+        artist_id = track.get("artist_id")
+        if artist_id is None:
+            continue
+        rows_by_artist.setdefault(int(artist_id), []).append(track)
+
+    for row in candidates:
         artist_id = row.get("artist_id")
         artist_name = row.get("artist_name") or ""
-        if artist_id is None or not artist_name:
-            continue
-        rows = _build_artist_core_rows(
-            user_id,
-            artist_id=artist_id,
-            artist_name=artist_name,
+        rows = _select_diverse_tracks_with_backfill(
+            rows_by_artist.get(int(artist_id), []),
             limit=track_limit,
+            max_per_artist=track_limit,
+            max_per_album=2,
         )
+        if not rows:
+            rows = _build_artist_core_rows(
+                user_id,
+                artist_id=artist_id,
+                artist_name=artist_name,
+                limit=track_limit,
+            )
         if not rows:
             continue
         essentials.append(

@@ -45,6 +45,20 @@ def test_process_domain_events_noops_when_empty(monkeypatch):
     assert result == {"processed": 0, "ops_refreshes": 0, "home_refreshes": 0}
 
 
+def test_warm_recent_home_discovery_snapshots_refreshes_recent_users(monkeypatch):
+    from crate import projector
+
+    calls = []
+
+    monkeypatch.setattr(projector, "list_recent_home_user_ids", lambda window_minutes=30, limit=10: [7, 9])
+    monkeypatch.setattr(projector, "get_cached_home_discovery", lambda user_id, fresh=False: calls.append((user_id, fresh)) or {})
+
+    warmed = projector.warm_recent_home_discovery_snapshots()
+
+    assert warmed == 2
+    assert calls == [(7, True), (9, True)]
+
+
 def test_process_domain_events_refreshes_home_for_semantic_user_event(monkeypatch):
     from crate import projector
 

@@ -12,7 +12,7 @@ from crate.db.ui_snapshot_store import get_or_build_ui_snapshot
 from crate.db.queries.tasks import get_task_activity_snapshot, list_tasks
 
 TASKS_SNAPSHOT_SCOPE = "ops:tasks"
-TASKS_SNAPSHOT_MAX_AGE = 10
+TASKS_SNAPSHOT_MAX_AGE = 30
 TASKS_SNAPSHOT_STALE_MAX_AGE = 120
 TASKS_SURFACE_STREAM_CHANNEL = "crate:sse:admin:tasks"
 

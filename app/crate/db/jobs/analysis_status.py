@@ -7,12 +7,12 @@ import shutil
 from sqlalchemy import text
 
 from crate.db.repositories.portable_metadata import get_portable_metadata_status
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 
 
 def get_analysis_status() -> dict:
     """Return current analysis progress for both daemons."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         total = int(session.execute(text("SELECT COUNT(*) AS cnt FROM library_tracks")).scalar() or 0)
         rows = session.execute(
             text(
@@ -155,7 +155,7 @@ def get_analysis_status() -> dict:
 
 
 def get_artists_needing_analysis() -> set[str]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT al.artist FROM library_tracks t "
@@ -168,7 +168,7 @@ def get_artists_needing_analysis() -> set[str]:
 
 
 def get_artists_needing_bliss() -> set[str]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT al.artist FROM library_tracks t "

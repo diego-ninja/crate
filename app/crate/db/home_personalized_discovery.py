@@ -114,6 +114,7 @@ def build_home_discovery_payload(user_id: int) -> dict:
     context = get_cached_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
     top_albums = context["top_albums"]
     followed_names_lower = context["followed_names_lower"]
+    followed = context["followed"]
     top_artist_names_lower = context["top_artist_names_lower"]
     top_genres_lower = context["top_genres_lower"]
     mix_seed_genres = context["mix_seed_genres"]
@@ -164,7 +165,7 @@ def build_home_discovery_payload(user_id: int) -> dict:
         "essentials": _build_core_playlists(user_id, merged_artists, 7),
         "recent_global_artists": _build_recent_global_artists(7),
         "replay": get_replay_mix(user_id, window="30d", limit=18),
-        "upcoming": _build_home_upcoming(user_id, lookup_limit=120, item_limit=12),
+        "upcoming": _build_home_upcoming(user_id, lookup_limit=120, item_limit=12, followed=followed),
     }
 
 

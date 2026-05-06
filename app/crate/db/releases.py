@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 from crate.db.serialize import serialize_row
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope, transaction_scope
 
 
 def upsert_new_release(artist_name: str, album_title: str, tidal_id: str = "",
@@ -49,7 +49,7 @@ def upsert_new_release(artist_name: str, album_title: str, tidal_id: str = "",
 
 def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200) -> list[dict]:
     """Get new releases. If upcoming=True, only future releases ordered by release_date."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         select_sql = """
             SELECT
                 nr.*,

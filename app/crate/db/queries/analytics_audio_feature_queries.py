@@ -55,11 +55,18 @@ def get_insights_mood_distribution() -> list[dict]:
                             THEN (moods.value #>> '{}')::double precision
                             ELSE NULL
                         END AS score
-                    FROM library_tracks lt
-                    LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
-                    CROSS JOIN LATERAL jsonb_each(
-                        COALESCE(taf.mood_json, lt.mood_json, '{}'::jsonb)
-                    ) AS moods(key, value)
+                    FROM (
+                        SELECT raw.mood_json
+                        FROM (
+                            SELECT COALESCE(taf.mood_json, lt.mood_json) AS mood_json
+                            FROM library_tracks lt
+                            LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
+                        ) AS raw
+                        WHERE raw.mood_json IS NOT NULL
+                            AND jsonb_typeof(raw.mood_json) = 'object'
+                            AND raw.mood_json != '{}'::jsonb
+                    ) AS source
+                    CROSS JOIN LATERAL jsonb_each(source.mood_json) AS moods(key, value)
                 ) AS expanded
                 WHERE expanded.score IS NOT NULL
                 GROUP BY expanded.mood

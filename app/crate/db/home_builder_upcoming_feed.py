@@ -69,12 +69,18 @@ def _build_show_items(
     return items
 
 
-def _build_home_upcoming(user_id: int, *, lookup_limit: int = 120, item_limit: int = 12) -> dict:
+def _build_home_upcoming(
+    user_id: int,
+    *,
+    lookup_limit: int = 120,
+    item_limit: int = 12,
+    followed: list[dict] | None = None,
+) -> dict:
     from crate.db.queries.shows import get_attending_show_ids
     from crate.db.queries.user import get_upcoming_releases, get_upcoming_shows
     from crate.db.repositories.auth import get_user_by_id
 
-    followed = get_followed_artists(user_id)
+    followed = followed if followed is not None else get_followed_artists(user_id)
     followed_names = [row["artist_name"] for row in followed if row.get("artist_name")]
     if not followed_names:
         return {

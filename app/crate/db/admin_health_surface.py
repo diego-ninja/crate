@@ -10,7 +10,7 @@ from crate.db.health import get_issue_counts, get_open_issues
 from crate.db.ui_snapshot_store import get_or_build_ui_snapshot
 
 HEALTH_SNAPSHOT_SCOPE = "ops:health"
-HEALTH_SNAPSHOT_MAX_AGE = 10
+HEALTH_SNAPSHOT_MAX_AGE = 30
 HEALTH_SNAPSHOT_STALE_MAX_AGE = 120
 HEALTH_SURFACE_STREAM_CHANNEL = "crate:sse:admin:health"
 

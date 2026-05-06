@@ -52,23 +52,36 @@ def get_album_quality_map(
         return _impl(s)
 
 
-def get_library_stats(*, session: Session | None = None) -> dict:
+def get_library_stats(*, include_formats: bool = True, session: Session | None = None) -> dict:
     def _impl(s: Session) -> dict:
-        artists = int(s.execute(select(func.count()).select_from(LibraryArtist)).scalar_one() or 0)
-        albums = int(s.execute(select(func.count()).select_from(LibraryAlbum)).scalar_one() or 0)
-        tracks = int(s.execute(select(func.count()).select_from(LibraryTrack)).scalar_one() or 0)
-        total_size = int(s.execute(select(func.coalesce(func.sum(LibraryArtist.total_size), 0))).scalar_one() or 0)
-        fmt_rows = s.execute(
+        row = s.execute(
             text(
                 """
-                SELECT format, COUNT(*) AS cnt
-                FROM library_tracks
-                WHERE format IS NOT NULL
-                GROUP BY format
-                ORDER BY cnt DESC
+                SELECT
+                    (SELECT COUNT(*) FROM library_artists) AS artists,
+                    (SELECT COUNT(*) FROM library_albums) AS albums,
+                    (SELECT COUNT(*) FROM library_tracks) AS tracks,
+                    (SELECT COALESCE(SUM(total_size), 0) FROM library_artists) AS total_size
                 """
             )
-        ).mappings().all()
+        ).mappings().first() or {}
+        artists = int(row.get("artists") or 0)
+        albums = int(row.get("albums") or 0)
+        tracks = int(row.get("tracks") or 0)
+        total_size = int(row.get("total_size") or 0)
+        fmt_rows = []
+        if include_formats:
+            fmt_rows = s.execute(
+                text(
+                    """
+                    SELECT format, COUNT(*) AS cnt
+                    FROM library_tracks
+                    WHERE format IS NOT NULL
+                    GROUP BY format
+                    ORDER BY cnt DESC
+                    """
+                )
+            ).mappings().all()
         return {
             "artists": artists,
             "albums": albums,

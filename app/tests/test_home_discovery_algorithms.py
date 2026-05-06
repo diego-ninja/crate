@@ -72,33 +72,11 @@ def test_discovery_track_rows_include_user_feedback_signals(monkeypatch):
 
     captured = {}
 
-    class FakeMappings:
-        def all(self):
-            return [{"artist_name": "Converge"}]
-
-    class FakeResult:
-        def mappings(self):
-            return FakeMappings()
-
-    class FakeSession:
-        def execute(self, statement, params=None):
-            if params and "genres" in params:
-                captured["artist_params"] = params
-            return FakeResult()
-
-    class FakeReadScope:
-        def __enter__(self):
-            return FakeSession()
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
     def fake_fetch_rows(sql, params):
         captured["sql"] = sql
         captured["params"] = params
         return []
 
-    monkeypatch.setattr(home_track_discovery, "read_scope", lambda: FakeReadScope())
     monkeypatch.setattr(home_track_discovery, "_fetch_rows", fake_fetch_rows)
 
     home_track_discovery.get_discovery_track_rows(
@@ -108,9 +86,10 @@ def test_discovery_track_rows_include_user_feedback_signals(monkeypatch):
         limit=20,
     )
 
-    assert captured["artist_params"]["genres"] == ["punk"]
+    assert captured["params"]["genres"] == ["punk"]
+    assert captured["params"]["excluded"] == ["converge"]
     assert captured["params"]["user_id"] == 9
-    assert captured["params"]["artists"] == ["Converge"]
+    assert "WITH matching_artists AS MATERIALIZED" in captured["sql"]
     assert "AS user_play_count" in captured["sql"]
     assert "AS is_liked" in captured["sql"]
 

@@ -361,7 +361,9 @@ def _build_artist_top_tracks_payload(
     count: int,
     lastfm_top: list[dict] | None,
 ) -> list[dict]:
-    all_tracks = {row["title"].lower(): row for row in get_artist_all_tracks(artist_name)}
+    all_tracks: dict[str, dict] = {}
+    for row in get_artist_all_tracks(artist_name, limit=max(count * 8, 200)):
+        all_tracks.setdefault(row["title"].lower(), row)
 
     ranked = []
     seen_ids: set[int] = set()
@@ -1323,16 +1325,15 @@ def api_cached_shows(request: Request, limit: int = Query(50)):
     _require_auth(request)
 
     shows = db_get_shows(limit=limit)
-    genre_map = get_all_artist_genre_map()
+    artist_names = [
+        artist_name
+        for show in shows
+        for artist_name in ([show.get("artist_name")] + list(show.get("lineup") or []))
+        if artist_name
+    ]
+    genre_map = get_all_artist_genre_map(artist_names, limit=3)
 
-    refs_by_name = _lookup_artist_refs(
-        [
-            artist_name
-            for show in shows
-            for artist_name in ([show.get("artist_name")] + list(show.get("lineup") or []))
-            if artist_name
-        ]
-    )
+    refs_by_name = _lookup_artist_refs(artist_names)
     events = []
     for show in shows:
         artist_ref = refs_by_name.get((show.get("artist_name") or "").lower())
@@ -1502,7 +1503,17 @@ def api_upcoming(request: Request):
             if artist_name
         ]
     )
-    genre_map = get_all_artist_genre_map()
+    genre_map = get_all_artist_genre_map(
+        sorted(
+            {
+                artist_name
+                for show in shows
+                for artist_name in ([show.get("artist_name")] + list(show.get("lineup") or []))
+                if artist_name
+            }
+        ),
+        limit=3,
+    )
 
     for show in shows:
         artist = show["artist_name"]

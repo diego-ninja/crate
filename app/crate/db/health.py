@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope, transaction_scope
 
 
 def upsert_health_issue(check_type: str, severity: str, description: str,
@@ -34,7 +34,7 @@ def upsert_health_issue(check_type: str, severity: str, description: str,
 
 def get_open_issues(check_type: str | None = None, limit: int = 500) -> list[dict]:
     """Get all open health issues, optionally filtered by type."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         if check_type:
             rows = session.execute(
                 text("SELECT * FROM health_issues WHERE status = 'open' AND check_type = :check_type ORDER BY severity, created_at DESC LIMIT :lim"),
@@ -50,7 +50,7 @@ def get_open_issues(check_type: str | None = None, limit: int = 500) -> list[dic
 
 def get_issue_counts() -> dict:
     """Get count of open issues grouped by check_type."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT check_type, COUNT(*) AS cnt FROM health_issues WHERE status = 'open' GROUP BY check_type ORDER BY cnt DESC")
         ).mappings().all()
@@ -156,7 +156,7 @@ def cleanup_old_resolved(days: int = 30, *, session=None):
 
 def get_artist_issues(artist_name: str) -> list[dict]:
     """Get open health issues related to a specific artist."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT * FROM health_issues WHERE status = 'open' "
@@ -169,7 +169,7 @@ def get_artist_issues(artist_name: str) -> list[dict]:
 
 
 def get_artist_issue_count(artist_name: str) -> int:
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text(
                 "SELECT COUNT(*) AS cnt FROM health_issues WHERE status = 'open' "
@@ -182,7 +182,7 @@ def get_artist_issue_count(artist_name: str) -> int:
 
 def get_all_artist_issue_counts() -> dict[str, int]:
     """Get issue counts grouped by artist for all open issues."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT details_json->>'artist' AS artist, COUNT(*) AS cnt "

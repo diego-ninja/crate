@@ -23,8 +23,8 @@ def _get_imports_pending_count() -> int:
     return count_import_queue_items(status="pending")
 
 
-def build_live_activity_payload() -> dict[str, Any]:
-    cached_live = get_worker_live_state()
+def build_live_activity_payload(worker_live: dict[str, Any] | None = None) -> dict[str, Any]:
+    cached_live = worker_live if worker_live is not None else get_worker_live_state()
     if cached_live:
         return cached_live
 
@@ -84,10 +84,18 @@ def build_live_activity_payload() -> dict[str, Any]:
     }
 
 
-def build_recent_activity_payload() -> dict[str, Any]:
-    worker_live = get_worker_live_state()
+def build_recent_activity_payload(
+    *,
+    worker_live: dict[str, Any] | None = None,
+    scan: dict[str, Any] | None = None,
+    pending_imports: int | None = None,
+) -> dict[str, Any]:
+    worker_live = worker_live if worker_live is not None else get_worker_live_state()
     tasks = worker_live.get("recent_tasks") if worker_live else list_tasks(limit=10)
-    scan = get_latest_scan()
+    if scan is None:
+        scan = get_latest_scan()
+    if pending_imports is None:
+        pending_imports = _get_imports_pending_count()
     return {
         "tasks": [
             {
@@ -99,13 +107,21 @@ def build_recent_activity_payload() -> dict[str, Any]:
             }
             for task in tasks
         ],
-        "pending_imports": _get_imports_pending_count(),
+        "pending_imports": pending_imports,
         "last_scan": scan["scanned_at"] if scan else None,
     }
 
 
-def build_public_status_payload(live: dict[str, Any] | None = None) -> dict[str, Any]:
-    scan = get_latest_scan()
+def build_public_status_payload(
+    live: dict[str, Any] | None = None,
+    *,
+    scan: dict[str, Any] | None = None,
+    pending_imports: int | None = None,
+) -> dict[str, Any]:
+    if scan is None:
+        scan = get_latest_scan()
+    if pending_imports is None:
+        pending_imports = _get_imports_pending_count()
     worker_live = live or get_worker_live_state()
     if worker_live:
         scan_live = worker_live.get("scan") or {}
@@ -120,7 +136,7 @@ def build_public_status_payload(live: dict[str, Any] | None = None) -> dict[str,
         "last_scan": scan["scanned_at"] if scan else None,
         "issue_count": len(scan["issues"]) if scan else 0,
         "progress": progress,
-        "pending_imports": _get_imports_pending_count(),
+        "pending_imports": pending_imports,
         "running_tasks": len((worker_live or {}).get("running_tasks") or []),
     }
 

@@ -42,6 +42,7 @@ from crate.db.queries.analytics_overview import (
     get_stats_top_genres,
     get_timeline_albums,
     get_top_artists_by_albums,
+    get_track_distribution_summary,
     get_total_duration_hours,
 )
 
@@ -83,5 +84,6 @@ __all__ = [
     "get_stats_top_genres",
     "get_timeline_albums",
     "get_top_artists_by_albums",
+    "get_track_distribution_summary",
     "get_total_duration_hours",
 ]

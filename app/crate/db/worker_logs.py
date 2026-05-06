@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 
 from crate.db.serialize import serialize_rows
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope, transaction_scope
 from sqlalchemy import text
 
 _log = logging.getLogger(__name__)
@@ -83,13 +83,13 @@ def query_logs(
 
     query += " ORDER BY created_at DESC LIMIT :limit"
 
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text(query), params).mappings().all()
     return [_row_to_log(row) for row in rows]
 
 
 def list_known_workers() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("""
                 SELECT worker_id,

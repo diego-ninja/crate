@@ -36,7 +36,7 @@ from crate.db.cache_store import get_cache, set_cache
 from crate.db.repositories.library import set_track_rating
 from crate.db.queries.browse_media import (
     add_favorite,
-    count_mood_tracks,
+    count_mood_presets,
     find_track_id_by_path,
     get_mood_tracks,
     get_track_album_genres,
@@ -1206,11 +1206,11 @@ def api_browse_moods(request: Request):
     if cached is not None:
         return cached
 
-    results = []
-    for name, filters in MOOD_PRESETS.items():
-        conditions, params = _mood_conditions(filters)
-        count = count_mood_tracks(conditions, params)
-        results.append({"name": name, "track_count": count, "filters": filters})
+    counts = count_mood_presets(MOOD_PRESETS)
+    results = [
+        {"name": name, "track_count": counts.get(name, 0), "filters": filters}
+        for name, filters in MOOD_PRESETS.items()
+    ]
     set_cache("listen:browse_moods:v1", results, ttl=600)
     return results
 

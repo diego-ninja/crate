@@ -6,7 +6,7 @@ from crate.db.ui_snapshot_store import get_or_build_ui_snapshot
 from crate.db.worker_logs import list_known_workers, query_logs
 
 LOGS_SNAPSHOT_SCOPE = "ops:logs"
-LOGS_SNAPSHOT_MAX_AGE = 5
+LOGS_SNAPSHOT_MAX_AGE = 15
 LOGS_SNAPSHOT_STALE_MAX_AGE = 60
 LOGS_SURFACE_STREAM_CHANNEL = "crate:sse:admin:logs"
 

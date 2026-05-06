@@ -1,5 +1,5 @@
 from crate.db.queries.browse_media_favorites import add_favorite, list_favorites, remove_favorite
-from crate.db.queries.browse_media_mood import count_mood_tracks, get_mood_tracks
+from crate.db.queries.browse_media_mood import count_mood_presets, count_mood_tracks, get_mood_tracks
 from crate.db.queries.browse_media_search import search_albums, search_artists, search_tracks
 from crate.db.queries.browse_media_track_genres import get_track_album_genres, get_track_artist_genres
 from crate.db.queries.browse_media_track_lookup import (
@@ -18,6 +18,7 @@ from crate.db.queries.browse_media_track_lookup import (
 __all__ = [
     "add_favorite",
     "clear_track_path_cache",
+    "count_mood_presets",
     "count_mood_tracks",
     "find_track_id_by_path",
     "get_mood_tracks",

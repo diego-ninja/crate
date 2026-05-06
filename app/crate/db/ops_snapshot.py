@@ -12,7 +12,7 @@ from crate.db.ui_snapshot_store import get_or_build_ui_snapshot
 
 _OPS_SNAPSHOT_SCOPE = "ops"
 _OPS_SNAPSHOT_SUBJECT = "dashboard"
-_OPS_SNAPSHOT_MAX_AGE = 15
+_OPS_SNAPSHOT_MAX_AGE = 60
 _OPS_SNAPSHOT_STALE_MAX_AGE = 300
 
 
