@@ -90,6 +90,8 @@ DEFAULT_DEFER_SECONDS = 300
 DEFAULT_LOAD_RATIO = 0.85
 DEFAULT_IOWAIT_PERCENT = 25.0
 DEFAULT_SWAP_PERCENT = 30.0
+DEFAULT_SWAP_MIN_USED_MB = 512.0
+DEFAULT_MIN_MEMORY_AVAILABLE_PERCENT = 15.0
 DEFAULT_NICE_VALUE = 12
 DEFAULT_MAINTENANCE_WINDOW_START = "02:00"
 DEFAULT_MAINTENANCE_WINDOW_END = "07:00"
@@ -103,6 +105,8 @@ class ResourceSnapshot:
     load_ratio: float | None = None
     iowait_percent: float | None = None
     swap_used_percent: float | None = None
+    swap_used_mb: float | None = None
+    memory_available_percent: float | None = None
     active_users: int | None = None
     active_streams: int | None = None
 
@@ -184,6 +188,11 @@ def evaluate_resources(*, label: str = "background", listener_sensitive: bool = 
     max_load_ratio = _float_setting("CRATE_RESOURCE_MAX_LOAD_RATIO", DEFAULT_LOAD_RATIO)
     max_iowait = _float_setting("CRATE_RESOURCE_MAX_IOWAIT_PERCENT", DEFAULT_IOWAIT_PERCENT)
     max_swap = _float_setting("CRATE_RESOURCE_MAX_SWAP_PERCENT", DEFAULT_SWAP_PERCENT)
+    min_swap_used_mb = _float_setting("CRATE_RESOURCE_MIN_SWAP_USED_MB", DEFAULT_SWAP_MIN_USED_MB)
+    min_memory_available = _float_setting(
+        "CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT",
+        DEFAULT_MIN_MEMORY_AVAILABLE_PERCENT,
+    )
     max_active_users = _nonnegative_int_setting("CRATE_RESOURCE_MAX_ACTIVE_USERS", 0)
     max_active_streams = _nonnegative_int_setting("CRATE_RESOURCE_MAX_ACTIVE_STREAMS", 0)
 
@@ -197,7 +206,11 @@ def evaluate_resources(*, label: str = "background", listener_sensitive: bool = 
         reasons.append(f"load {snapshot.load_ratio:.2f}>{max_load_ratio:.2f}")
     if snapshot.iowait_percent is not None and snapshot.iowait_percent > max_iowait:
         reasons.append(f"iowait {snapshot.iowait_percent:.1f}%>{max_iowait:.1f}%")
-    if snapshot.swap_used_percent is not None and snapshot.swap_used_percent > max_swap:
+    if (
+        snapshot.swap_used_percent is not None
+        and snapshot.swap_used_percent > max_swap
+        and _swap_indicates_pressure(snapshot, min_swap_used_mb=min_swap_used_mb, min_memory_available=min_memory_available)
+    ):
         reasons.append(f"swap {snapshot.swap_used_percent:.1f}%>{max_swap:.1f}%")
 
     allowed = not reasons
@@ -228,14 +241,37 @@ def build_snapshot(*, include_playback: bool = True) -> ResourceSnapshot:
         active_users = _count_active_users()
         active_streams = _count_active_streams()
 
+    memory = _memory_pressure_values()
     return ResourceSnapshot(
         cpu_count=cpu_count,
         load_1m=load_1m,
         load_ratio=load_ratio,
         iowait_percent=_sample_iowait_percent(),
-        swap_used_percent=_swap_used_percent(),
+        swap_used_percent=memory.get("swap_used_percent"),
+        swap_used_mb=memory.get("swap_used_mb"),
+        memory_available_percent=memory.get("memory_available_percent"),
         active_users=active_users,
         active_streams=active_streams,
+    )
+
+
+def _swap_indicates_pressure(
+    snapshot: ResourceSnapshot,
+    *,
+    min_swap_used_mb: float,
+    min_memory_available: float,
+) -> bool:
+    """Treat swap as pressure only when it is meaningful right now.
+
+    Linux does not eagerly move pages back out of swap after a transient spike.
+    A high swap percentage on a tiny swap partition can therefore be stale noise
+    while plenty of RAM is available.
+    """
+    if snapshot.swap_used_mb is None or snapshot.memory_available_percent is None:
+        return True
+    return (
+        snapshot.swap_used_mb >= min_swap_used_mb
+        or snapshot.memory_available_percent < min_memory_available
     )
 
 
@@ -477,6 +513,10 @@ def _record_deferral_metrics(
                 record("worker.resource.iowait_percent", float(snapshot.iowait_percent), tags)
             if snapshot.swap_used_percent is not None:
                 record("worker.resource.swap_used_percent", float(snapshot.swap_used_percent), tags)
+            if snapshot.swap_used_mb is not None:
+                record("worker.resource.swap_used_mb", float(snapshot.swap_used_mb), tags)
+            if snapshot.memory_available_percent is not None:
+                record("worker.resource.memory_available_percent", float(snapshot.memory_available_percent), tags)
             if snapshot.active_users is not None:
                 record("worker.resource.active_users", float(snapshot.active_users), tags)
             if snapshot.active_streams is not None:
@@ -547,22 +587,35 @@ def _sample_iowait_percent(interval_seconds: float = 0.05) -> float | None:
     return round(max(0.0, iowait_delta / total_delta * 100), 1)
 
 
-def _swap_used_percent() -> float | None:
+def _memory_pressure_values() -> dict[str, float | None]:
     values: dict[str, int] = {}
     try:
         with open("/proc/meminfo", encoding="utf-8") as handle:
             for line in handle:
                 key, raw_value = line.split(":", 1)
-                if key in {"SwapTotal", "SwapFree"}:
+                if key in {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"}:
                     values[key] = int(raw_value.strip().split()[0])
     except Exception:
-        return None
+        return {
+            "swap_used_percent": None,
+            "swap_used_mb": None,
+            "memory_available_percent": None,
+        }
 
-    total = values.get("SwapTotal", 0)
-    free = values.get("SwapFree", 0)
-    if total <= 0:
-        return 0.0
-    return round((total - free) / total * 100, 1)
+    swap_total = values.get("SwapTotal", 0)
+    swap_free = values.get("SwapFree", 0)
+    swap_used = max(0, swap_total - swap_free)
+    mem_total = values.get("MemTotal", 0)
+    mem_available = values.get("MemAvailable", 0)
+    return {
+        "swap_used_percent": 0.0 if swap_total <= 0 else round(swap_used / swap_total * 100, 1),
+        "swap_used_mb": round(swap_used / 1024, 1),
+        "memory_available_percent": (
+            None
+            if mem_total <= 0
+            else round(max(0, mem_available) / mem_total * 100, 1)
+        ),
+    }
 
 
 __all__ = [

@@ -19,9 +19,18 @@ def append_jam_room_event(
         row = session.execute(
             text(
                 """
-                INSERT INTO jam_room_events (room_id, user_id, event_type, payload_json, created_at)
-                VALUES (:room_id, :user_id, :event_type, :payload_json, :created_at)
-                RETURNING *
+                WITH inserted AS (
+                    INSERT INTO jam_room_events (room_id, user_id, event_type, payload_json, created_at)
+                    VALUES (:room_id, :user_id, :event_type, :payload_json, :created_at)
+                    RETURNING *
+                )
+                SELECT
+                    inserted.*,
+                    u.username,
+                    COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(split_part(u.email, '@', 1), '')) AS display_name,
+                    u.avatar
+                FROM inserted
+                LEFT JOIN users u ON u.id = inserted.user_id
                 """
             ),
             {
@@ -41,9 +50,15 @@ def list_jam_room_events(room_id: str, *, after_id: int | None = None, limit: in
             rows = session.execute(
                 text(
                     """
-                    SELECT * FROM jam_room_events
-                    WHERE room_id = :room_id
-                    ORDER BY id ASC
+                    SELECT
+                        jre.*,
+                        u.username,
+                        COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(split_part(u.email, '@', 1), '')) AS display_name,
+                        u.avatar
+                    FROM jam_room_events jre
+                    LEFT JOIN users u ON u.id = jre.user_id
+                    WHERE jre.room_id = :room_id
+                    ORDER BY jre.id ASC
                     LIMIT :lim
                     """
                 ),
@@ -53,9 +68,15 @@ def list_jam_room_events(room_id: str, *, after_id: int | None = None, limit: in
             rows = session.execute(
                 text(
                     """
-                    SELECT * FROM jam_room_events
-                    WHERE room_id = :room_id AND id > :after_id
-                    ORDER BY id ASC
+                    SELECT
+                        jre.*,
+                        u.username,
+                        COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(split_part(u.email, '@', 1), '')) AS display_name,
+                        u.avatar
+                    FROM jam_room_events jre
+                    LEFT JOIN users u ON u.id = jre.user_id
+                    WHERE jre.room_id = :room_id AND jre.id > :after_id
+                    ORDER BY jre.id ASC
                     LIMIT :lim
                     """
                 ),

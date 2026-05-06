@@ -108,6 +108,40 @@ def resolve_stale_issues(current_descriptions: set[str], check_type: str, *, ses
             resolve_issue(row["id"], session=session)
 
 
+def resolve_stale_artist_issues(
+    current_descriptions: set[str],
+    check_type: str,
+    artist_names: list[str] | set[str] | tuple[str, ...],
+    *,
+    session=None,
+):
+    """Resolve open artist-scoped issues that disappeared in a targeted scan."""
+    artists = [str(name).strip() for name in artist_names if str(name).strip()]
+    if not artists:
+        return
+    if session is None:
+        with transaction_scope() as s:
+            return resolve_stale_artist_issues(current_descriptions, check_type, artists, session=s)
+    rows = session.execute(
+        text(
+            """
+            SELECT id, description
+            FROM health_issues
+            WHERE check_type = :check_type
+              AND status = 'open'
+              AND (
+                  details_json->>'artist' = ANY(:artists)
+                  OR details_json->>'db_artist' = ANY(:artists)
+              )
+            """
+        ),
+        {"check_type": check_type, "artists": artists},
+    ).mappings().all()
+    for row in rows:
+        if row["description"] not in current_descriptions:
+            resolve_issue(row["id"], session=session)
+
+
 def cleanup_old_resolved(days: int = 30, *, session=None):
     """Delete resolved/dismissed issues older than N days."""
     if session is None:

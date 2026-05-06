@@ -16,7 +16,7 @@ _MEMBER_SELECT_SQL = text(
         jrm.joined_at,
         jrm.last_seen_at,
         u.username,
-        u.name AS display_name,
+        COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(split_part(u.email, '@', 1), '')) AS display_name,
         u.avatar
     FROM jam_room_members jrm
     JOIN users u ON u.id = jrm.user_id

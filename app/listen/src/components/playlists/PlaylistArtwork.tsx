@@ -1,3 +1,4 @@
+import { resolveMaybeApiAssetUrl } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import {
   PlaylistArtwork as PlaylistArtworkBase,
@@ -19,5 +20,12 @@ function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
 }
 
 export function PlaylistArtwork(props: Omit<React.ComponentProps<typeof PlaylistArtworkBase>, "buildCoverUrl" | "logoSrc">) {
-  return <PlaylistArtworkBase {...props} buildCoverUrl={buildCoverUrl} logoSrc="/icons/logo.svg" />;
+  return (
+    <PlaylistArtworkBase
+      {...props}
+      coverDataUrl={resolveMaybeApiAssetUrl(props.coverDataUrl)}
+      buildCoverUrl={buildCoverUrl}
+      logoSrc="/icons/logo.svg"
+    />
+  );
 }

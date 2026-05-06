@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import read_tags
-from crate.db.health import upsert_health_issue, resolve_stale_issues
+from crate.db.health import upsert_health_issue, resolve_stale_artist_issues, resolve_stale_issues
 from crate.db.queries.health import (
     get_albums_with_year,
     get_all_albums,
@@ -23,6 +23,7 @@ from crate.db.queries.health import (
     get_tracks_tag_sample,
     get_zombie_artists,
 )
+from crate.db.repositories.library import get_library_artist
 from crate.repair_catalog import REPAIR_CATALOG, REPAIR_CATALOG_BY_CHECK, RepairCatalogEntry
 from crate.storage_layout import looks_like_entity_uid
 from crate.utils import PHOTO_NAMES, normalize_key
@@ -59,11 +60,64 @@ class LibraryHealthCheck:
                 selected.append(entry)
         return self._run_entries(selected, progress_callback=progress_callback, persist=persist)
 
+    def run_selected_for_artists(
+        self,
+        check_types: set[str] | list[str] | tuple[str, ...],
+        artist_names: set[str] | list[str] | tuple[str, ...],
+        *,
+        progress_callback=None,
+        persist: bool = True,
+    ) -> dict:
+        selected = [
+            check_type
+            for check_type in sorted({str(value) for value in check_types})
+            if check_type in REPAIR_CATALOG_BY_CHECK
+        ]
+        artists = [str(value).strip() for value in artist_names if str(value).strip()]
+        start = time.monotonic()
+        issues: list[dict] = []
+
+        total = max(1, len(selected) * max(1, len(artists)))
+        done = 0
+        for check_type in selected:
+            entry = REPAIR_CATALOG_BY_CHECK[check_type]
+            for artist_name in artists:
+                if progress_callback:
+                    progress_callback({"check": check_type, "artist": artist_name, "done": done, "total": total})
+                if check_type == "artist_layout_fix":
+                    issues.extend(self._check_artist_layout_fix_for_artists([artist_name]))
+                else:
+                    log.debug("No artist-scoped revalidation implemented for %s", check_type)
+                done += 1
+                if progress_callback:
+                    progress_callback({"check": check_type, "artist": artist_name, "done": done, "total": total})
+
+        if persist:
+            self._persist_targeted_issues(issues)
+            descriptions_by_check: dict[str, set[str]] = defaultdict(set)
+            for issue in issues:
+                descriptions_by_check[issue["check"]].add(self._issue_description(issue))
+            for check_type in selected:
+                resolve_stale_artist_issues(descriptions_by_check.get(check_type, set()), check_type, artists)
+
+        summary: dict[str, int] = {}
+        for issue in issues:
+            key = issue["check"]
+            summary[key] = summary.get(key, 0) + 1
+
+        return {
+            "issues": issues,
+            "summary": summary,
+            "check_count": len(selected),
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": int((time.monotonic() - start) * 1000),
+            "artist_count": len(artists),
+        }
+
     def _persist_issues(self, issues: list[dict], entries: list[RepairCatalogEntry]) -> None:
         by_type: dict[str, set[str]] = defaultdict(set)
         for issue in issues:
-            desc = issue.get("description") or str(issue.get("details", {})
-                ).replace("{", "").replace("}", "").replace("'", "")[:200]
+            desc = self._issue_description(issue)
             by_type[issue["check"]].add(desc)
             upsert_health_issue(
                 check_type=issue["check"],
@@ -75,6 +129,20 @@ class LibraryHealthCheck:
         for entry in entries:
             descriptions = by_type.get(entry.check_type, set())
             resolve_stale_issues(descriptions, entry.check_type)
+
+    def _persist_targeted_issues(self, issues: list[dict]) -> None:
+        for issue in issues:
+            desc = self._issue_description(issue)
+            upsert_health_issue(
+                check_type=issue["check"],
+                severity=issue.get("severity", "medium"),
+                description=desc,
+                details=issue.get("details"),
+                auto_fixable=issue.get("auto_fixable", False),
+            )
+
+    def _issue_description(self, issue: dict) -> str:
+        return issue.get("description") or str(issue.get("details", {})).replace("{", "").replace("}", "").replace("'", "")[:200]
 
     def _run_entries(self, entries: list[RepairCatalogEntry] | tuple[RepairCatalogEntry, ...], *, progress_callback=None, persist: bool = True) -> dict:
         start = time.monotonic()
@@ -188,6 +256,26 @@ class LibraryHealthCheck:
             issue = build_artist_layout_fix_issue(preview)
             if issue:
                 issues.append(issue)
+        return issues
+
+    def _check_artist_layout_fix_for_artists(self, artist_names: list[str]) -> list[dict]:
+        issues = []
+        preview_config = {
+            "library_path": str(self.library_path),
+            "audio_extensions": sorted(self.extensions),
+        }
+        for artist_name in artist_names:
+            artist = get_library_artist(artist_name)
+            if not artist:
+                continue
+            try:
+                preview = preview_fix_artist(self.library_path, artist, preview_config)
+            except Exception:
+                log.exception("Artist layout preview failed for %s", artist.get("name"))
+                continue
+            issue = build_artist_layout_fix_issue(preview)
+            if issue:
+                issues.append(self._normalize_issue(REPAIR_CATALOG_BY_CHECK["artist_layout_fix"], issue))
         return issues
 
     def _check_fk_orphan_albums(self) -> list[dict]:

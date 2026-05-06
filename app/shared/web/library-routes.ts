@@ -39,6 +39,7 @@ export interface ImageAssetOptions {
   size?: number | null;
   random?: boolean;
   version?: string | number | null;
+  format?: "webp" | null;
 }
 
 const artistAssetVersions = new Map<number, string>();
@@ -138,6 +139,7 @@ function withAssetOptions(path: string, options?: ImageAssetOptions) {
   if (options.size != null) params.set("size", String(options.size));
   if (options.random) params.set("random", "1");
   if (options.version != null && String(options.version).trim()) params.set("v", String(options.version));
+  if (options.format) params.set("format", options.format);
   const query = params.toString();
   return query ? `${path}?${query}` : path;
 }

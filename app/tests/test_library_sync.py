@@ -164,7 +164,12 @@ class TestSyncAlbum:
                  patch("crate.library_sync.get_album_id_by_path", return_value=1), \
                  patch("crate.library_sync.get_tracks_by_album_id", return_value={str(track_path): existing_track}), \
                  patch("crate.library_sync.delete_track_by_path"), \
-                 patch("crate.library_sync.read_tags", return_value={"artist": "Artist", "album": "Album", "title": "Track"}):
+                 patch("crate.library_sync.read_tags", return_value={
+                    "artist": "Artist",
+                    "albumartist": "Artist",
+                    "album": "Album",
+                    "title": "Track",
+                 }):
 
                 from crate.library_sync import LibrarySync
                 sync = LibrarySync(config)
@@ -207,6 +212,213 @@ class TestSyncAlbum:
                 assert result["total_size"] == 3072
                 assert "flac" in result["formats"]
                 assert len(mock_upsert_scanned.call_args.kwargs["track_payloads"]) == 2
+
+    def test_sync_album_uses_native_quality_batch_for_new_tracks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib = Path(tmpdir)
+            album_dir = lib / "Artist" / "Album"
+            album_dir.mkdir(parents=True)
+            track_path = album_dir / "01.flac"
+            track_path.write_bytes(b"\x00" * 1024)
+            (album_dir / "cover.jpg").write_bytes(b"cover")
+
+            config = {
+                "library_path": str(lib),
+                "audio_extensions": [".flac"],
+            }
+            native_quality = {
+                "tracks": [{
+                    "path": str(track_path),
+                    "ok": True,
+                    "duration": 123.5,
+                    "bitrate": 1411000,
+                    "sample_rate": 96000,
+                    "bit_depth": 24,
+                }],
+            }
+
+            with patch("crate.crate_cli.run_quality", return_value=native_quality) as mock_quality, \
+                 patch("crate.library_sync.get_library_artist", return_value={"name": "Artist"}), \
+                 patch("crate.library_sync.upsert_scanned_album", side_effect=_fake_upsert_scanned_album) as mock_upsert_scanned, \
+                 patch("crate.library_sync.get_album_id_by_path", return_value=None), \
+                 patch("crate.library_sync.get_tracks_by_album_id", return_value={}), \
+                 patch("crate.library_sync.delete_track_by_path"), \
+                 patch("crate.library_sync.mutagen.File", side_effect=AssertionError("mutagen info should not be needed")), \
+                 patch("crate.library_sync.read_tags", return_value={
+                    "artist": "Artist",
+                    "albumartist": "Artist",
+                    "album": "Album",
+                    "title": "Track",
+                 }):
+
+                from crate.library_sync import LibrarySync
+                sync = LibrarySync(config)
+                sync.sync_album(album_dir, "Artist")
+
+                mock_quality.assert_called_once_with(directory=str(album_dir), extensions="flac")
+                payload = mock_upsert_scanned.call_args.kwargs["track_payloads"][0]
+                assert payload["duration"] == 123.5
+                assert payload["bitrate"] == 1411000
+                assert payload["sample_rate"] == 96000
+                assert payload["bit_depth"] == 24
+
+    def test_sync_album_returns_native_payload_shadow_summary(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib = Path(tmpdir)
+            album_dir = lib / "Artist" / "Album"
+            album_dir.mkdir(parents=True)
+            track_path = album_dir / "01.flac"
+            track_path.write_bytes(b"\x00" * 1024)
+            (album_dir / "cover.jpg").write_bytes(b"cover")
+
+            config = {
+                "library_path": str(lib),
+                "audio_extensions": [".flac"],
+                "native_scan_payload_shadow": True,
+            }
+            native_quality = {
+                "tracks": [{
+                    "path": str(track_path),
+                    "ok": True,
+                    "duration": 123.5,
+                    "bitrate": 1411000,
+                    "sample_rate": 96000,
+                    "bit_depth": 24,
+                }],
+            }
+            native_scan = {
+                "artists": [{
+                    "name": "Artist",
+                    "albums": [{
+                        "name": "Album",
+                        "path": str(album_dir),
+                        "has_cover": True,
+                        "has_embedded_art": False,
+                        "tracks": [{
+                            "path": str(track_path),
+                            "filename": "01.flac",
+                            "size": 1024,
+                            "tags": {
+                                "title": "Track",
+                                "artist": "Artist",
+                                "album": "Album",
+                                "track_number": None,
+                                "duration_ms": 123500,
+                                "format": "flac",
+                                "bitrate": 1411000,
+                                "sample_rate": 96000,
+                                "bit_depth": 24,
+                            },
+                        }],
+                    }],
+                }],
+            }
+
+            with patch("crate.crate_cli.run_quality", return_value=native_quality), \
+                 patch("crate.crate_cli.run_scan", return_value=native_scan), \
+                 patch("crate.library_sync.get_library_artist", return_value={"name": "Artist"}), \
+                 patch("crate.library_sync.upsert_scanned_album", side_effect=_fake_upsert_scanned_album), \
+                 patch("crate.library_sync.get_album_id_by_path", return_value=None), \
+                 patch("crate.library_sync.get_tracks_by_album_id", return_value={}), \
+                 patch("crate.library_sync.delete_track_by_path"), \
+                 patch("crate.library_sync.mutagen.File", side_effect=AssertionError("mutagen info should not be needed")), \
+                 patch("crate.library_sync.read_tags", return_value={
+                    "artist": "Artist",
+                    "albumartist": "Artist",
+                    "album": "Album",
+                    "title": "Track",
+                 }):
+
+                from crate.library_sync import LibrarySync
+                sync = LibrarySync(config)
+                result = sync.sync_album(album_dir, "Artist")
+
+                assert result["native_scan_payload_shadow"]["ok"] is True
+                assert result["native_scan_payload_shadow"]["python_tracks"] == 1
+                assert result["native_scan_payload_shadow"]["native_tracks"] == 1
+
+    def test_sync_album_can_prefer_native_payload_when_shadow_is_clean(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib = Path(tmpdir)
+            album_dir = lib / "Artist" / "Album"
+            album_dir.mkdir(parents=True)
+            track_path = album_dir / "01.flac"
+            track_path.write_bytes(b"\x00" * 1024)
+            (album_dir / "cover.jpg").write_bytes(b"cover")
+
+            config = {
+                "library_path": str(lib),
+                "audio_extensions": [".flac"],
+                "native_scan_payload_prefer": True,
+            }
+            native_quality = {
+                "tracks": [{
+                    "path": str(track_path),
+                    "ok": True,
+                    "duration": 123.5,
+                    "bitrate": 1411000,
+                    "sample_rate": 96000,
+                    "bit_depth": 24,
+                }],
+            }
+            native_scan = {
+                "artists": [{
+                    "name": "Artist",
+                    "albums": [{
+                        "name": "Album",
+                        "path": str(album_dir),
+                        "has_cover": True,
+                        "has_embedded_art": False,
+                        "tracks": [{
+                            "path": str(track_path),
+                            "filename": "01.flac",
+                            "size": 1024,
+                            "tags": {
+                                "title": "Track",
+                                "artist": "Artist",
+                                "album_artist": "Artist",
+                                "album": "Album",
+                                "track_number": None,
+                                "disc_number": 1,
+                                "duration_ms": 123500,
+                                "format": "flac",
+                                "bitrate": 1411000,
+                                "sample_rate": 96000,
+                                "bit_depth": 24,
+                                "crate_identity": {
+                                    "crate_track_uid": "11111111-1111-4111-8111-111111111111",
+                                },
+                            },
+                        }],
+                    }],
+                }],
+            }
+
+            with patch("crate.crate_cli.run_quality", return_value=native_quality), \
+                 patch("crate.crate_cli.run_scan", return_value=native_scan), \
+                 patch("crate.library_sync.get_library_artist", return_value={"name": "Artist"}), \
+                 patch("crate.library_sync.upsert_scanned_album", side_effect=_fake_upsert_scanned_album) as mock_upsert_scanned, \
+                 patch("crate.library_sync.get_album_id_by_path", return_value=None), \
+                 patch("crate.library_sync.get_tracks_by_album_id", return_value={}), \
+                 patch("crate.library_sync.delete_track_by_path"), \
+                 patch("crate.library_sync.mutagen.File", side_effect=AssertionError("mutagen info should not be needed")), \
+                 patch("crate.library_sync.read_tags", return_value={
+                    "artist": "Artist",
+                    "albumartist": "Artist",
+                    "album": "Album",
+                    "title": "Track",
+                 }):
+
+                from crate.library_sync import LibrarySync
+                sync = LibrarySync(config)
+                result = sync.sync_album(album_dir, "Artist")
+
+                assert result["native_scan_payload_used"] is True
+                assert result["native_scan_payload_shadow"]["used_for_upsert"] is True
+                assert result["native_scan_payload_shadow"]["native_identity_override_count"] == 1
+                payload = mock_upsert_scanned.call_args.kwargs["track_payloads"][0]
+                assert payload["entity_uid"] == "11111111-1111-4111-8111-111111111111"
+                assert "_crate_identity_tagged" not in payload
 
     def test_sync_album_reads_nested_disc_tracks(self):
         with tempfile.TemporaryDirectory() as tmpdir:

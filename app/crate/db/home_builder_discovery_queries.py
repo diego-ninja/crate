@@ -37,7 +37,7 @@ def get_home_hero(
 
 
 def track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: int = 240) -> list[dict]:
-    return get_track_candidates_for_album_ids(album_ids, limit)
+    return get_track_candidates_for_album_ids(user_id=user_id, album_ids=album_ids, limit=limit)
 
 
 def query_discovery_tracks(
@@ -51,6 +51,7 @@ def query_discovery_tracks(
         return []
     genres = expand_genre_terms_with_aliases(genres)
     return get_discovery_track_rows(
+        user_id=user_id,
         genres=genres,
         excluded_artist_names=excluded_artist_names,
         limit=limit,
@@ -58,7 +59,7 @@ def query_discovery_tracks(
 
 
 def fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[str], limit: int = 240) -> list[dict]:
-    return get_recent_interest_track_rows(interest_artists_lower, limit)
+    return get_recent_interest_track_rows(user_id=user_id, interest_artists_lower=interest_artists_lower, limit=limit)
 
 
 __all__ = [

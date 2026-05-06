@@ -35,14 +35,26 @@ function authedUrl<F extends (...args: any[]) => string>(fn: F): F {
   return ((...args: Parameters<F>) => {
     const path = fn(...args);
     if (!path) return path;
-    const base = getApiBase();
-    const url = `${base}${path}`;
-    if (!base) return url;
-    const token = getAuthToken();
-    if (!token) return url;
-    const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}token=${encodeURIComponent(token)}`;
+    if (!path.startsWith("/api/")) return path;
+    return withAssetAuth(path);
   }) as F;
+}
+
+function withAssetAuth(path: string): string {
+  const base = getApiBase();
+  const url = `${base}${path}`;
+  if (!base) return url;
+  const token = getAuthToken();
+  if (!token || /[?&]token=/.test(url)) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+}
+
+type ImageOptions = Parameters<typeof _albumCoverApiUrl>[1];
+
+function preferModernImageFormat(options?: ImageOptions): ImageOptions {
+  if (!options || options.size == null || Object.prototype.hasOwnProperty.call(options, "format")) return options;
+  return { ...options, format: "webp" };
 }
 
 // These are passed to useApi/api() which already prepends the active API base.
@@ -56,19 +68,21 @@ export const trackEqFeaturesApiPath = _trackEqFeaturesApiPath;
 export const trackGenreApiPath = _trackGenreApiPath;
 export const trackOfflineManifestApiPath = _trackOfflineManifestApiPath;
 
-export const artistPhotoApiUrl = authedUrl(_artistPhotoApiUrl);
-export const artistBackgroundApiUrl = authedUrl(_artistBackgroundApiUrl);
-export const albumCoverApiUrl = authedUrl(_albumCoverApiUrl);
+export const artistPhotoApiUrl = authedUrl(((input, options) => (
+  _artistPhotoApiUrl(input, preferModernImageFormat(options))
+)) as typeof _artistPhotoApiUrl);
+export const artistBackgroundApiUrl = authedUrl(((input, options) => (
+  _artistBackgroundApiUrl(input, preferModernImageFormat(options))
+)) as typeof _artistBackgroundApiUrl);
+export const albumCoverApiUrl = authedUrl(((input, options) => (
+  _albumCoverApiUrl(input, preferModernImageFormat(options))
+)) as typeof _albumCoverApiUrl);
 export const trackStreamApiPath = _trackStreamApiPath;
 export const trackDownloadApiPath = _trackDownloadApiPath;
 export const recordAssetInvalidationScope = _recordAssetInvalidationScope;
 
 export function downloadApiUrl(path: string) {
   if (!path) return "";
-  const base = getApiBase();
-  const url = `${base}${path}`;
-  const token = getAuthToken();
-  if (!token) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}token=${encodeURIComponent(token)}`;
+  if (!path.startsWith("/api/")) return path;
+  return withAssetAuth(path);
 }

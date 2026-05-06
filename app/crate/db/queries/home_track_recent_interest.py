@@ -3,7 +3,7 @@ from __future__ import annotations
 from crate.db.queries.home_track_rows import _fetch_rows
 
 
-def get_recent_interest_track_rows(interest_artists_lower: list[str], limit: int = 240) -> list[dict]:
+def get_recent_interest_track_rows(*, user_id: int, interest_artists_lower: list[str], limit: int = 240) -> list[dict]:
     if not interest_artists_lower:
         return []
     capped_artists = interest_artists_lower[:50]
@@ -34,10 +34,19 @@ def get_recent_interest_track_rows(interest_artists_lower: list[str], limit: int
             t.danceability,
             t.valence,
             t.bliss_vector,
-            COALESCE(t.lastfm_playcount, 0) AS popularity
+            COALESCE(t.lastfm_playcount, 0) AS popularity,
+            COALESCE(uts.play_count, 0) AS user_play_count,
+            (ult.track_id IS NOT NULL) AS is_liked
         FROM library_tracks t
         JOIN library_albums alb ON alb.id = t.album_id
         LEFT JOIN library_artists art ON art.name = t.artist
+        LEFT JOIN user_track_stats uts
+          ON uts.user_id = :user_id
+         AND uts.stat_window = '90d'
+         AND uts.track_id = t.id
+        LEFT JOIN user_liked_tracks ult
+          ON ult.user_id = :user_id
+         AND ult.track_id = t.id
         WHERE LOWER(t.artist) = ANY(:artists)
         ORDER BY
             alb.updated_at DESC NULLS LAST,
@@ -45,7 +54,7 @@ def get_recent_interest_track_rows(interest_artists_lower: list[str], limit: int
             COALESCE(t.track_number, 9999) ASC
         LIMIT :lim
         """,
-        {"artists": capped_artists, "lim": limit},
+        {"user_id": user_id, "artists": capped_artists, "lim": limit},
     )
 
 

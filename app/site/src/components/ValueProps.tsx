@@ -16,60 +16,62 @@ interface Prop {
   title: string;
   body: string;
   className?: string;
+  hidden?: boolean;
 }
 
 const PROPS: Prop[] = [
   {
     icon: Database,
-    title: "Your library, end to end",
-    body: "Crate indexes your /music directory into PostgreSQL, builds a canonical identity per artist, album, and file, and never writes to the filesystem from the API. Two containers with asymmetric mounts (read-only + read-write) keep the boundary honest.",
+    title: "A catalog you can trust",
+    body: "Crate indexes your music folder, keeps stable identities for artists, albums, and tracks, and keeps file writes in the worker instead of the API. Boring boundaries, but useful ones.",
     className: "md:col-span-2",
   },
   {
     icon: Sparkles,
-    title: "Enrichment from 8+ sources",
-    body: "MusicBrainz, Last.fm, Discogs, Fanart.tv, Cover Art Archive, Setlist.fm, Ticketmaster, Spotify popularity, Deezer / iTunes fallbacks. Biographies, photos, discographies, similar artists, upcoming shows, and a canonical genre taxonomy — merged and deduplicated server-side.",
+    title: "Context when it helps",
+    body: "Crate can pull information from MusicBrainz, Last.fm, Discogs, Fanart.tv, Setlist.fm, Ticketmaster, and a few fallbacks. Bios, images, discographies, genres, and shows are meant to support the library, not bury it.",
   },
   {
     icon: Activity,
-    title: "Audio intelligence",
-    body: "Essentia plus PANNs extract BPM, key, loudness (LUFS), dynamic range, spectral complexity, mood, danceability, valence, acousticness. Bliss-rs computes a 20-float song-DNA vector per track. Used by radio, smart playlists, and the adaptive equalizer.",
+    title: "Audio analysis",
+    body: "Crate can analyze BPM, key, loudness, mood, and similarity. That data feeds radio, playlists, EQ hints, and browsing, but it stays explainable and local to your instance.",
   },
   {
     icon: SlidersHorizontal,
-    title: "A listening app that plays",
-    body: "Gapless transitions. Equal-power crossfade. A 10-band EQ that adapts to per-track analysis or follows the genre taxonomy preset. Synced lyrics with seek-by-line. WebGL visualiser. PWA and Capacitor targets. Offline mirror — download albums for playback without a network.",
+    title: "A player for your collection",
+    body: "The Listen app is there for day-to-day use: gapless playback, crossfade, EQ, lyrics, offline albums, and mobile installs. Nothing revolutionary, just the things a music app should have.",
     className: "md:col-span-2",
   },
   {
     icon: Radio,
-    title: "Shaped Radio",
-    body: "Seed any artist, genre, or track and Crate builds an infinite radio using a hybrid algorithm: bliss acoustic similarity, Last.fm artist connections, shared band members, and genre overlap. Like or dislike tracks to steer the sound in real time — Pandora-style shaping with your own library. Discovery Radio auto-seeds from your likes and follows.",
+    title: "Radio from your own files",
+    body: "Start from an artist, genre, or track and Crate builds a queue from the music you already have. Feedback nudges future choices without turning the whole thing into a mystery algorithm.",
   },
   {
     icon: Route,
     title: "Music Paths",
-    body: "Pick an origin and destination — a genre, artist, or track — and Crate traces a listening route through the acoustic space between them. Add waypoints to steer the journey. Each step sounds like it belongs in the transition.",
+    body: "An experiment in moving between sounds: choose a start and an end, then let Crate find tracks that bridge the space between them.",
+    hidden: true,
   },
   {
     icon: Calendar,
-    title: "Shows & events",
-    body: "Ticketmaster integration surfaces upcoming shows for artists in your library. Mark attendance, see probable setlists from Setlist.fm, play the setlist before you go. Upcoming events feed across all followed artists.",
+    title: "Shows and setlists",
+    body: "Crate can keep an eye on concerts for artists in your library, and connect those shows back to the music you already listen to.",
   },
   {
     icon: Mic2,
-    title: "AI-assisted curation",
-    body: "Local LLM integration (Ollama, Gemini, or any litellm provider) generates EQ presets per genre, enriches taxonomy descriptions, and powers intelligent playlist suggestions. Runs on your hardware, no data leaves your server.",
+    title: "Optional local AI",
+    body: "If you run an LLM, Crate can use it for things like genre notes, EQ suggestions, or playlist ideas. It is optional, and it is meant to help you edit, not pretend to know your taste better than you do.",
   },
   {
     icon: Users,
-    title: "Social, not surveillance",
-    body: "Follow people, share collaborative playlists, listen together in jam rooms with room-scoped websockets. OAuth sign-in. Affinity scores with reasons, not a black-box recommender. No anonymous telemetry leaves your server.",
+    title: "Small social features",
+    body: "Follow people on your instance, share playlists, and listen together. It is designed for friends and small communities, not growth loops.",
   },
   {
     icon: Terminal,
-    title: "Hackable by design",
-    body: "FastAPI + Dramatiq + PostgreSQL + Redis backend. React 19 + Tailwind 4 + @crate/ui shared design system. Open Subsonic API for third-party clients. Real-time SSE for task progress and cache invalidation. One repo, one compose file.",
+    title: "Readable enough to change",
+    body: "FastAPI, PostgreSQL, Redis, React, Go, and Rust where they make sense. The goal is a codebase that can be understood and self-hosted without ceremony.",
   },
 ];
 
@@ -78,31 +80,29 @@ export function ValueProps() {
     <section id="features" className="relative mx-auto max-w-[1400px] px-5 py-24 sm:px-8 sm:py-32">
       <div className="mb-12 max-w-2xl">
         <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
-          What it is
+          What it can do
         </div>
         <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-[44px] sm:leading-[1.05]">
-          A full platform, not a file browser with a play button.
+          Useful pieces around a music library.
         </h2>
         <p className="mt-4 text-base leading-7 text-white/60 sm:text-lg">
-          Crate combines an indexed library, a background pipeline for enrichment
-          and analysis, a streaming backend with Subsonic compatibility, and two
-          real frontends — an admin app for library management and a listening
-          app built for the phone.
+          Crate does a few jobs at once: it catalogs files, adds context, serves audio,
+          runs background work, and gives you separate surfaces for listening and
+          library care. You can use the parts that matter to you.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {PROPS.map(({ icon: Icon, title, body, className }) => (
+      <div className="grid gap-x-8 gap-y-10 md:grid-cols-3">
+        {PROPS.filter(({ hidden }) => !hidden).map(({ icon: Icon, title, body, className }) => (
           <article
             key={title}
-            className={`group relative overflow-hidden rounded-[22px] border border-white/8 bg-white/[0.025] p-6 transition hover:border-cyan-400/25 hover:bg-white/[0.04] ${className ?? ""}`}
+            className={`group border-t border-white/10 pt-6 ${className ?? ""}`}
           >
-            <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-300">
+            <div className="mb-4 text-cyan-300">
               <Icon size={18} />
             </div>
             <h3 className="mb-2 text-lg font-semibold tracking-tight text-white">{title}</h3>
             <p className="text-[14.5px] leading-[1.65] text-white/60">{body}</p>
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px scale-x-0 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-0 transition-all duration-500 group-hover:scale-x-100 group-hover:opacity-100" />
           </article>
         ))}
       </div>

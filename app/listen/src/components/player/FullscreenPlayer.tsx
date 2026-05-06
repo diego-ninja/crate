@@ -11,7 +11,11 @@ import { useResolvedPlayerArtist } from "@/components/player/useResolvedPlayerAr
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { InfoTab } from "@/components/player/extended/InfoTab";
 import { api } from "@/lib/api";
-import { isAndroidNative } from "@/lib/capacitor-runtime";
+import {
+  canUseWebAudioEffects,
+  isMobileAudioRuntime,
+  stableMobileAudioPipeline,
+} from "@/lib/mobile-audio-mode";
 import {
   getPlayerSurfaceModePreference,
   PLAYER_VIZ_PREFS_EVENT,
@@ -33,6 +37,7 @@ import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
+import { toast } from "sonner";
 
 type FSTab = "player" | "queue" | "lyrics" | "info";
 
@@ -137,7 +142,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     duration,
   );
   const navigate = useNavigate();
-  const allowMobileEqualizer = !isAndroidNative;
+  const allowMobileEqualizer = canUseWebAudioEffects;
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
   const [surfaceMode, setSurfaceMode] = useState<PlayerSurfaceMode>(getMobileSurfaceModePreference);
@@ -322,7 +327,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
   const remainingTime = Math.max(0, displayedDuration - displayedTime);
-  const mobileBottomClearance = "calc(10rem + env(safe-area-inset-bottom, 0px))";
+  const playerTabBottomClearance = "var(--listen-mobile-fullscreen-player-clearance)";
+  const scrollTabBottomClearance = "var(--listen-mobile-fullscreen-scroll-clearance)";
 
   const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
     { id: "player", icon: Disc3, label: "Player" },
@@ -341,6 +347,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       }`}
       style={{
         background: "linear-gradient(180deg, #1a2030 0%, #0a0a0f 100%)",
+        minHeight: "var(--listen-viewport-height)",
+        height: "var(--listen-viewport-height)",
         transform: swipeY > 0 ? `translateY(${swipeY}px)` : undefined,
         transition: swipeY > 0 ? "none" : "all 300ms ease-out",
         opacity: swipeY > 0 ? Math.max(0.3, 1 - swipeY / 400) : undefined,
@@ -350,12 +358,12 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       onTouchEnd={onSwipeEnd}
     >
       {/* Drag handle */}
-      <div className="flex justify-center pt-3 pb-1">
+      <div className="flex justify-center pb-1" style={{ paddingTop: "calc(var(--listen-safe-top) + 0.75rem)" }}>
         <div className="w-10 h-1 rounded-full bg-white/20" />
       </div>
 
       {/* Header row 1: close + compact actions */}
-      <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,8px)] pb-1">
+      <div className="flex items-center justify-between px-4 pb-1">
         <button
           onClick={onClose}
           aria-label="Close player"
@@ -386,6 +394,21 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             >
               <SlidersHorizontal size={18} />
             </button>
+          ) : isMobileAudioRuntime ? (
+            <button
+              type="button"
+              onClick={() => {
+                toast.info(
+                  stableMobileAudioPipeline
+                    ? "Enable Enhanced mobile audio in Settings, then restart Listen to use EQ on mobile."
+                    : "Restart Listen to apply the mobile audio mode change.",
+                );
+              }}
+              aria-label="Equalizer is disabled in stable mobile audio mode"
+              className="w-11 h-11 flex items-center justify-center text-white/20"
+            >
+              <SlidersHorizontal size={18} />
+            </button>
           ) : null}
         </div>
       </div>
@@ -411,7 +434,11 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {allowMobileEqualizer && showEqualizer && (
         <div
           ref={equalizerRef}
-          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+          className="absolute left-4 right-4 z-40 overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+          style={{
+            top: "var(--listen-mobile-fullscreen-eq-top)",
+            maxHeight: "calc(var(--listen-viewport-height) - var(--listen-mobile-fullscreen-eq-top) - var(--listen-safe-bottom) - 1rem)",
+          }}
         >
           <EqualizerPanel onClose={() => setShowEqualizer(false)} />
         </div>
@@ -421,7 +448,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {activeTab === "player" && (
       <div
         className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6"
-        style={{ paddingBottom: mobileBottomClearance }}
+        style={{ paddingBottom: playerTabBottomClearance }}
       >
         <div className="mx-auto w-full max-w-[360px]">
           <div ref={coverRef} className="relative">
@@ -515,7 +542,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Queue tab ── */}
       {activeTab === "queue" && (
-        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: mobileBottomClearance }}>
+        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: scrollTabBottomClearance }}>
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
               Up Next · {upcomingTracks.length} tracks
@@ -539,7 +566,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Lyrics tab ── */}
       {activeTab === "lyrics" && (
-        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ paddingBottom: mobileBottomClearance }}>
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ paddingBottom: scrollTabBottomClearance }}>
           {!lyrics ? (
             <p className="text-center text-white/40 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (
@@ -570,7 +597,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       )}
 
       {activeTab === "info" && (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3" style={{ paddingBottom: mobileBottomClearance }}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3" style={{ paddingBottom: scrollTabBottomClearance }}>
           <InfoTab className="pr-0" />
         </div>
       )}

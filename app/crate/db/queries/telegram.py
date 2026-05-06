@@ -1,9 +1,9 @@
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 from sqlalchemy import text
 
 
 def get_library_status_summary() -> dict:
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text(
                 """
@@ -28,7 +28,7 @@ def get_library_status_summary() -> dict:
 
 
 def get_server_db_stats() -> dict:
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text(
                 """
@@ -46,7 +46,7 @@ def get_server_db_stats() -> dict:
 
 
 def list_active_tasks(limit: int = 15) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -64,7 +64,7 @@ def list_active_tasks(limit: int = 15) -> list[dict]:
 
 
 def list_recently_played(limit_minutes: int = 10) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -92,7 +92,7 @@ def list_recently_played(limit_minutes: int = 10) -> list[dict]:
 
 
 def list_recent_albums(limit: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -110,7 +110,7 @@ def list_recent_albums(limit: int) -> list[dict]:
 
 
 def find_active_task_by_prefix(task_id_prefix: str) -> dict | None:
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text(
                 """

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", () => ({
   api: vi.fn(),
+  resolveMaybeApiAssetUrl: vi.fn((url: string | null | undefined) => url ?? null),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number) {

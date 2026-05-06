@@ -3,7 +3,7 @@
 Usage (inside the Docker container where PANNs is installed):
     python export_panns_onnx.py [output_path]
 
-Default output: tools/grooveyard-bliss/models/panns_cnn14.onnx
+Default output: tools/crate-cli/models/panns_cnn14.onnx
 
 The script loads the same CNN14 checkpoint used by audio_analysis.py
 and exports it to ONNX with opset 17. Input: [batch, samples] float32

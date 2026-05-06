@@ -7,6 +7,9 @@ responses, Telegram bot, and mirrored in the admin frontend.
 TASK_TYPE_LABELS: dict[str, str] = {
     # Library
     "library_sync": "Library Scan",
+    "import_queue_item": "Import Staged Album",
+    "import_queue_all": "Import Staged Albums",
+    "import_queue_remove": "Remove Staged Import",
     "scan": "Health Check",
     "process_new_content": "Process New Content",
     "repair_library": "Library Repair",
@@ -53,6 +56,9 @@ TASK_TYPE_LABELS: dict[str, str] = {
 
 TASK_TYPE_ICONS: dict[str, str] = {
     "library_sync": "\U0001f4c2",
+    "import_queue_item": "\U0001f4e5",
+    "import_queue_all": "\U0001f4e5",
+    "import_queue_remove": "\U0001f5d1",
     "scan": "\U0001f50d",
     "process_new_content": "\u2728",
     "repair_library": "\U0001f527",

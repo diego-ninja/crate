@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { ArrowRight, Tag, Sparkles, Sun, Volume2, Activity, Radio, Music, Play, SkipForward } from "lucide-react";
+import { ArrowRight, Tag, Sparkles, Sun, Volume2, Activity, Radio, SkipForward } from "lucide-react";
 
 // ── Adaptive EQ mock ────────────────────────────────────────────────
 
@@ -143,9 +143,9 @@ function TaxonomyMock() {
         Genre taxonomy
       </div>
       <p className="mb-4 text-[13px] leading-relaxed text-white/55">
-        Every canonical node can own an EQ preset. Nodes without one
-        inherit from their parent via BFS — so new subgenres work on
-        day one, and tuning happens in one place.
+        Genre tags are messy. Crate keeps a small taxonomy so related styles can
+        share defaults, and you can fix things in one place instead of editing
+        every album by hand.
       </p>
       <div className="space-y-1">
         {nodes.map((n) => (
@@ -307,95 +307,9 @@ function RadioMock() {
       </div>
 
       <div className="mt-3 text-[11px] leading-relaxed text-white/40">
-        Seed any track. Bliss similarity vectors find what sounds
-        alike — not what shares a tag. The queue regenerates as you skip.
+        Start from a track and let Crate look for nearby sounds in your own library.
+        Skips and likes nudge what comes next.
       </div>
-    </div>
-  );
-}
-
-// ── Player mock ───────────────────────────────────────────────────
-
-const LYRICS_LINES = [
-  { time: 0, text: "Eagles become vultures" },
-  { time: 4, text: "In the shadow of the gallows" },
-  { time: 8, text: "Dark horse running" },
-  { time: 12, text: "Through the fields of broken glass" },
-  { time: 16, text: "We were never the same" },
-  { time: 20, text: "After the fall" },
-];
-
-function PlayerMock() {
-  const [currentLine, setCurrentLine] = useState(0);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const lineInterval = setInterval(() => {
-      setCurrentLine((prev) => (prev + 1) % LYRICS_LINES.length);
-    }, 2800);
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => (prev >= 100 ? 0 : prev + 0.3));
-    }, 50);
-    return () => {
-      clearInterval(lineInterval);
-      clearInterval(progressInterval);
-    };
-  }, []);
-
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-black/40 p-5">
-      <div className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-300">
-        <Music size={11} />
-        Listen app
-      </div>
-
-      {/* Mini player */}
-      <div className="mb-4 flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 p-3">
-        <div className="h-12 w-12 flex-shrink-0 rounded-lg bg-gradient-to-br from-cyan-800/60 to-slate-900 shadow-lg" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-white">Dark Horse</div>
-          <div className="text-[11px] text-white/50">Converge</div>
-          {/* Progress bar */}
-          <div className="mt-1.5 h-1 w-full rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-cyan-400 transition-[width] duration-100"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-        <button className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-400 text-black shadow-[0_0_16px_rgba(6,182,212,0.5)]">
-          <Play size={16} className="ml-0.5 fill-current" />
-        </button>
-      </div>
-
-      {/* Synced lyrics */}
-      <div className="rounded-xl border border-white/8 bg-black/20 p-3">
-        <div className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/30">
-          Synced lyrics
-        </div>
-        <div className="space-y-1.5">
-          {LYRICS_LINES.map((line, i) => (
-            <div
-              key={i}
-              className={`rounded-md px-2 py-1 text-[13px] transition-all duration-500 ${
-                i === currentLine
-                  ? "bg-cyan-400/10 font-semibold text-cyan-100"
-                  : i < currentLine
-                    ? "text-white/25"
-                    : "text-white/50"
-              }`}
-            >
-              {line.text}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-        Gapless transitions, equal-power crossfade, synced lyrics with
-        seek-by-line, and a WebGL visualiser driven by the real audio analyser.
-        Offline mirror lets you download albums for playback without a network.
-      </p>
     </div>
   );
 }
@@ -416,10 +330,10 @@ export function FeatureShowcase() {
     <section className="relative mx-auto max-w-[1400px] px-5 py-20 sm:px-8 sm:py-28">
       <div className="mb-16 max-w-2xl">
         <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
-          How it feels
+          A closer look
         </div>
         <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-[44px] sm:leading-[1.05]">
-          Smart defaults. Honest controls. No black boxes.
+          Some ideas inside Crate.
         </h2>
       </div>
 
@@ -427,22 +341,18 @@ export function FeatureShowcase() {
       <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,580px)]">
         <div>
           <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            An equalizer that reads the track.
+            EQ can use what Crate knows about a track.
           </h3>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            Adaptive mode reads per-track brightness, loudness, dynamic range, and
-            energy, and applies a "nudge, don't sculpt" heuristic — small corrections
-            that respect what the mastering engineer did. Genre mode picks a preset from
-            the track's canonical genre node, inheriting from parents when the specific
-            subgenre doesn't own one.
+            Adaptive mode looks at simple audio features like brightness, loudness,
+            dynamic range, and energy. It makes small changes, not a dramatic remix.
+            Genre mode can use a preset from the track's genre, with inheritance for
+            nearby subgenres.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
-            <Bullet>10 bands, peaking filters, ±12 dB range, per-band ramps so
-              changes never click.</Bullet>
-            <Bullet>20+ built-in presets tuned by genre — black metal, doom, shoegaze,
-              post-rock, hip-hop, and so on.</Bullet>
-            <Bullet>AI-generated presets — point your local LLM at a genre node and get
-              a curve with written reasoning.</Bullet>
+            <Bullet>10 bands with smooth ramps so changes do not click.</Bullet>
+            <Bullet>Genre presets for styles where a small tonal nudge is useful.</Bullet>
+            <Bullet>Optional LLM-assisted preset drafts when you want a starting point.</Bullet>
           </ul>
         </div>
         <EqMock />
@@ -453,22 +363,17 @@ export function FeatureShowcase() {
         <TaxonomyMock />
         <div>
           <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            A genre graph, not a dropdown.
+            Genres are treated as a map, not a flat list.
           </h3>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            Raw Last.fm tags get normalised into a curated taxonomy with parents,
-            children, related links, aliases, and MusicBrainz references. The EQ
-            presets attach to that graph, so maintenance happens in one place and
-            new subgenres inherit sensible defaults the day they show up in your
-            library.
+            Raw tags from files and external sources are noisy. Crate tries to group
+            them into a smaller taxonomy with parents, aliases, and related styles,
+            so browsing and EQ presets have something steadier to lean on.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
-            <Bullet>60+ canonical nodes seeded — rock, metal, punk, electronic,
-              hip-hop, jazz, classical, ambient, and everything under them.</Bullet>
-            <Bullet>Admin UI to edit preset gains per node, or drop back to
-              inheritance with one click.</Bullet>
-            <Bullet>LLM-assisted enrichment fills in descriptions and infers
-              taxonomy relationships for unmapped tags.</Bullet>
+            <Bullet>Seeded genre families for common styles and substyles.</Bullet>
+            <Bullet>Admin tools to rename, merge, map, or let a tag inherit context.</Bullet>
+            <Bullet>Optional assistance for unmapped tags, always editable afterwards.</Bullet>
           </ul>
           <a
             href="https://docs.cratemusic.app/technical/audio-analysis-similarity-and-discovery"
@@ -484,51 +389,40 @@ export function FeatureShowcase() {
       <div className="mt-28 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,580px)]">
         <div>
           <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Radio that learns what you want to hear.
+            Radio built from your own library.
           </h3>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            Seed any artist, genre, or track and Crate builds an infinite queue
-            using four signals: bliss acoustic similarity, Last.fm artist connections,
-            shared band members (MusicBrainz), and genre overlap. Then shape it —
-            like or dislike tracks and the radio adapts in real time. Discovery Radio auto-seeds from your follows and listening history.
+            Part of the inspiration is old Pandora: that feeling of starting with a
+            song and letting a station slowly find its shape. Crate tries to bring a
+            little of that back, but using the music you already have. It combines
+            acoustic similarity, artist links, shared members, and genre overlap, then
+            lets likes and skips gently steer the next choices.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
-            <Bullet>Hybrid scoring: 40% acoustic DNA, 35% artist affinity (including
-              shared band members), 25% genre overlap.</Bullet>
-            <Bullet>Pandora-style shaping — thumbs up shifts the sound toward what you
-              liked, thumbs down creates exclusion zones.</Bullet>
-            <Bullet>Feedback persists across sessions — your preferences carry over to
-              future radios with temporal decay.</Bullet>
+            <Bullet>Uses audio similarity, artist relationships, and genre overlap.</Bullet>
+            <Bullet>Likes and dislikes adjust the queue without hiding why tracks appeared.</Bullet>
+            <Bullet>Feedback can carry across sessions, but it stays on your instance.</Bullet>
           </ul>
         </div>
         <RadioMock />
       </div>
 
-      {/* Player & listening experience */}
-      <div className="mt-28 grid items-center gap-10 lg:grid-cols-[minmax(0,580px)_minmax(0,1fr)]">
-        <PlayerMock />
-        <div>
+      {/* Listening experience */}
+      <div className="mt-28 max-w-2xl">
           <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            A listening app, not a database viewer.
+            A player for the library you keep.
           </h3>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            The listen app is a real music player designed for the phone.
-            Gapless playback, crossfade, synced lyrics, a WebGL visualiser,
-            and offline support — built as a PWA and packaged for Android
-            via Capacitor. The admin app handles library management, enrichment,
-            and curation.
+            The Listen app is the everyday player. It has gapless playback, crossfade,
+            lyrics, offline support, and mobile installs. The admin app stays separate,
+            because managing a library and listening to one are different moods.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
-            <Bullet>Gapless transitions with equal-power crossfade — no silence
-              between tracks.</Bullet>
-            <Bullet>Synced lyrics (LRC) with seek-by-line — tap a line to jump
-              to that moment.</Bullet>
-            <Bullet>Offline mirror — download albums for playback without a
-              network connection.</Bullet>
-            <Bullet>Shows & events — see upcoming concerts for your artists,
-              mark attendance, play probable setlists.</Bullet>
+            <Bullet>Gapless playback and crossfade for albums and queues.</Bullet>
+            <Bullet>Synced lyrics when they are available.</Bullet>
+            <Bullet>Offline albums for places where the network is not reliable.</Bullet>
+            <Bullet>Shows and setlists connected back to the artists in your library.</Bullet>
           </ul>
-        </div>
       </div>
     </section>
   );

@@ -86,15 +86,33 @@ def test_openapi_marks_genre_routes_as_authenticated_and_typed(test_app):
 def test_openapi_types_jam_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     create_operation = data["paths"]["/api/jam/rooms"]["post"]
+    list_operation = data["paths"]["/api/jam/rooms"]["get"]
     get_operation = data["paths"]["/api/jam/rooms/{room_id}"]["get"]
+    update_operation = data["paths"]["/api/jam/rooms/{room_id}"]["patch"]
+    delete_operation = data["paths"]["/api/jam/rooms/{room_id}"]["delete"]
+    public_join_operation = data["paths"]["/api/jam/rooms/{room_id}/join"]["post"]
     invite_operation = data["paths"]["/api/jam/rooms/{room_id}/invites"]["post"]
     join_operation = data["paths"]["/api/jam/rooms/invites/{token}/join"]["post"]
     end_operation = data["paths"]["/api/jam/rooms/{room_id}/end"]["post"]
 
-    for operation in (create_operation, get_operation, invite_operation, join_operation, end_operation):
+    for operation in (
+        create_operation,
+        list_operation,
+        get_operation,
+        update_operation,
+        delete_operation,
+        public_join_operation,
+        invite_operation,
+        join_operation,
+        end_operation,
+    ):
         assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
 
     assert create_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamRoomResponse")
+    assert list_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamRoomListResponse")
+    assert update_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamRoomResponse")
+    assert delete_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamRoomDeleteResponse")
+    assert public_join_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamJoinResponse")
     assert invite_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamInviteResponse")
     assert join_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamJoinResponse")
     assert end_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/JamRoomResponse")
@@ -669,7 +687,9 @@ def test_openapi_types_browse_shows_upcoming_and_media_routes(test_app):
 
     assert artist_photo_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/jpeg" in artist_photo_operation["responses"]["200"]["content"]
+    assert "image/webp" in artist_photo_operation["responses"]["200"]["content"]
     assert any(param["name"] == "size" for param in artist_photo_operation.get("parameters", []))
+    assert any(param["name"] == "format" for param in artist_photo_operation.get("parameters", []))
 
     assert artist_background_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/svg+xml" in artist_background_operation["responses"]["200"]["content"]
@@ -677,7 +697,9 @@ def test_openapi_types_browse_shows_upcoming_and_media_routes(test_app):
 
     assert album_cover_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/png" in album_cover_operation["responses"]["200"]["content"]
+    assert "image/webp" in album_cover_operation["responses"]["200"]["content"]
     assert any(param["name"] == "size" for param in album_cover_operation.get("parameters", []))
+    assert any(param["name"] == "format" for param in album_cover_operation.get("parameters", []))
 
     assert album_download_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}, {"queryTokenAuth": []}]
     assert "application/zip" in album_download_operation["responses"]["200"]["content"]

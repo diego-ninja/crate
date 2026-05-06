@@ -279,7 +279,7 @@ export function Shell() {
   const desktopContentPadClass = overlayHeader ? "pt-0 pb-6" : "py-6";
   const mobileContentPadClass = overlayHeader
     ? "pt-0 pb-4"
-    : "py-4 pt-[calc(5.5rem+env(safe-area-inset-top,0px))]";
+    : "py-4 pt-[var(--listen-mobile-page-top)]";
   const headerChromeClass =
     "border-b border-white/6 bg-app-surface/68 shadow-[0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-xl";
 
@@ -322,22 +322,30 @@ export function Shell() {
     );
   }
 
-  // Mobile layout
-  // Bottom nav height: 64px + safe area. PlayerBar: 82px floating at bottom-3 (12px).
-  // Total clearance needed: 64px nav + 82px player + 12px gap + safe area ≈ 170px when track present.
-  const mobileBottomPad = hasTrack ? "pb-[170px]" : "pb-20";
-
   return (
     <div className="flex min-h-screen flex-col bg-app-surface">
       <div
         className={`z-app-header fixed top-0 left-0 right-0 ${headerChromeClass}`}
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        style={{ paddingTop: "var(--listen-safe-top)" }}
       >
         <TopBar />
       </div>
 
-      <main className={`relative z-0 flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`mx-auto w-full max-w-[1560px] px-[max(1rem,env(safe-area-inset-left))] ${mobileContentPadClass}`}>
+      <main
+        className="relative z-0 flex-1 overflow-x-hidden"
+        style={{
+          paddingBottom: hasTrack
+            ? "var(--listen-mobile-bottom-clearance)"
+            : "var(--listen-mobile-bottom-clearance-no-player)",
+        }}
+      >
+        <div
+          className={`mx-auto w-full max-w-[1560px] ${mobileContentPadClass}`}
+          style={{
+            paddingLeft: "max(1rem, var(--listen-safe-left))",
+            paddingRight: "max(1rem, var(--listen-safe-right))",
+          }}
+        >
           <Outlet />
         </div>
       </main>
@@ -347,14 +355,21 @@ export function Shell() {
         className="pointer-events-none fixed inset-x-0 bottom-0 z-20 bg-app-surface"
         style={{
           height: hasTrack
-            ? "calc(64px + env(safe-area-inset-bottom, 0px) + 82px + 20px)"
-            : "calc(64px + env(safe-area-inset-bottom, 0px))",
+            ? "var(--listen-mobile-bottom-chrome-height)"
+            : "var(--listen-mobile-bottom-nav-height)",
         }}
       />
 
       <PlayerBar />
 
-      <nav className="z-app-player fixed bottom-0 left-0 right-0 isolate flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))", contain: "paint" }}>
+      <nav
+        className="z-app-player fixed bottom-0 left-0 right-0 isolate flex items-center justify-around border-t border-white/5 bg-app-surface px-1.5"
+        style={{
+          paddingBottom: "var(--listen-safe-bottom)",
+          height: "var(--listen-mobile-bottom-nav-height)",
+          contain: "paint",
+        }}
+      >
         {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -362,11 +377,11 @@ export function Shell() {
             end={to === "/"}
   
             className={({ isActive }) =>
-              `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
+              `flex min-w-0 flex-1 touch-manipulation flex-col items-center gap-1 rounded-xl px-1.5 py-1.5 transition-colors active:bg-white/5 ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
             }
           >
             <Icon size={20} />
-            <span className="text-[10px]">{label}</span>
+            <span className="max-w-full truncate text-[9.5px] leading-none">{label}</span>
           </NavLink>
         ))}
       </nav>

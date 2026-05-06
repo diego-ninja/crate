@@ -1,41 +1,63 @@
+import { useEffect, useState } from "react";
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
-import { ValueProps } from "@/components/ValueProps";
 import { FeatureShowcase } from "@/components/FeatureShowcase";
+import { WhatIsCrate } from "@/components/WhatIsCrate";
+import { ValueProps } from "@/components/ValueProps";
+import { WhoIsItFor } from "@/components/WhoIsItFor";
+import { Screenshots } from "@/components/Screenshots";
+import { Comparison } from "@/components/Comparison";
 import { MusicPaths } from "@/components/MusicPaths";
 import { UnderTheHood } from "@/components/UnderTheHood";
-import { GetApp } from "@/components/GetApp";
 import { GetInvolved } from "@/components/GetInvolved";
 import { Footer } from "@/components/Footer";
 import { Manifesto } from "@/components/Manifesto";
 import { WhyCrate } from "@/components/WhyCrate";
+import { WhyCrateTeaser } from "@/components/WhyCrateTeaser";
 
-function WhyTeaser() {
+const SHOW_MUSIC_PATHS = false;
+
+function StickyCTA() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY > 400;
+      const nearBottom =
+        window.innerHeight + window.scrollY >=
+        document.body.offsetHeight - 200;
+      setVisible(scrolled && !nearBottom);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
-    <section className="relative mx-auto max-w-[1400px] px-5 py-10 sm:px-8 sm:py-16">
-      <div className="mx-auto max-w-3xl text-center">
-        <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
-          The Crate Manifesto
+    <div
+      className={`fixed bottom-0 left-0 right-0 z-30 border-t border-white/8 bg-[#07070b]/95 backdrop-blur-md transition-transform duration-300 ${
+        visible ? "translate-y-0" : "translate-y-full"
+      }`}
+    >
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-5 py-3 sm:px-8">
+        <div className="flex items-center gap-3 min-w-0">
+          <img src="/icons/logo.svg" alt="" className="h-7 w-7 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-sm font-semibold text-white">Crate</span>
+            <span className="ml-3 hidden text-[12px] text-white/35 sm:inline">
+              Own your music. Support your artists. Refuse the middleman.
+            </span>
+          </div>
         </div>
-        <blockquote className="text-xl font-medium leading-relaxed text-white/80 sm:text-2xl sm:leading-relaxed">
-          "In a system where artists earn $0.003 per stream while platforms
-          collect billions, piracy is not theft. It's self-defense."
-        </blockquote>
-        <p className="mt-6 text-[15px] leading-7 text-white/50">
-          Buy the concert ticket. Buy the record at the merch table. Send the
-          band a message. That is how you support music. Not by feeding a
-          system designed to extract value from artists and redistribute it
-          upward.
-        </p>
-        <a
-          href="/why"
-          className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-cyan-300 transition hover:text-cyan-200"
-        >
-          Read the full manifesto
-          <span className="transition group-hover:translate-x-0.5">→</span>
-        </a>
+        <div className="flex shrink-0 items-center gap-3">
+          <a
+            href="https://docs.cratemusic.app"
+            className="rounded-full bg-cyan-400 px-4 py-2 text-[13px] font-semibold text-[#05161c] shadow-[0_0_16px_-4px_rgba(6,182,212,0.5)] transition hover:bg-cyan-300"
+          >
+            Self-host Crate
+          </a>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -43,28 +65,33 @@ function HomePage() {
   return (
     <>
       <Hero />
-      <WhyTeaser />
-      <WhyCrate />
-      <ValueProps />
       <FeatureShowcase />
-      <MusicPaths />
+      <WhatIsCrate />
+      <Screenshots />
+      <ValueProps />
+      <WhoIsItFor />
+      <WhyCrateTeaser />
+      <Comparison />
+      {SHOW_MUSIC_PATHS ? <MusicPaths /> : null}
       <UnderTheHood />
-      <GetApp />
       <GetInvolved />
     </>
   );
 }
 
 export default function App() {
-  const isManifesto = window.location.pathname === "/why";
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const isManifesto = pathname === "/why";
+  const isWhyCrate = pathname === "/why-crate";
 
   return (
     <div className="grain relative min-h-screen">
       <Nav />
       <main>
-        {isManifesto ? <Manifesto /> : <HomePage />}
+        {isManifesto ? <Manifesto /> : isWhyCrate ? <WhyCrate /> : <HomePage />}
       </main>
       <Footer />
+      <StickyCTA />
     </div>
   );
 }

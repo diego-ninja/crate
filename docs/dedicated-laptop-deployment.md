@@ -349,7 +349,7 @@ Create the internal data directories before you continue:
 ```bash
 sudo mkdir -p /srv/crate-data/traefik/conf
 sudo mkdir -p /srv/crate-data/traefik/logs
-sudo mkdir -p /srv/crate-data/librarian
+sudo mkdir -p /srv/crate-data/crate
 sudo mkdir -p /srv/crate-data/postgres
 sudo mkdir -p /srv/crate-data/redis
 sudo chown -R "$USER":"$USER" /srv/crate-data
@@ -770,7 +770,7 @@ Minimum sensible backup plan:
 - back up `/srv/crate-data/traefik/acme.json`
 - back up `/srv/crate-data/postgres`
 - back up `/srv/crate-data/redis`
-- back up `/srv/crate-data/librarian`
+- back up `/srv/crate-data/crate`
 - back up the external SSD separately
 
 Useful recurring checks:

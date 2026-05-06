@@ -28,11 +28,11 @@ NC     := \033[0m
 # DEV (local development environment)
 # ===========================================================================
 
-DC_DEV := $(DC) -f docker-compose.dev.yaml
-DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-maintenance-worker crate-dev-analysis-worker crate-dev-playback-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
+DC_DEV := $(DC) -f docker-compose.dev.yaml -f docker-compose.readplane.dev.yaml
+DEV_CONTAINERS := crate-dev-api crate-dev-readplane crate-dev-worker crate-dev-maintenance-worker crate-dev-analysis-worker crate-dev-playback-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy crate-dev-readplane-proxy
 
 .PHONY: dev
-dev: ## Start backend (Postgres + Redis + API + Worker + Caddy) and frontend dev servers
+dev: ## Start backend (Postgres + Redis + API + Worker + Readplane + Caddy) and frontend dev servers
 	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
 	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
@@ -43,7 +43,7 @@ dev: ## Start backend (Postgres + Redis + API + Worker + Caddy) and frontend dev
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Backend is up (Postgres, Redis, API, Worker, Caddy)$(NC)"
+	@echo "$(GREEN)Backend is up (Postgres, Redis, API, Worker, Readplane, Caddy)$(NC)"
 	@echo ""
 	@echo "Starting frontends..."
 	@rm -rf app/ui/node_modules/.vite app/listen/node_modules/.vite node_modules/.vite 2>/dev/null || true
@@ -64,15 +64,17 @@ dev: ## Start backend (Postgres + Redis + API + Worker + Caddy) and frontend dev
 	@echo "  $(GREEN)API Ref:$(NC) https://reference.dev.cratemusic.app"
 	@echo "  $(GREEN)Site:$(NC)   https://www.dev.cratemusic.app"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
+	@echo "  $(GREEN)Readplane:$(NC) http://localhost:8686"
 	@echo "  Login:  admin@cratemusic.app / admin"
 	@echo ""
 	@echo "$(GREEN)Everything is running. Use make dev-down to stop it.$(NC)"
 
 .PHONY: dev-back
-dev-back: ## Start only the backend (Postgres + Redis + API + Worker)
+dev-back: ## Start only the backend (Postgres + Redis + API + Worker + Readplane)
 	@$(DC_DEV) up -d --build
 	@echo "$(GREEN)Backend is up$(NC)"
 	@echo "  API: http://localhost:8585"
+	@echo "  Readplane: http://localhost:8686"
 
 .PHONY: dev-admin
 dev-admin: ## Start only the Admin UI dev server (:5173)
@@ -156,8 +158,87 @@ regression-radio: ## Radio contracts using a temporary backend image from the cu
 regression-smoke: ## Real smoke test against the authenticated dev environment
 	@python3 scripts/regression_smoke.py
 
+.PHONY: pg-perf-snapshot
+pg-perf-snapshot: ## Read-only PostgreSQL performance snapshot as JSON
+	@uv run python scripts/postgres_perf_snapshot.py --pretty
+
 .PHONY: regression-min
 regression-min: regression-api regression-smoke ## Minimum regression suite before touching Listen
+
+# ===========================================================================
+# CRATE CLI (Rust native toolbox)
+# ===========================================================================
+
+.PHONY: crate-cli-linux
+crate-cli-linux: ## Build crate-cli for production Linux workers into app/bin/
+	@mkdir -p app/bin /tmp/crate-cli-build
+	@docker build --platform linux/amd64 --output type=local,dest=/tmp/crate-cli-build tools/crate-cli
+	@cp /tmp/crate-cli-build/crate-cli app/bin/crate-cli-linux-amd64
+	@chmod +x app/bin/crate-cli-linux-amd64
+	@echo "$(GREEN)Built app/bin/crate-cli-linux-amd64$(NC)"
+
+# ===========================================================================
+# READPLANE (Go read-only acceleration service)
+# ===========================================================================
+
+READPLANE_GO_IMAGE ?= golang:1.23-alpine
+READPLANE_GO ?= /usr/local/go/bin/go
+READPLANE_FASTAPI_BASE ?= http://host.docker.internal:8585
+READPLANE_BASE ?= http://host.docker.internal:8686
+READPLANE_AUTH_EMAIL ?= admin@cratemusic.app
+READPLANE_AUTH_PASSWORD ?= admin
+READPLANE_BENCH_REQUESTS ?= 50
+READPLANE_BENCH_WARMUP ?= 5
+
+.PHONY: readplane-test
+readplane-test: ## Run readplane Go tests in a container
+	@docker run --rm \
+		-v "$(CURDIR)/app/readplane:/src" \
+		-w /src \
+		$(READPLANE_GO_IMAGE) \
+		$(READPLANE_GO) test ./...
+
+.PHONY: readplane-vet
+readplane-vet: ## Run go vet for readplane in a container
+	@docker run --rm \
+		-v "$(CURDIR)/app/readplane:/src" \
+		-w /src \
+		$(READPLANE_GO_IMAGE) \
+		$(READPLANE_GO) vet ./...
+
+.PHONY: readplane-ci
+readplane-ci: readplane-test readplane-vet ## Run readplane local CI checks
+	@docker build -t crate-readplane:local app/readplane
+
+.PHONY: readplane-contract-smoke
+readplane-contract-smoke: ## Compare readplane P0/P1/P2 responses against local FastAPI
+	@docker run --rm \
+		--add-host=host.docker.internal:host-gateway \
+		-v "$(CURDIR)/app/readplane:/src" \
+		-w /src \
+		-e FASTAPI_BASE="$(READPLANE_FASTAPI_BASE)" \
+		-e READPLANE_BASE="$(READPLANE_BASE)" \
+		-e READPLANE_CONTRACT_CHECK_P1="$(READPLANE_CONTRACT_CHECK_P1)" \
+		-e READPLANE_CONTRACT_P1_QUERY="$(READPLANE_CONTRACT_P1_QUERY)" \
+		-e CRATE_AUTH_EMAIL="$(READPLANE_AUTH_EMAIL)" \
+		-e CRATE_AUTH_PASSWORD="$(READPLANE_AUTH_PASSWORD)" \
+		$(READPLANE_GO_IMAGE) \
+		$(READPLANE_GO) run ./cmd/readplane-contract-smoke
+
+.PHONY: readplane-benchmark
+readplane-benchmark: ## Compare FastAPI vs readplane latency for a P0 route
+	@docker run --rm \
+		--add-host=host.docker.internal:host-gateway \
+		-v "$(CURDIR)/app/readplane:/src" \
+		-w /src \
+		-e FASTAPI_BASE="$(READPLANE_FASTAPI_BASE)" \
+		-e READPLANE_BASE="$(READPLANE_BASE)" \
+		-e CRATE_AUTH_EMAIL="$(READPLANE_AUTH_EMAIL)" \
+		-e CRATE_AUTH_PASSWORD="$(READPLANE_AUTH_PASSWORD)" \
+		-e READPLANE_BENCH_REQUESTS="$(READPLANE_BENCH_REQUESTS)" \
+		-e READPLANE_BENCH_WARMUP="$(READPLANE_BENCH_WARMUP)" \
+		$(READPLANE_GO_IMAGE) \
+		$(READPLANE_GO) run ./cmd/readplane-benchmark
 
 # ===========================================================================
 # LOCAL (full stack with Traefik)

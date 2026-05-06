@@ -1,9 +1,9 @@
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 from sqlalchemy import text
 
 
 def get_album_genre_ids(album_id: int) -> list[int]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("SELECT genre_id FROM album_genres WHERE album_id = :album_id"), {"album_id": album_id}).mappings().all()
         return [row["genre_id"] for row in rows]
 
@@ -12,7 +12,7 @@ def get_related_albums(album_id: int, artist: str, year: str | None, genre_ids: 
     """Return related albums grouped by reason: same_artist, genre_decade, audio_similar."""
     results = {"same_artist": [], "genre_decade": [], "audio_similar": []}
 
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug, "
                  "a.year, a.track_count, a.has_cover "
@@ -69,7 +69,7 @@ def get_related_albums(album_id: int, artist: str, year: str | None, genre_ids: 
 
 
 def get_album_genres_list(album_id: int) -> list[str]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT g.name FROM album_genres ag JOIN genres g ON ag.genre_id = g.id "
                  "WHERE ag.album_id = :album_id ORDER BY ag.weight DESC"),
@@ -79,7 +79,7 @@ def get_album_genres_list(album_id: int) -> list[str]:
 
 
 def get_album_genre_profile(album_id: int, limit: int = 8) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("""
                 SELECT g.name, g.slug, ag.weight, ag.source
@@ -106,7 +106,7 @@ def _display_name(folder_name: str) -> str:
 def find_album_row(artist: str, album: str) -> dict | None:
     """Find album in DB, handling year-prefixed names, clean names, and case differences."""
 
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(:artist) AND LOWER(name) = LOWER(:album) LIMIT 1"),
             {"artist": artist, "album": album},

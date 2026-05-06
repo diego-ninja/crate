@@ -93,6 +93,27 @@ class TestArtistsAPI:
             assert len(data["items"]) == 3
             assert data["total"] == 5
 
+    def test_get_artists_list_view_batches_genres(self, test_app):
+        rows = [
+            {"name": "Artist 1", "album_count": 1, "track_count": 10, "total_size": 1000, "formats_json": [], "primary_format": None, "has_photo": 0},
+            {"name": "Artist 2", "album_count": 1, "track_count": 8, "total_size": 900, "formats_json": [], "primary_format": None, "has_photo": 0},
+        ]
+        mock_scope = _make_mock_session(fetchall_side_effects=[
+            [{"cnt": 2}],
+            rows,
+        ])
+
+        with patch("crate.api.browse_artist.has_library_data", return_value=True), \
+             patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
+             patch("crate.api.browse_artist.get_artist_list_genres_map", return_value={"Artist 1": ["post-hardcore"], "Artist 2": ["emo"]}) as genres_map, \
+             patch("crate.db.queries.browse_artist_listing.read_scope", mock_scope):
+            resp = test_app.get("/api/artists?view=list")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["items"][0]["genres"] == ["post-hardcore"]
+            assert data["items"][1]["genres"] == ["emo"]
+            genres_map.assert_called_once_with(["Artist 1", "Artist 2"])
+
     def test_get_artists_with_query(self, test_app):
         mock_scope = _make_mock_session(fetchall_side_effects=[
             [{"cnt": 0}],
@@ -564,7 +585,7 @@ class TestSearchAPI:
         ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.db.queries.browse_media_search.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_media_search.read_scope", mock_scope):
             resp = test_app.get("/api/search?q=radio")
             assert resp.status_code == 200
             data = resp.json()

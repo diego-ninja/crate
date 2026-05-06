@@ -1,9 +1,9 @@
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 from sqlalchemy import text
 
 
 def get_artists_with_folder() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, folder_name FROM library_artists WHERE folder_name IS NOT NULL")
         ).mappings().all()
@@ -11,7 +11,7 @@ def get_artists_with_folder() -> list[dict]:
 
 
 def get_orphan_albums() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, artist, path FROM library_albums "
                  "WHERE artist NOT IN (SELECT name FROM library_artists)")
@@ -20,7 +20,7 @@ def get_orphan_albums() -> list[dict]:
 
 
 def get_orphan_tracks() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT path, album_id FROM library_tracks "
                  "WHERE album_id NOT IN (SELECT id FROM library_albums)")
@@ -29,7 +29,7 @@ def get_orphan_tracks() -> list[dict]:
 
 
 def get_all_artists() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, folder_name, entity_uid FROM library_artists")
         ).mappings().all()
@@ -37,7 +37,7 @@ def get_all_artists() -> list[dict]:
 
 
 def get_all_albums() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, artist, path FROM library_albums")
         ).mappings().all()
@@ -45,7 +45,7 @@ def get_all_albums() -> list[dict]:
 
 
 def get_tracks_sample(total_threshold: int = 5000, modulo: int = 10) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         total = session.execute(
             text("SELECT COUNT(*) AS cnt FROM library_tracks")
         ).mappings().first()["cnt"]
@@ -61,7 +61,7 @@ def get_tracks_sample(total_threshold: int = 5000, modulo: int = 10) -> list[dic
 
 
 def get_zombie_artists() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT la.name FROM library_artists la "
@@ -79,7 +79,7 @@ def get_zombie_artists() -> list[dict]:
 
 
 def get_artists_with_photo() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, folder_name, has_photo FROM library_artists")
         ).mappings().all()
@@ -87,7 +87,7 @@ def get_artists_with_photo() -> list[dict]:
 
 
 def get_duplicate_albums() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 "SELECT artist, LOWER(name) AS album_key, MIN(name) AS album_name, COUNT(*) AS cnt, "
@@ -99,7 +99,7 @@ def get_duplicate_albums() -> list[dict]:
 
 
 def get_all_track_paths() -> set[str]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT path FROM library_tracks")
         ).mappings().all()
@@ -107,7 +107,7 @@ def get_all_track_paths() -> set[str]:
 
 
 def get_tracks_tag_sample(total_threshold: int = 5000, modulo: int = 20) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         total = session.execute(
             text("SELECT COUNT(*) AS cnt FROM library_tracks")
         ).mappings().first()["cnt"]
@@ -123,7 +123,7 @@ def get_tracks_tag_sample(total_threshold: int = 5000, modulo: int = 20) -> list
 
 
 def get_albums_with_year() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT name, artist, year, path FROM library_albums "
                  "WHERE year IS NOT NULL AND year != '' AND length(year) >= 4")
@@ -132,7 +132,7 @@ def get_albums_with_year() -> list[dict]:
 
 
 def get_all_albums_for_covers() -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("SELECT artist, name, path FROM library_albums")
         ).mappings().all()
@@ -142,7 +142,7 @@ def get_all_albums_for_covers() -> list[dict]:
 def get_duplicate_tracks() -> list[dict]:
     """Find tracks that appear multiple times in the same album
     (same artist + album + title, different paths)."""
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT album_id, artist, title, album, COUNT(*) AS cnt,
                    array_agg(path ORDER BY path) AS paths

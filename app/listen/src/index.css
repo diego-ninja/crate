@@ -48,6 +48,44 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   --gradient-bg-90: rgba(10, 10, 15, 0.9);
   --gradient-bg-40: rgba(10, 10, 15, 0.4);
   --gradient-bg-50: rgba(10, 10, 15, 0.5);
+
+  --listen-viewport-height: 100vh;
+  --listen-safe-top: env(safe-area-inset-top, 0px);
+  --listen-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --listen-safe-left: env(safe-area-inset-left, 0px);
+  --listen-safe-right: env(safe-area-inset-right, 0px);
+  --listen-mobile-header-content-height: 4rem;
+  --listen-mobile-header-gap: 1.5rem;
+  --listen-mobile-header-height: calc(var(--listen-safe-top) + var(--listen-mobile-header-content-height));
+  --listen-mobile-page-top: calc(var(--listen-mobile-header-height) + var(--listen-mobile-header-gap));
+  --listen-mobile-bottom-nav-content-height: 4rem;
+  --listen-mobile-bottom-nav-height: calc(var(--listen-mobile-bottom-nav-content-height) + var(--listen-safe-bottom));
+  --listen-mobile-player-height: 4.125rem;
+  --listen-mobile-player-gap: 0.5rem;
+  --listen-mobile-bottom-chrome-height: calc(
+    var(--listen-mobile-bottom-nav-height) +
+    var(--listen-mobile-player-height) +
+    var(--listen-mobile-player-gap)
+  );
+  --listen-mobile-bottom-clearance: calc(var(--listen-mobile-bottom-chrome-height) + 1rem);
+  --listen-mobile-bottom-clearance-no-player: calc(var(--listen-mobile-bottom-nav-height) + 1rem);
+  --listen-mobile-fullscreen-player-clearance: calc(var(--listen-safe-bottom) + 4rem);
+  --listen-mobile-fullscreen-scroll-clearance: calc(var(--listen-safe-bottom) + 2rem);
+  --listen-mobile-fullscreen-eq-top: calc(var(--listen-safe-top) + 7.25rem);
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --listen-viewport-height: 100dvh;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  html,
+  body,
+  #root {
+    min-height: -webkit-fill-available;
+  }
 }
 
 /* ── Listen-only vendor overrides ── */

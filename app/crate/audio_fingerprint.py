@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -13,6 +14,14 @@ log = logging.getLogger(__name__)
 
 CHROMAPRINT_V1 = "chromaprint-v1"
 PCM16_MD5_V1 = "pcm16-md5-v1"
+
+
+def _ffmpeg_threads() -> str:
+    raw = os.environ.get("CRATE_FFMPEG_THREADS", "1")
+    try:
+        return str(max(1, int(raw)))
+    except ValueError:
+        return "1"
 
 
 def _compute_chromaprint(path: Path, *, timeout_seconds: int = 300) -> tuple[str, str] | None:
@@ -58,6 +67,8 @@ def _compute_pcm16_md5(path: Path, *, timeout_seconds: int = 300) -> tuple[str, 
         "ffmpeg",
         "-v",
         "error",
+        "-threads",
+        _ffmpeg_threads(),
         "-i",
         str(path),
         "-map",

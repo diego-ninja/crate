@@ -47,7 +47,7 @@ from crate.db.queries.browse_artist import (
     get_artist_all_tracks,
     get_artist_genres_by_name,
     get_artist_genre_profile,
-    get_artist_list_genres,
+    get_artist_list_genres_map,
     get_artist_refs_by_names_full,
     get_artist_setlist_tracks,
     get_artist_top_genres,
@@ -94,6 +94,7 @@ _IMAGE_RESPONSES = merge_responses(
             "content": {
                 "image/jpeg": {},
                 "image/png": {},
+                "image/webp": {},
                 "image/svg+xml": {},
             },
         },
@@ -381,11 +382,18 @@ def _build_artist_top_tracks_payload(
 
 
 def _get_artist_top_tracks_payload(artist_name: str, *, count: int) -> list[dict]:
-    return _build_artist_top_tracks_payload(
+    cache_key = f"listen:artist_top_tracks:v1:{artist_name.strip().lower()}:{count}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+
+    payload = _build_artist_top_tracks_payload(
         artist_name,
         count=count,
         lastfm_top=get_top_tracks(artist_name, limit=max(count * 2, 100)),
     )
+    set_cache(cache_key, payload, ttl=300)
+    return payload
 
 
 def _get_artist_page_shows(*, user_id: int, name: str, limit: int, country: str) -> dict:
@@ -458,11 +466,18 @@ def api_browse_filters(
 ):
     """Available filter options for the browse page."""
     _require_auth(request)
+    cache_key = f"listen:browse_filters:v1:{country}:{decade}:{format}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+
     genres = get_browse_filter_genres(country=country, decade=decade, format=format)
     countries = get_browse_filter_countries()
     decades = get_browse_filter_decades()
     formats = get_browse_filter_formats()
-    return {"genres": genres, "countries": countries, "decades": decades, "formats": formats}
+    payload = {"genres": genres, "countries": countries, "decades": decades, "formats": formats}
+    set_cache(cache_key, payload, ttl=300)
+    return payload
 
 
 @router.get(
@@ -499,14 +514,40 @@ def api_artists(
         start = (page - 1) * per_page
         return {"items": artists[start : start + per_page], "total": total, "page": page, "per_page": per_page}
 
-    select_cols = "la.*, COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) AS recent_sort"
+    select_cols = """
+        la.id,
+        la.entity_uid,
+        la.slug,
+        la.name,
+        la.album_count,
+        la.track_count,
+        la.total_size,
+        la.formats_json,
+        la.primary_format,
+        la.has_photo,
+        la.listeners,
+        la.popularity,
+        la.popularity_score,
+        la.popularity_confidence,
+        la.dir_mtime,
+        la.updated_at,
+        COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) AS recent_sort
+    """
     joins = ""
     where_clauses = ["1=1"]
     params: dict = {}
 
     if genre:
-        joins += " JOIN artist_genres ag ON la.name = ag.artist_name JOIN genres g ON ag.genre_id = g.id"
-        where_clauses.append("g.name = :genre")
+        where_clauses.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM artist_genres ag
+                JOIN genres g ON ag.genre_id = g.id
+                WHERE ag.artist_name = la.name AND g.name = :genre
+            )
+            """
+        )
         params["genre"] = genre
 
     if country:
@@ -538,6 +579,7 @@ def api_artists(
     rows = get_artists_page(select_cols, joins, where_sql, order_sql, params, per_page, (page - 1) * per_page)
 
     issue_counts = get_all_artist_issue_counts()
+    list_genres = get_artist_list_genres_map([row["name"] for row in rows]) if view == "list" else {}
     items = []
     for row in rows:
         item = {
@@ -560,7 +602,7 @@ def api_artists(
             item["listeners"] = row.get("listeners") or 0
             item["track_count"] = row["track_count"]
             item["total_size_mb"] = round(row["total_size"] / (1024**2)) if row["total_size"] else 0
-            item["genres"] = get_artist_list_genres(row["name"])
+            item["genres"] = list_genres.get(row["name"], [])
         items.append(item)
 
     return {"items": items, "total": total, "page": page, "per_page": per_page}
@@ -742,11 +784,12 @@ def api_artist_background_by_id(
     artist_id: int,
     random_pick: bool = Query(False, alias="random"),
     size: int | None = Query(None, ge=32, le=2048),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
 ):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return Response(status_code=404)
-    return api_artist_background(request, artist_name, random_pick, size=size)
+    return api_artist_background(request, artist_name, random_pick, size=size, image_format=image_format)
 
 
 @router.get(
@@ -759,11 +802,12 @@ def api_artist_background_by_entity_uid(
     artist_entity_uid: str,
     random_pick: bool = Query(False, alias="random"),
     size: int | None = Query(None, ge=32, le=2048),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
 ):
     artist = get_library_artist_by_entity_uid(artist_entity_uid)
     if not artist:
         return Response(status_code=404)
-    return api_artist_background(request, artist["name"], random_pick, size=size)
+    return api_artist_background(request, artist["name"], random_pick, size=size, image_format=image_format)
 
 
 @router.get(
@@ -807,11 +851,12 @@ def api_artist_photo_by_id(
     artist_id: int,
     random_pick: bool = Query(False, alias="random"),
     size: int | None = Query(None, ge=32, le=2048),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
 ):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return Response(status_code=404)
-    return api_artist_photo(request, artist_name, random_pick, size=size)
+    return api_artist_photo(request, artist_name, random_pick, size=size, image_format=image_format)
 
 
 @router.get(
@@ -824,11 +869,12 @@ def api_artist_photo_by_entity_uid(
     artist_entity_uid: str,
     random_pick: bool = Query(False, alias="random"),
     size: int | None = Query(None, ge=32, le=2048),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
 ):
     artist = get_library_artist_by_entity_uid(artist_entity_uid)
     if not artist:
         return Response(status_code=404)
-    return api_artist_photo(request, artist["name"], random_pick, size=size)
+    return api_artist_photo(request, artist["name"], random_pick, size=size, image_format=image_format)
 
 
 @router.get(
@@ -992,7 +1038,13 @@ def api_artist_network_by_entity_uid(request: Request, artist_entity_uid: str, d
     return api_artist_network(request, artist["name"], depth)
 
 
-def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random"), size: int | None = None):
+def api_artist_background(
+    request: Request,
+    name: str,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = None,
+    image_format: str | None = None,
+):
     """Return artist background image."""
     _require_auth(request)
     import random as _random
@@ -1007,7 +1059,13 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
     if artist_dir and artist_dir.is_dir():
         bg_file = artist_dir / "background.jpg"
         if bg_file.exists():
-            return build_image_response(bg_file.read_bytes(), "image/jpeg", size=size, headers=_IMG_CACHE)
+            return build_image_response(
+                bg_file.read_bytes(),
+                "image/jpeg",
+                size=size,
+                output_format=image_format,
+                headers=_IMG_CACHE,
+            )
 
     fanart = get_fanart_all_images(name)
     backgrounds = fanart.get("backgrounds", []) if fanart else []
@@ -1015,25 +1073,25 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
         url = _random.choice(backgrounds) if random_pick else backgrounds[0]
         image_data = download_artist_image(url)
         if image_data:
-            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     url = get_fanart_background(name)
     if url:
         image_data = download_artist_image(url)
         if image_data:
-            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     from crate.lastfm import get_lastfm_best_background
 
     lfm_bg = get_lastfm_best_background(name)
     if lfm_bg:
-        return build_image_response(lfm_bg, "image/jpeg", size=size, headers=_IMG_CACHE)
+        return build_image_response(lfm_bg, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     deezer_url = _deezer_artist_image(name)
     if deezer_url:
         image_data = download_artist_image(deezer_url)
         if image_data:
-            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     try:
         from crate.spotify import search_artist as spotify_search
@@ -1044,7 +1102,13 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             if img_url:
                 image_data = download_artist_image(img_url)
                 if image_data:
-                    return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+                    return build_image_response(
+                        image_data,
+                        "image/jpeg",
+                        size=size,
+                        output_format=image_format,
+                        headers=_IMG_CACHE,
+                    )
     except Exception:
         pass
 
@@ -1053,12 +1117,18 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             photo = artist_dir / photo_name
             if photo.exists():
                 media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
-                return build_image_response(photo.read_bytes(), media_type, size=size)
+                return build_image_response(photo.read_bytes(), media_type, size=size, output_format=image_format)
 
     return Response(status_code=404)
 
 
-def api_artist_photo(request: Request, name: str, random_pick: bool = Query(False, alias="random"), size: int | None = None):
+def api_artist_photo(
+    request: Request,
+    name: str,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = None,
+    image_format: str | None = None,
+):
     _require_auth(request)
     import random as _random
 
@@ -1078,6 +1148,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
                 photo.read_bytes(),
                 media_type,
                 size=size,
+                output_format=image_format,
                 headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
             )
 
@@ -1090,7 +1161,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             url = _random.choice(thumbs)
             image_data = download_artist_image(url)
             if image_data:
-                return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+                return build_image_response(image_data, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     image_data = get_best_artist_image(name)
     if image_data:
@@ -1099,7 +1170,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             save_path.write_bytes(image_data)
         except OSError:
             pass
-        return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
+        return build_image_response(image_data, "image/jpeg", size=size, output_format=image_format, headers=_IMG_CACHE)
 
     exts = extensions()
     for album_dir in sorted(artist_dir.iterdir()):
@@ -1109,18 +1180,24 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             cover = album_dir / cover_name
             if cover.exists():
                 media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-                return build_image_response(cover.read_bytes(), media_type, size=size, headers=_IMG_CACHE)
+                return build_image_response(
+                    cover.read_bytes(),
+                    media_type,
+                    size=size,
+                    output_format=image_format,
+                    headers=_IMG_CACHE,
+                )
         tracks = get_audio_files(album_dir, exts)
         if tracks:
             audio = mutagen.File(tracks[0])
             if audio and hasattr(audio, "pictures") and audio.pictures:
                 pic = audio.pictures[0]
-                return build_image_response(pic.data, pic.mime, size=size, headers=_IMG_CACHE)
+                return build_image_response(pic.data, pic.mime, size=size, output_format=image_format, headers=_IMG_CACHE)
             if audio and hasattr(audio, "tags") and audio.tags:
                 for key in audio.tags:
                     if isinstance(key, str) and key.startswith("APIC"):
                         pic = audio.tags[key]
-                        return build_image_response(pic.data, pic.mime, size=size)
+                        return build_image_response(pic.data, pic.mime, size=size, output_format=image_format)
         break
 
     return Response(status_code=404)

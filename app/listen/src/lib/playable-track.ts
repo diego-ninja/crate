@@ -1,4 +1,5 @@
 import type { Track } from "@/contexts/player-types";
+import { resolveMaybeApiAssetUrl } from "@/lib/api";
 
 export interface PlayableTrackInput {
   id?: string | number | null;
@@ -95,6 +96,8 @@ export function toPlayableTrack(
   input: PlayableTrackInput,
   options: { cover?: string } = {},
 ): Track {
+  const albumCover = resolveMaybeApiAssetUrl(options.cover || input.albumCover) || undefined;
+
   return {
     id: resolvePlayableTrackId(input),
     entityUid: input.entityUid ?? input.entity_uid ?? input.track_entity_uid ?? undefined,
@@ -107,7 +110,7 @@ export function toPlayableTrack(
     albumId: input.albumId ?? input.album_id ?? undefined,
     albumEntityUid: input.albumEntityUid ?? input.album_entity_uid ?? undefined,
     albumSlug: input.albumSlug ?? input.album_slug ?? undefined,
-    albumCover: options.cover || input.albumCover || undefined,
+    albumCover,
     path: input.path ?? input.track_path ?? undefined,
     libraryTrackId: getPlayableTrackLibraryId(input),
     format: input.format ?? undefined,

@@ -189,7 +189,24 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             for item in result.get("item_results", [])
             if item.get("outcome") == "applied" and item.get("check_type")
         })
+        global_revalidation_check_types = []
+        artist_revalidation_check_types = []
+        skipped_revalidation_check_types = []
+        if applied_check_types:
+            from crate.repair_catalog import REPAIR_CATALOG_BY_CHECK
+
+            for check_type in applied_check_types:
+                catalog_entry = REPAIR_CATALOG_BY_CHECK.get(check_type)
+                if catalog_entry is not None and not catalog_entry.supports_global_scope:
+                    if check_type == "artist_layout_fix":
+                        artist_revalidation_check_types.append(check_type)
+                    else:
+                        skipped_revalidation_check_types.append(check_type)
+                else:
+                    global_revalidation_check_types.append(check_type)
         revalidation_result = None
+        revalidation_results = []
+        completed_revalidation_check_types = []
 
         # Mark resolved issues as fixed in the DB
         if not dry_run and resolved_ids:
@@ -227,7 +244,72 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                 except Exception:
                     log.debug("Failed to queue enrichment for %s", artist, exc_info=True)
 
-        if not dry_run and applied_check_types:
+        if not dry_run and artist_revalidation_check_types and affected_artists:
+            p_revalidate_artist = TaskProgress(phase="revalidate", phase_count=1)
+
+            def _revalidate_artist_progress(data):
+                p_revalidate_artist.done = data.get("done", p_revalidate_artist.done)
+                p_revalidate_artist.total = data.get("total", p_revalidate_artist.total)
+                p_revalidate_artist.item = data.get("artist") or data.get("check") or p_revalidate_artist.item
+                emit_progress(task_id, p_revalidate_artist)
+
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "category": "repair",
+                    "message": (
+                        f"Revalidating {len(artist_revalidation_check_types)} artist-scoped check type(s) "
+                        f"for {len(affected_artists)} artist(s)…"
+                    ),
+                    "checks": artist_revalidation_check_types,
+                    "artists": sorted(affected_artists),
+                },
+            )
+            checker = LibraryHealthCheck(config)
+            artist_revalidation_result = checker.run_selected_for_artists(
+                set(artist_revalidation_check_types),
+                sorted(affected_artists),
+                progress_callback=_revalidate_artist_progress,
+                persist=True,
+            )
+            revalidation_results.append(artist_revalidation_result)
+            completed_revalidation_check_types.extend(artist_revalidation_check_types)
+            publish_health_surface_signal()
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "category": "repair",
+                    "message": (
+                        f"Artist revalidation complete: "
+                        f"{len(artist_revalidation_result.get('issues', []))} open issue(s) remain across "
+                        f"{len(affected_artists)} artist(s)"
+                    ),
+                    "checks": artist_revalidation_check_types,
+                    "artists": sorted(affected_artists),
+                    "summary": artist_revalidation_result.get("summary", {}),
+                    "issue_count": len(artist_revalidation_result.get("issues", [])),
+                },
+            )
+        elif not dry_run and artist_revalidation_check_types:
+            skipped_revalidation_check_types.extend(artist_revalidation_check_types)
+
+        if not dry_run and skipped_revalidation_check_types:
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "category": "repair",
+                    "message": (
+                        "Skipped revalidation for artist-scoped check(s) without a known artist: "
+                        + ", ".join(skipped_revalidation_check_types)
+                    ),
+                    "checks": skipped_revalidation_check_types,
+                },
+            )
+
+        if not dry_run and global_revalidation_check_types:
             p_revalidate = TaskProgress(phase="revalidate", phase_count=1)
 
             def _revalidate_progress(data):
@@ -241,16 +323,18 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                 "info",
                 {
                     "category": "repair",
-                    "message": f"Revalidating {len(applied_check_types)} repaired check type(s)…",
-                    "checks": applied_check_types,
+                    "message": f"Revalidating {len(global_revalidation_check_types)} repaired check type(s)…",
+                    "checks": global_revalidation_check_types,
                 },
             )
             checker = LibraryHealthCheck(config)
-            revalidation_result = checker.run_selected(
-                set(applied_check_types),
+            global_revalidation_result = checker.run_selected(
+                set(global_revalidation_check_types),
                 progress_callback=_revalidate_progress,
                 persist=True,
             )
+            revalidation_results.append(global_revalidation_result)
+            completed_revalidation_check_types.extend(global_revalidation_check_types)
             publish_health_surface_signal()
             emit_task_event(
                 task_id,
@@ -259,14 +343,29 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                     "category": "repair",
                     "message": (
                         f"Revalidation complete: "
-                        f"{len(revalidation_result.get('issues', []))} open issue(s) remain across "
-                        f"{len(applied_check_types)} repaired check type(s)"
+                        f"{len(global_revalidation_result.get('issues', []))} open issue(s) remain across "
+                        f"{len(global_revalidation_check_types)} repaired check type(s)"
                     ),
-                    "checks": applied_check_types,
-                    "summary": revalidation_result.get("summary", {}),
-                    "issue_count": len(revalidation_result.get("issues", [])),
+                    "checks": global_revalidation_check_types,
+                    "summary": global_revalidation_result.get("summary", {}),
+                    "issue_count": len(global_revalidation_result.get("issues", [])),
                 },
             )
+
+        if revalidation_results:
+            merged_summary = {}
+            merged_issues = []
+            duration_ms = 0
+            for item in revalidation_results:
+                merged_issues.extend(item.get("issues", []))
+                duration_ms += int(item.get("duration_ms") or 0)
+                for key, value in (item.get("summary") or {}).items():
+                    merged_summary[key] = merged_summary.get(key, 0) + int(value or 0)
+            revalidation_result = {
+                "issues": merged_issues,
+                "summary": merged_summary,
+                "duration_ms": duration_ms,
+            }
 
         emit_task_event(
             task_id,
@@ -291,7 +390,8 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                 "fs_changed": result.get("fs_changed"),
                 "db_changed": result.get("db_changed"),
                 "unsupported_checks": result.get("unsupported_checks", []),
-                "revalidated_checks": applied_check_types,
+                "revalidated_checks": sorted(completed_revalidation_check_types),
+                "skipped_revalidation_checks": skipped_revalidation_check_types,
                 "revalidation": {
                     "issue_count": len(revalidation_result.get("issues", [])),
                     "summary": revalidation_result.get("summary", {}),
@@ -310,7 +410,8 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                     "db_changed": result.get("db_changed"),
                     "resolved_ids": resolved_ids,
                     "unsupported_checks": result.get("unsupported_checks", []),
-                    "revalidated_checks": applied_check_types,
+                    "revalidated_checks": sorted(completed_revalidation_check_types),
+                    "skipped_revalidation_checks": skipped_revalidation_check_types,
                     "revalidation": {
                         "issue_count": len(revalidation_result.get("issues", [])),
                         "summary": revalidation_result.get("summary", {}),
@@ -324,7 +425,8 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             start_scan()
 
         result["enrich_queued"] = enqueued_enrich
-        result["revalidated_checks"] = applied_check_types
+        result["revalidated_checks"] = sorted(completed_revalidation_check_types)
+        result["skipped_revalidation_checks"] = skipped_revalidation_check_types
         result["revalidation"] = (
             {
                 "issue_count": len(revalidation_result.get("issues", [])),
@@ -815,8 +917,6 @@ def _handle_refresh_system_smart_playlists(task_id: str, params: dict, config: d
 
 def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> dict:
     """Read cover base64 from Redis and write to disk."""
-    import base64
-
     playlist_id = int(params.get("playlist_id", 0))
     redis_key = f"cover:staging:{playlist_id}"
 
@@ -828,28 +928,23 @@ def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> 
     if not raw:
         return {"error": "Cover data expired or missing from Redis"}
 
-    try:
-        b64_str = raw.decode() if isinstance(raw, bytes) else raw
-        # Strip data URL prefix if present
-        if "," in b64_str:
-            b64_str = b64_str.split(",", 1)[1]
-        image_data = base64.b64decode(b64_str)
-    except Exception as e:
-        return {"error": f"Failed to decode cover: {str(e)[:200]}"}
+    cover_data_url = raw.decode() if isinstance(raw, bytes) else raw
+    if not cover_data_url.startswith("data:image/"):
+        cover_data_url = f"data:image/jpeg;base64,{cover_data_url.split(',', 1)[-1]}"
 
-    from crate.playlist_covers import playlist_covers_root
+    from crate.playlist_covers import delete_playlist_cover, persist_playlist_cover_data
 
-    cover_dir = playlist_covers_root()
-    filename = f"{playlist_id}.jpg"
-    cover_path = cover_dir / filename
-
-    cover_path.write_bytes(image_data)
+    playlist = get_playlist(playlist_id)
+    existing_cover_path = playlist.get("cover_path") if playlist else None
+    filename = persist_playlist_cover_data(playlist_id, cover_data_url)
+    if existing_cover_path and existing_cover_path != filename:
+        delete_playlist_cover(existing_cover_path)
     r.delete(redis_key)
 
     # Store the relative filename, not the absolute path — playlist_cover_abspath() resolves it
-    update_playlist(playlist_id, cover_path=filename)
+    update_playlist(playlist_id, cover_path=filename, cover_data_url=None)
     emit_task_event(task_id, "info", {"message": f"Cover saved for playlist {playlist_id}"})
-    return {"cover_path": str(cover_path)}
+    return {"cover_path": filename}
 
 
 def _handle_write_portable_metadata(task_id: str, params: dict, config: dict) -> dict:

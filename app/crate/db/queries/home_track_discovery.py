@@ -6,7 +6,7 @@ from crate.db.queries.home_track_rows import _fetch_rows
 from crate.db.tx import read_scope
 
 
-def get_discovery_track_rows(*, genres: list[str], excluded_artist_names: list[str], limit: int = 240) -> list[dict]:
+def get_discovery_track_rows(*, user_id: int, genres: list[str], excluded_artist_names: list[str], limit: int = 240) -> list[dict]:
     if not genres:
         return []
     capped_genres = genres[:20]
@@ -57,17 +57,26 @@ def get_discovery_track_rows(*, genres: list[str], excluded_artist_names: list[s
             t.danceability,
             t.valence,
             t.bliss_vector,
-            COALESCE(t.lastfm_playcount, 0) AS popularity
+            COALESCE(t.lastfm_playcount, 0) AS popularity,
+            COALESCE(uts.play_count, 0) AS user_play_count,
+            (ult.track_id IS NOT NULL) AS is_liked
         FROM library_tracks t
         JOIN library_albums alb ON alb.id = t.album_id
         LEFT JOIN library_artists art ON art.name = t.artist
+        LEFT JOIN user_track_stats uts
+          ON uts.user_id = :user_id
+         AND uts.stat_window = '90d'
+         AND uts.track_id = t.id
+        LEFT JOIN user_liked_tracks ult
+          ON ult.user_id = :user_id
+         AND ult.track_id = t.id
         WHERE t.artist = ANY(:artists)
         ORDER BY
             COALESCE(t.lastfm_playcount, 0) DESC,
             t.title ASC
         LIMIT :lim
         """,
-        {"artists": matching_artists[:100], "lim": limit},
+        {"user_id": user_id, "artists": matching_artists[:100], "lim": limit},
     )
 
 

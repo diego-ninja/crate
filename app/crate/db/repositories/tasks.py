@@ -7,13 +7,16 @@ from crate.db.repositories.tasks_maintenance import (
     cleanup_zombie_tasks,
     delete_old_finished_tasks,
     delete_tasks_by_status,
+    redispatch_stale_pending_tasks,
 )
 from crate.db.repositories.tasks_mutations import (
     create_task,
     create_task_dedup,
+    fail_or_retry_task,
     find_active_task_by_type_params,
     heartbeat_task,
     save_scan_result,
+    start_task,
     update_task,
 )
 
@@ -24,10 +27,13 @@ __all__ = [
     "cleanup_zombie_tasks",
     "create_task",
     "create_task_dedup",
+    "fail_or_retry_task",
     "find_active_task_by_type_params",
     "delete_old_finished_tasks",
     "delete_tasks_by_status",
+    "redispatch_stale_pending_tasks",
     "heartbeat_task",
     "save_scan_result",
+    "start_task",
     "update_task",
 ]

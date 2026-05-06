@@ -23,6 +23,66 @@ def get_top_artists_by_albums(limit: int = 25) -> list[dict]:
         return [{"id": row["id"], "slug": row["slug"], "name": row["name"], "albums": row["albums"]} for row in rows]
 
 
+def get_overview_stat_summary() -> dict:
+    with read_scope() as session:
+        row = session.execute(
+            text(
+                """
+                WITH track_stats AS (
+                    SELECT
+                        COUNT(*) AS track_count,
+                        COALESCE(SUM(duration), 0) AS total_duration_seconds,
+                        AVG(bitrate) FILTER (WHERE bitrate IS NOT NULL) AS avg_bitrate,
+                        COUNT(*) FILTER (WHERE bpm IS NOT NULL) AS analyzed_tracks
+                    FROM library_tracks
+                ),
+                album_stats AS (
+                    SELECT
+                        COUNT(*) AS album_count,
+                        AVG(total_duration) FILTER (
+                            WHERE total_duration IS NOT NULL AND total_duration > 0
+                        ) AS avg_album_duration_seconds
+                    FROM library_albums
+                )
+                SELECT
+                    track_stats.track_count,
+                    track_stats.total_duration_seconds,
+                    track_stats.avg_bitrate,
+                    track_stats.analyzed_tracks,
+                    album_stats.album_count,
+                    album_stats.avg_album_duration_seconds
+                FROM track_stats
+                CROSS JOIN album_stats
+                """
+            )
+        ).mappings().first()
+
+    if not row:
+        return {
+            "track_count": 0,
+            "album_count": 0,
+            "duration_hours": 0,
+            "avg_bitrate": 0,
+            "analyzed_tracks": 0,
+            "avg_album_duration_min": 0,
+            "avg_tracks_per_album": 0,
+        }
+
+    track_count = int(row["track_count"] or 0)
+    album_count = int(row["album_count"] or 0)
+    total_duration_seconds = float(row["total_duration_seconds"] or 0)
+    avg_album_duration_seconds = row["avg_album_duration_seconds"]
+    return {
+        "track_count": track_count,
+        "album_count": album_count,
+        "duration_hours": round(total_duration_seconds / 3600, 1) if total_duration_seconds else 0,
+        "avg_bitrate": round(row["avg_bitrate"]) if row["avg_bitrate"] else 0,
+        "analyzed_tracks": int(row["analyzed_tracks"] or 0),
+        "avg_album_duration_min": round(float(avg_album_duration_seconds) / 60, 1) if avg_album_duration_seconds else 0,
+        "avg_tracks_per_album": round(track_count / album_count, 1) if album_count else 0,
+    }
+
+
 def get_total_duration_hours() -> float:
     with read_scope() as session:
         row = session.execute(text("SELECT COALESCE(SUM(duration), 0) as total FROM library_tracks")).mappings().first()
@@ -95,6 +155,7 @@ def get_stats_avg_album_duration_min() -> float:
 
 __all__ = [
     "get_avg_tracks_per_album",
+    "get_overview_stat_summary",
     "get_stats_analyzed_track_count",
     "get_stats_avg_album_duration_min",
     "get_stats_avg_bitrate",

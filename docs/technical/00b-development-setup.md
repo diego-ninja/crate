@@ -119,7 +119,7 @@ crate/
     technical/              # Technical documentation (rendered by docs app)
     plans/                  # Design documents and plans
   tools/
-    grooveyard-bliss/       # Rust CLI for audio similarity
+    crate-cli/       # Rust CLI for audio similarity
 ```
 
 ## 5. Common tasks

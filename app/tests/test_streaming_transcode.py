@@ -34,6 +34,7 @@ def test_transcode_variant_specifies_mp4_muxer_for_tmp_output(monkeypatch, tmp_p
     )
 
     def fake_run(cmd, capture_output, text, timeout):
+        assert cmd[cmd.index("-threads") + 1] == "1"
         assert cmd[-3:] == ["-f", "mp4", str(output_path.with_suffix(".m4a.tmp"))]
         output_path.with_suffix(".m4a.tmp").write_bytes(b"m4a")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

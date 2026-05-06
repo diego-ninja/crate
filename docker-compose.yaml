@@ -187,8 +187,10 @@ services:
 
   # Crate — Music stack management
   crate-api:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-api:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: api
     container_name: crate-api
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -218,22 +220,29 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
+      - CRATE_SSE_REDIS_MAX_CONNECTIONS=${CRATE_SSE_REDIS_MAX_CONNECTIONS:-128}
       - SLSKD_URL=http://slskd:5030
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
       - DISCOGS_CONSUMER_SECRET=${DISCOGS_CONSUMER_SECRET:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - CRATE_MEDIA_WORKER_URL=http://crate-media-worker:8687
+      - CRATE_MEDIA_WORKER_MAX_ACTIVE=${CRATE_MEDIA_WORKER_MAX_ACTIVE:-1}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - crate
     depends_on:
       - crate-postgres
       - crate-redis
-    mem_limit: 1g
+      - crate-media-worker
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: "1.0"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8585/api/status', timeout=5).read()"]
       interval: 30s
@@ -244,14 +253,57 @@ services:
       traefik.docker.network: crate
       traefik.http.routers.crate-api.rule: Host(`api.${DOMAIN}`)
       traefik.http.routers.crate-api.entryPoints: websecure
+      traefik.http.routers.crate-api.middlewares: crate-api-compress@docker
       traefik.http.services.crate-api.loadbalancer.server.port: 8585
       traefik.http.routers.crate-api.tls: true
       traefik.http.routers.crate-api.tls.certresolver: letsencrypt
+      traefik.http.middlewares.crate-api-compress.compress: true
+      traefik.http.middlewares.crate-api-compress.compress.encodings: gzip,br
+      traefik.http.middlewares.crate-api-compress.compress.minResponseBodyBytes: 1024
+      traefik.http.middlewares.crate-api-compress.compress.excludedContentTypes: text/event-stream,audio/mpeg,audio/flac,audio/x-flac,audio/mp4,audio/aac,audio/ogg,video/mp4,application/octet-stream,application/zip,application/x-zip-compressed,image/jpeg,image/png,image/webp,image/avif
     command: ["api"]
 
+  crate-readplane:
+    image: ghcr.io/diego-ninja/crate-readplane:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app/readplane
+    container_name: crate-readplane
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - READPLANE_ADDR=:8686
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
+      - CRATE_POSTGRES_PORT=5432
+      - REDIS_URL=redis://crate-redis:6379/0
+      - JWT_SECRET=${JWT_SECRET}
+      - READPLANE_ENABLED=${READPLANE_ENABLED:-true}
+      - READPLANE_ENABLE_SSE=${READPLANE_ENABLE_SSE:-true}
+      - READPLANE_ROUTE_MODE=${READPLANE_ROUTE_MODE:-shadow}
+      - READPLANE_FALLBACK_ENABLED=${READPLANE_FALLBACK_ENABLED:-true}
+      - API_FALLBACK_BASE=http://crate-api:8585
+      - READPLANE_MAX_DB_CONNS=${READPLANE_MAX_DB_CONNS:-8}
+      - READPLANE_MIN_DB_CONNS=${READPLANE_MIN_DB_CONNS:-1}
+      - READPLANE_QUERY_TIMEOUT_MS=${READPLANE_QUERY_TIMEOUT_MS:-800}
+      - READPLANE_SNAPSHOT_MAX_AGE_SECONDS=${READPLANE_SNAPSHOT_MAX_AGE_SECONDS:-600}
+      - READPLANE_STALE_MAX_AGE_SECONDS=${READPLANE_STALE_MAX_AGE_SECONDS:-3600}
+    networks:
+      - crate
+    depends_on:
+      - crate-postgres
+      - crate-redis
+      - crate-api
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: "0.25"
+
   crate-worker:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
     container_name: crate-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -279,7 +331,16 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${CRATE_WORKER_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - SLSKD_URL=http://slskd:5030
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
@@ -304,20 +365,65 @@ services:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
       - ${MEDIA_DIR}/downloads/soulseek:/downloads/soulseek
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
     networks:
       - crate
     depends_on:
       - crate-postgres
       - crate-redis
       - proton-vpn
-    mem_limit: 2g
-    cpus: "1.0"
-    command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons"]
+    mem_limit: 1536m
+    mem_reservation: 512m
+    cpus: "0.75"
+    command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons", "--no-projector"]
+
+  crate-projector:
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
+    container_name: crate-projector
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - CRATE_RUNTIME=projector
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - DOMAIN=${DOMAIN}
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
+      - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
+      - CRATE_PROJECTOR_INTERVAL_SECONDS=${CRATE_PROJECTOR_INTERVAL_SECONDS:-5}
+      - CRATE_PROJECTOR_BATCH_LIMIT=${CRATE_PROJECTOR_BATCH_LIMIT:-200}
+      - CRATE_LEGACY_POOL_MAXCONN=${PROJECTOR_LEGACY_POOL_MAXCONN:-2}
+      - CRATE_SQLALCHEMY_POOL_SIZE=${PROJECTOR_SQLALCHEMY_POOL_SIZE:-1}
+      - CRATE_SQLALCHEMY_MAX_OVERFLOW=${PROJECTOR_SQLALCHEMY_MAX_OVERFLOW:-1}
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/crate:/data
+    networks:
+      - crate
+    depends_on:
+      - crate-postgres
+      - crate-redis
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.25"
+    command: ["projector"]
 
   crate-maintenance-worker:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
     container_name: crate-maintenance-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -337,7 +443,16 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${MAINTENANCE_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - CRATE_RESOURCE_GOVERNOR_ENABLED=${CRATE_RESOURCE_GOVERNOR_ENABLED:-true}
       - CRATE_RESOURCE_MAX_LOAD_RATIO=${CRATE_RESOURCE_MAX_LOAD_RATIO:-0.85}
       - CRATE_RESOURCE_MAX_IOWAIT_PERCENT=${CRATE_RESOURCE_MAX_IOWAIT_PERCENT:-25}
@@ -355,19 +470,22 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
     networks:
       - crate
     depends_on:
       - crate-postgres
       - crate-redis
-    mem_limit: 2g
-    cpus: "0.75"
+    mem_limit: 1g
+    mem_reservation: 384m
+    cpus: "0.5"
     command: ["worker", "--queues", "maintenance", "--processes", "${MAINTENANCE_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
 
   crate-analysis-worker:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
     container_name: crate-analysis-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -387,7 +505,16 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${ANALYSIS_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - CRATE_RESOURCE_GOVERNOR_ENABLED=${CRATE_RESOURCE_GOVERNOR_ENABLED:-true}
       - CRATE_RESOURCE_MAX_LOAD_RATIO=${CRATE_RESOURCE_MAX_LOAD_RATIO:-0.85}
       - CRATE_RESOURCE_MAX_IOWAIT_PERCENT=${CRATE_RESOURCE_MAX_IOWAIT_PERCENT:-25}
@@ -405,19 +532,22 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
     networks:
       - crate
     depends_on:
       - crate-postgres
       - crate-redis
     mem_limit: 2g
-    cpus: "1.0"
+    mem_reservation: 768m
+    cpus: "0.75"
     command: ["worker", "--queues", "heavy", "--processes", "${ANALYSIS_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-projector", "--no-telegram"]
 
   crate-playback-worker:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
     container_name: crate-playback-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -437,7 +567,16 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${PLAYBACK_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://crate-redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - CRATE_STREAM_TRANSCODE_MAX_CONCURRENT=${STREAM_TRANSCODE_MAX_CONCURRENT:-1}
       - CRATE_LEGACY_POOL_MAXCONN=${PLAYBACK_LEGACY_POOL_MAXCONN:-2}
       - CRATE_SQLALCHEMY_POOL_SIZE=${PLAYBACK_SQLALCHEMY_POOL_SIZE:-1}
@@ -445,14 +584,40 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
     networks:
       - crate
     depends_on:
       - crate-postgres
       - crate-redis
     mem_limit: 1g
+    mem_reservation: 384m
+    cpus: "1.0"
     command: ["worker", "--queues", "playback", "--processes", "${PLAYBACK_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
+
+  crate-media-worker:
+    image: ghcr.io/diego-ninja/crate-media-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: media-worker
+    container_name: crate-media-worker
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - DATA_DIR=/data
+      - CRATE_MEDIA_WORKER_ADDR=0.0.0.0:8687
+      - REDIS_URL=redis://crate-redis:6379/0
+    volumes:
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/crate:/data
+    networks:
+      - crate
+    depends_on:
+      - crate-redis
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
 
   proton-vpn:
     image: genericmale/protonvpn

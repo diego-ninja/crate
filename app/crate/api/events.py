@@ -7,7 +7,6 @@ Falls back to polling if Redis is unavailable.
 
 import asyncio
 import json
-import os
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
@@ -16,6 +15,7 @@ from starlette.responses import StreamingResponse
 from crate.api._deps import json_dumps
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, merge_responses
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.db.events import get_task_events
 from crate.db.ops_snapshot import get_cached_ops_snapshot
 from crate.db.queries.tasks import get_task
@@ -74,20 +74,14 @@ def _get_status_snapshot() -> dict:
     }
 
 
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-
 async def _global_stream_pubsub() -> AsyncIterator[str]:
     """Subscribe to Redis pub/sub for real-time updates. Falls back to polling."""
     # Send initial snapshot from DB
     yield f"data: {json_dumps(_get_status_snapshot())}\n\n"
 
+    pubsub = None
     try:
-        import redis.asyncio as aioredis
-        r = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = r.pubsub()
-        await pubsub.subscribe(REDIS_CHANNEL_GLOBAL)
+        pubsub = await open_pubsub(REDIS_CHANNEL_GLOBAL)
         try:
             # Listen for published events, refresh snapshot on each
             async for message in pubsub.listen():
@@ -95,8 +89,8 @@ async def _global_stream_pubsub() -> AsyncIterator[str]:
                     # Published event is a signal to refresh; build fresh snapshot
                     yield f"data: {json_dumps(_get_status_snapshot())}\n\n"
         finally:
-            await pubsub.unsubscribe(REDIS_CHANNEL_GLOBAL)
-            await r.aclose()
+            if pubsub is not None:
+                await close_pubsub(pubsub, REDIS_CHANNEL_GLOBAL)
     except Exception:
         # Fallback: poll DB every 3s (same as before but less frequent)
         while True:
@@ -107,13 +101,11 @@ async def _global_stream_pubsub() -> AsyncIterator[str]:
 async def _task_stream_pubsub(task_id: str) -> AsyncIterator[str]:
     """Subscribe to Redis channel for a specific task. Falls back to polling."""
     last_event_id = 0
+    pubsub = None
+    channel = f"{REDIS_CHANNEL_TASK_PREFIX}{task_id}"
 
     try:
-        import redis.asyncio as aioredis
-        r = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = r.pubsub()
-        channel = f"{REDIS_CHANNEL_TASK_PREFIX}{task_id}"
-        await pubsub.subscribe(channel)
+        pubsub = await open_pubsub(channel)
 
         # Send any existing events first
         events = get_task_events(task_id, after_id=0, limit=50)
@@ -129,8 +121,6 @@ async def _task_stream_pubsub(task_id: str) -> AsyncIterator[str]:
         task = get_task(task_id)
         if task and task["status"] in ("completed", "failed", "cancelled"):
             yield f"event: task_done\ndata: {json_dumps({'status': task['status'], 'label': task.get('label', ''), 'result': task.get('result'), 'error': task.get('error')})}\n\n"
-            await pubsub.unsubscribe(channel)
-            await r.aclose()
             return
 
         try:
@@ -149,8 +139,8 @@ async def _task_stream_pubsub(task_id: str) -> AsyncIterator[str]:
                 else:
                     yield f"event: {data.get('event_type', 'info')}\ndata: {json_dumps(data)}\n\n"
         finally:
-            await pubsub.unsubscribe(channel)
-            await r.aclose()
+            if pubsub is not None:
+                await close_pubsub(pubsub, channel)
 
     except Exception:
         # Fallback: poll DB (original behavior)

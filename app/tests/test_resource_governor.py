@@ -118,6 +118,59 @@ def test_resource_governor_still_defers_unscoped_health_check_under_load(monkeyp
     assert "swap 41.0%>30.0%" in decision.reason
 
 
+def test_resource_governor_ignores_stale_low_volume_swap_when_memory_is_available(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("CRATE_RESOURCE_MAX_SWAP_PERCENT", "30")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: governor.ResourceSnapshot(
+            cpu_count=4,
+            load_1m=0.1,
+            load_ratio=0.025,
+            iowait_percent=0.0,
+            swap_used_percent=38.0,
+            swap_used_mb=186.0,
+            memory_available_percent=58.0,
+            active_users=0,
+            active_streams=0,
+        ),
+    )
+
+    decision = governor.should_defer_task("library_sync")
+
+    assert decision.allowed is True
+
+
+def test_resource_governor_defers_swap_when_memory_is_tight(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.setenv("CRATE_RESOURCE_MAX_SWAP_PERCENT", "30")
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: governor.ResourceSnapshot(
+            cpu_count=4,
+            load_1m=0.1,
+            load_ratio=0.025,
+            iowait_percent=0.0,
+            swap_used_percent=38.0,
+            swap_used_mb=186.0,
+            memory_available_percent=8.0,
+            active_users=0,
+            active_streams=0,
+        ),
+    )
+
+    decision = governor.should_defer_task("library_sync")
+
+    assert decision.allowed is False
+    assert "swap 38.0%>30.0%" in decision.reason
+
+
 def test_scoped_fingerprint_backfill_respects_batch_limit(monkeypatch):
     from crate import resource_governor as governor
 

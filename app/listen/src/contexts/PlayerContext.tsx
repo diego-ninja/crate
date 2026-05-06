@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 
@@ -23,6 +24,7 @@ import {
 } from "@/contexts/player-utils";
 import {
   addTrack as gpAddTrack,
+  destroyPlayer as gpDestroyPlayer,
   gotoTrack as gpGotoTrack,
   insertTrack as gpInsertTrack,
   setLoop as gpSetLoop,
@@ -30,6 +32,7 @@ import {
   setVolume as gpSetVolume,
 } from "@/lib/gapless-player";
 import { useAuth } from "@/contexts/AuthContext";
+import { AUTH_RUNTIME_RESET_EVENT } from "@/contexts/auth-runtime";
 import { usePlayerEngineSync } from "@/contexts/use-player-engine-sync";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
@@ -556,6 +559,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     pushToEngine,
     advanceCursorTo,
   });
+
+  const clearQueueRef = useRef(clearQueue);
+  useEffect(() => {
+    clearQueueRef.current = clearQueue;
+  }, [clearQueue]);
+
+  useEffect(() => {
+    const handleAuthRuntimeReset = () => {
+      clearQueueRef.current();
+    };
+    window.addEventListener(AUTH_RUNTIME_RESET_EVENT, handleAuthRuntimeReset);
+    return () => {
+      window.removeEventListener(AUTH_RUNTIME_RESET_EVENT, handleAuthRuntimeReset);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      gpDestroyPlayer();
+    };
+  }, []);
 
   usePlayerShortcuts({
     hasCurrentTrack: !!currentTrack,

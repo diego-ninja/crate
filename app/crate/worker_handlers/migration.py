@@ -263,7 +263,23 @@ def _artist_dir_has_album_audio(artist_dir: Path) -> bool:
     return any(_album_dir_has_audio(album_dir) for album_dir in _iter_album_candidate_dirs(artist_dir))
 
 
-def _discover_artist_candidate_dirs(lib: Path, artist: dict, artist_name: str, target_artist_dir: Path) -> list[Path]:
+def _discover_artist_candidate_dirs(
+    lib: Path,
+    artist: dict,
+    artist_name: str,
+    target_artist_dir: Path,
+    *,
+    deep_discovery: bool = False,
+) -> list[Path]:
+    """Return known filesystem roots for an artist repair.
+
+    Keep this discovery bounded to paths already tied to the artist by the DB
+    or by the canonical/name-based artist folders. A previous broad scan across
+    the whole library used ``fallback_artist=artist_name`` while inferring
+    unrelated album folders, which made unreadable albums look like candidates
+    for every artist and turned repair planning into an expensive full-library
+    scan.
+    """
     raw_candidates = [
         target_artist_dir,
         lib / str(artist.get("folder_name") or artist_name),
@@ -279,6 +295,12 @@ def _discover_artist_candidate_dirs(lib: Path, artist: dict, artist_name: str, t
         if candidate not in candidate_dirs and candidate.is_dir():
             candidate_dirs.append(candidate)
 
+    if not deep_discovery:
+        return candidate_dirs
+
+    if _artist_dir_has_album_audio(target_artist_dir):
+        return candidate_dirs
+
     if any(candidate != target_artist_dir and _artist_dir_has_album_audio(candidate) for candidate in candidate_dirs):
         return candidate_dirs
 
@@ -289,7 +311,7 @@ def _discover_artist_candidate_dirs(lib: Path, artist: dict, artist_name: str, t
             if not _album_dir_has_audio(album_dir):
                 continue
             try:
-                inferred_artist, _ = infer_album_identity(album_dir, fallback_artist=artist_name)
+                inferred_artist, _ = infer_album_identity(album_dir, fallback_artist="")
             except Exception:
                 continue
             if inferred_artist and _same_artist_name(inferred_artist, artist_name):
@@ -366,7 +388,13 @@ def preview_fix_artist(lib: Path, artist: dict, config: dict | None = None) -> d
         }
 
     target_artist_dir = lib / artist_entity_uid
-    candidate_dirs = _discover_artist_candidate_dirs(lib, artist, artist_name, target_artist_dir)
+    candidate_dirs = _discover_artist_candidate_dirs(
+        lib,
+        artist,
+        artist_name,
+        target_artist_dir,
+        deep_discovery=bool((config or {}).get("artist_layout_fix_deep_discovery")),
+    )
     if not candidate_dirs:
         return {
             "status": "unavailable",
@@ -462,7 +490,9 @@ def _fix_artist(
     if not artist_entity_uid:
         raise RuntimeError(f"Artist {artist_name} has no entity_uid")
 
-    preview = preview_fix_artist(lib, artist, config)
+    preview_config = dict(config or {})
+    preview_config["artist_layout_fix_deep_discovery"] = True
+    preview = preview_fix_artist(lib, artist, preview_config)
     if preview.get("status") == "already_canonical":
         return {
             "status": "skipped",

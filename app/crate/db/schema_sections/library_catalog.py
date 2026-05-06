@@ -184,6 +184,7 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON library_tracks(album_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON library_tracks(bpm) WHERE bpm IS NOT NULL")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_energy ON library_tracks(energy) WHERE energy IS NOT NULL")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_lastfm_playcount ON library_tracks(lastfm_playcount DESC NULLS LAST)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS track_lyrics (

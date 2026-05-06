@@ -51,6 +51,22 @@ export function apiUrl(path: string): string {
   return `${getApiBase()}${path}`;
 }
 
+function isAbsoluteHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+function hasQueryParam(url: string, name: string): boolean {
+  try {
+    const parsed = new URL(
+      url,
+      typeof window !== "undefined" ? window.location.origin : "https://crate.local",
+    );
+    return parsed.searchParams.has(name);
+  } catch {
+    return new RegExp(`[?&]${name}=`).test(url);
+  }
+}
+
 /** Resolve an SSE path to a full URL, adding auth token for native clients. */
 export function apiSseUrl(path: string): string {
   const token = getAuthToken();
@@ -61,21 +77,46 @@ export function apiSseUrl(path: string): string {
 
 /** Resolve an API media path to a full URL, adding auth token for <img>/<video> requests. */
 export function apiAssetUrl(path: string): string {
-  const baseUrl = apiUrl(path);
+  const baseUrl = isAbsoluteHttpUrl(path) ? path : apiUrl(path);
   const token = getAuthToken();
   if (!token) return baseUrl;
+  if (hasQueryParam(baseUrl, "token")) return baseUrl;
   const separator = baseUrl.includes("?") ? "&" : "?";
   return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
 }
 
 export function resolveMaybeApiAssetUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+  if (
+    url.startsWith("data:")
+    || url.startsWith("blob:")
+    || url.startsWith("file:")
+    || url.startsWith("capacitor:")
+  ) {
+    return url;
+  }
   if (url.startsWith("/api/")) return apiAssetUrl(url);
+
   const base = getApiBase();
   if (base && url.startsWith(`${base}/api/`)) {
     const relative = url.slice(base.length);
     return apiAssetUrl(relative);
   }
+
+  if (typeof window !== "undefined" && url.startsWith(`${window.location.origin}/api/`)) {
+    const relative = url.slice(window.location.origin.length);
+    return apiAssetUrl(relative);
+  }
+
+  if (isAbsoluteHttpUrl(url)) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname.startsWith("/api/")) return apiAssetUrl(url);
+    } catch {
+      // Leave malformed external URLs untouched.
+    }
+  }
+
   return url;
 }
 

@@ -35,8 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore logout errors
     }
+    clearAuthRuntime({ reason: "logout" });
     setAuthToken(null);
-    clearAuthRuntime();
     setUser(null);
     navigate("/login");
   }, [navigate]);

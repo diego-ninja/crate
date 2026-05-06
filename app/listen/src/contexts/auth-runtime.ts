@@ -10,6 +10,13 @@ const AUTH_USER_ID_KEY = "listen-auth-user-id";
 const PLAYER_STATE_KEY = "listen-player-state";
 const RECENTLY_PLAYED_KEY = "listen-recently-played";
 
+export const AUTH_RUNTIME_RESET_EVENT = "crate:auth-runtime-reset";
+
+function notifyAuthRuntimeReset(reason: "logout" | "user-change" | "unauthenticated") {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(AUTH_RUNTIME_RESET_EVENT, { detail: { reason } }));
+}
+
 function safeRemoveStorageItem(key: string) {
   try {
     localStorage.removeItem(key);
@@ -39,6 +46,7 @@ export function applyAuthenticatedUser(user: AuthUser | null) {
   if (user?.id) {
     const previousUserId = localStorage.getItem(AUTH_USER_ID_KEY);
     if (previousUserId && previousUserId !== String(user.id)) {
+      notifyAuthRuntimeReset("user-change");
       resetPlaybackPersistence();
       clearPlayEventQueue();
     }
@@ -49,9 +57,11 @@ export function applyAuthenticatedUser(user: AuthUser | null) {
 
   setActiveOfflineProfileKey(null);
   void syncOfflineProfileToServiceWorker(null);
+  notifyAuthRuntimeReset("unauthenticated");
 }
 
-export function clearAuthRuntime(options: { clearStoredUser?: boolean } = {}) {
+export function clearAuthRuntime(options: { clearStoredUser?: boolean; reason?: "logout" | "user-change" | "unauthenticated" } = {}) {
+  notifyAuthRuntimeReset(options.reason ?? "logout");
   const { clearStoredUser = true } = options;
   resetPlaybackPersistence();
   if (clearStoredUser) {

@@ -11,7 +11,7 @@ Crate uses a hybrid analysis stack:
 - **Essentia** for signal-processing features such as BPM, key, loudness,
   dynamic range, danceability, and spectral complexity
 - **PANNs CNN14** when available for higher-level mood/classification signals
-- **Bliss** (`grooveyard-bliss`) for 20-dimensional similarity vectors
+- **Bliss** (`crate-cli`) for 20-dimensional similarity vectors
 
 ## Storage model
 

@@ -138,6 +138,8 @@ export function scopesForUrl(url: string): string[] {
   // Shows
   else if (url.startsWith("/api/shows")) scopes.push("shows");
   else if (url.startsWith("/api/upcoming")) scopes.push("upcoming");
+  // Jam rooms
+  else if (url.startsWith("/api/jam")) scopes.push("jam");
 
   return scopes;
 }

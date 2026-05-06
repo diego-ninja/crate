@@ -9,7 +9,7 @@ from crate.db.repositories.tasks_shared import DB_HEAVY_TASKS, register_tasks_su
 from crate.db.tx import transaction_scope
 
 
-def claim_next_task(max_running: int = 5) -> dict | None:
+def claim_next_task(max_running: int = 5, *, worker_id: str | None = None) -> dict | None:
     with transaction_scope() as session:
         register_tasks_surface_signal(session)
         row = session.execute(text("SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running'")).mappings().first()
@@ -47,8 +47,19 @@ def claim_next_task(max_running: int = 5) -> dict | None:
             return None
 
         session.execute(
-            text("UPDATE tasks SET status = 'running', updated_at = :now WHERE id = :id AND status = 'pending'"),
-            {"now": datetime.now(timezone.utc).isoformat(), "id": row["id"]},
+            text(
+                """
+                UPDATE tasks
+                SET status = 'running',
+                    started_at = COALESCE(started_at, :now),
+                    updated_at = :now,
+                    heartbeat_at = :now,
+                    worker_id = :worker_id
+                WHERE id = :id
+                  AND status = 'pending'
+                """
+            ),
+            {"now": datetime.now(timezone.utc).isoformat(), "worker_id": worker_id, "id": row["id"]},
         )
     return task_row_to_dict(row) if row else None
 

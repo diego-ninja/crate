@@ -1,7 +1,7 @@
 """Schema models for jam session endpoints."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +13,18 @@ class _JamModel(BaseModel):
 
 class JamRoomCreateRequest(_JamModel):
     name: str
+    visibility: Literal["public", "private"] = "private"
+    is_permanent: bool = False
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class JamRoomUpdateRequest(_JamModel):
+    name: str | None = None
+    visibility: Literal["public", "private"] | None = None
+    is_permanent: bool | None = None
+    description: str | None = None
+    tags: list[str] | None = None
 
 
 class JamInviteCreateRequest(_JamModel):
@@ -42,6 +54,9 @@ class JamEventResponse(_JamModel):
     event_type: str | None = None
     payload_json: Any | None = None
     created_at: str | datetime | None = None
+    username: str | None = None
+    display_name: str | None = None
+    avatar: str | None = None
 
 
 class JamRoomResponse(_JamModel):
@@ -49,11 +64,26 @@ class JamRoomResponse(_JamModel):
     host_user_id: int | None = None
     name: str
     status: str | None = None
+    visibility: Literal["public", "private"] | None = "private"
+    is_permanent: bool = False
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
     created_at: str | datetime | None = None
     ended_at: str | datetime | None = None
     current_track_payload: Any | None = None
+    member_count: int | None = None
+    last_event_at: str | datetime | None = None
     members: list[JamMemberResponse] = Field(default_factory=list)
     events: list[JamEventResponse] = Field(default_factory=list)
+
+
+class JamRoomListResponse(_JamModel):
+    rooms: list[JamRoomResponse] = Field(default_factory=list)
+
+
+class JamRoomDeleteResponse(_JamModel):
+    ok: bool = True
+    room_id: str | UUID
 
 
 class JamInviteResponse(_JamModel):

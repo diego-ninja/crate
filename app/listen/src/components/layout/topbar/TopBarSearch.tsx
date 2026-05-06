@@ -176,6 +176,27 @@ export function TopBarSearch() {
     }
   }, [query]);
 
+  const closeSearch = useCallback(() => {
+    setShowDropdown(false);
+    setQuery("");
+    setResults([]);
+    setExpanded(false);
+    setActiveIdx(-1);
+    inputRef.current?.blur();
+  }, []);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeSearch();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeSearch, searchOpen]);
+
   useDismissibleLayer({
     active: showDropdown,
     refs: [containerRef, dropdownRef, inputRef],
@@ -228,11 +249,7 @@ export function TopBarSearch() {
         selectRecent(recents[activeIdx]);
       }
     } else if (e.key === "Escape") {
-      setShowDropdown(false);
-      setQuery("");
-      setResults([]);
-      setExpanded(false);
-      inputRef.current?.blur();
+      closeSearch();
     }
   }
 

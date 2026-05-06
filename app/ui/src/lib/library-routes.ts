@@ -95,6 +95,7 @@ export function artistPhotoApiUrl(input: AdminArtistRouteInput, options?: Parame
     if (options?.size != null) params.set("size", String(options.size));
     if (options?.random) params.set("random", "1");
     if (options?.version != null && String(options.version).trim()) params.set("v", String(options.version));
+    if (options?.format) params.set("format", options.format);
     const query = params.toString();
     return query
       ? `/api/artists/by-entity/${encodeEntityUid(input.artistEntityUid)}/photo?${query}`
@@ -109,6 +110,7 @@ export function artistBackgroundApiUrl(input: AdminArtistRouteInput, options?: P
     if (options?.size != null) params.set("size", String(options.size));
     if (options?.random) params.set("random", "1");
     if (options?.version != null && String(options.version).trim()) params.set("v", String(options.version));
+    if (options?.format) params.set("format", options.format);
     const query = params.toString();
     return query
       ? `/api/artists/by-entity/${encodeEntityUid(input.artistEntityUid)}/background?${query}`
@@ -123,6 +125,7 @@ export function albumCoverApiUrl(input: AdminAlbumRouteInput, options?: Paramete
     if (options?.size != null) params.set("size", String(options.size));
     if (options?.random) params.set("random", "1");
     if (options?.version != null && String(options.version).trim()) params.set("v", String(options.version));
+    if (options?.format) params.set("format", options.format);
     const query = params.toString();
     return query
       ? `/api/albums/by-entity/${encodeEntityUid(input.albumEntityUid)}/cover?${query}`

@@ -431,6 +431,28 @@ class TestHealthQueries:
         assert alive not in names
         assert zombie in names
 
+    def test_resolve_stale_artist_issues_only_touches_target_artist(self, pg_db):
+        first = pg_db.upsert_health_issue(
+            "artist_layout_fix",
+            "medium",
+            "Artist layout fix needed for Birds In Row",
+            {"artist": "Birds In Row"},
+            True,
+        )
+        second = pg_db.upsert_health_issue(
+            "artist_layout_fix",
+            "medium",
+            "Artist layout fix needed for High Vis",
+            {"artist": "High Vis"},
+            True,
+        )
+
+        pg_db.resolve_stale_artist_issues(set(), "artist_layout_fix", ["Birds In Row"])
+
+        open_ids = {row["id"] for row in pg_db.get_open_issues("artist_layout_fix")}
+        assert first not in open_ids
+        assert second in open_ids
+
 
 class TestRepairJobs:
     def test_rename_artist_updates_fk_children_without_violation(self, pg_db):
@@ -975,24 +997,34 @@ class TestTaskCRUD:
         now = datetime.now(timezone.utc)
         stale_heartbeat_task = uuid4().hex[:12]
         stale_updated_task = uuid4().hex[:12]
+        stale_retryable_task = uuid4().hex[:12]
         healthy_task = uuid4().hex[:12]
 
         with transaction_scope() as session:
-            for task_id, heartbeat_at, updated_at in (
+            for task_id, heartbeat_at, updated_at, max_retries in (
                 (
                     stale_heartbeat_task,
                     now - timedelta(minutes=12),
                     now - timedelta(minutes=1),
+                    0,
                 ),
                 (
                     stale_updated_task,
                     None,
                     now - timedelta(minutes=8),
+                    0,
+                ),
+                (
+                    stale_retryable_task,
+                    now - timedelta(minutes=12),
+                    now - timedelta(minutes=1),
+                    2,
                 ),
                 (
                     healthy_task,
                     now - timedelta(minutes=1),
                     now - timedelta(minutes=1),
+                    0,
                 ),
             ):
                 session.execute(
@@ -1003,24 +1035,86 @@ class TestTaskCRUD:
                             max_duration_sec, max_retries, created_at, updated_at, heartbeat_at
                         ) VALUES (
                             :id, 'scan', 'running', '{}'::jsonb, 2, 'default',
-                            1800, 0, :created_at, :updated_at, :heartbeat_at
+                            1800, :max_retries, :created_at, :updated_at, :heartbeat_at
                         )
                         """
                     ),
                     {
                         "id": task_id,
+                        "max_retries": max_retries,
                         "created_at": now.isoformat(),
                         "updated_at": updated_at.isoformat(),
                         "heartbeat_at": heartbeat_at.isoformat() if heartbeat_at else None,
                     },
                 )
 
-        cleaned = cleanup_zombie_tasks(heartbeat_timeout_min=5, no_heartbeat_timeout_min=3)
+        with patch("crate.db.repositories.tasks_maintenance.dispatch_task") as dispatch:
+            cleaned = cleanup_zombie_tasks(heartbeat_timeout_min=5, no_heartbeat_timeout_min=3)
 
-        assert cleaned == 2
+        assert cleaned == 3
+        dispatch.assert_called_once_with("scan", stale_retryable_task)
         assert pg_db.get_task(stale_heartbeat_task)["status"] == "failed"
         assert pg_db.get_task(stale_updated_task)["status"] == "failed"
+        retryable = pg_db.get_task(stale_retryable_task)
+        assert retryable["status"] == "pending"
+        assert retryable["retry_count"] == 1
+        assert retryable["error"] == "Worker died (no heartbeat); requeued"
         assert pg_db.get_task(healthy_task)["status"] == "running"
+
+    def test_start_task_atomically_claims_pending_row_with_heartbeat(self, pg_db):
+        task_id = pg_db.create_task("scan")
+
+        started = pg_db.start_task(task_id, worker_id="worker-1")
+        duplicate = pg_db.start_task(task_id, worker_id="worker-2")
+
+        task = pg_db.get_task(task_id)
+        assert started is not None
+        assert duplicate is None
+        assert task["status"] == "running"
+        assert task["started_at"] is not None
+        assert task["heartbeat_at"] is not None
+        assert task["worker_id"] == "worker-1"
+
+    def test_fail_or_retry_task_requeues_until_max_retries(self, pg_db):
+        task_id = pg_db.create_task("fetch_cover", {"mbid": "abc"})
+
+        assert pg_db.start_task(task_id, worker_id="worker-1") is not None
+        assert pg_db.fail_or_retry_task(task_id, "first failure") == "retrying"
+        task = pg_db.get_task(task_id)
+        assert task["status"] == "pending"
+        assert task["retry_count"] == 1
+        assert task["heartbeat_at"] is None
+        assert task["worker_id"] is None
+
+        assert pg_db.start_task(task_id, worker_id="worker-1") is not None
+        assert pg_db.fail_or_retry_task(task_id, "second failure") == "retrying"
+
+        assert pg_db.start_task(task_id, worker_id="worker-1") is not None
+        assert pg_db.fail_or_retry_task(task_id, "final failure") == "failed"
+        task = pg_db.get_task(task_id)
+        assert task["status"] == "failed"
+        assert task["retry_count"] == 2
+        assert task["error"] == "final failure"
+
+    def test_redispatch_stale_pending_tasks_requeues_lost_messages(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        task_id = pg_db.create_task("scan", dispatch=False)
+        old = datetime.now(timezone.utc) - timedelta(minutes=10)
+        with transaction_scope() as session:
+            session.execute(
+                text("UPDATE tasks SET updated_at = :old WHERE id = :id"),
+                {"old": old.isoformat(), "id": task_id},
+            )
+
+        with patch("crate.db.repositories.tasks_maintenance.dispatch_task") as dispatch:
+            count = pg_db.redispatch_stale_pending_tasks(age_seconds=300)
+
+        assert count == 1
+        dispatch.assert_called_once_with("scan", task_id)
+        task = pg_db.get_task(task_id)
+        assert task["status"] == "pending"
+        assert task["progress"] == "Redispatched after stale pending queue"
 
 
 class TestManagementQueries:
@@ -1462,12 +1556,14 @@ class TestHomeCaching:
     def test_claim_next_task(self, pg_db):
         t1 = pg_db.create_task("scan")
         pg_db.create_task("library_sync")
-        claimed = pg_db.claim_next_task()
+        claimed = pg_db.claim_next_task(worker_id="legacy-worker-1")
         assert claimed is not None
         assert claimed["id"] == t1
         # After claiming, task should be running
         task = pg_db.get_task(t1)
         assert task["status"] == "running"
+        assert task["heartbeat_at"] is not None
+        assert task["worker_id"] == "legacy-worker-1"
 
     def test_claim_next_task_empty(self, pg_db):
         assert pg_db.claim_next_task() is None

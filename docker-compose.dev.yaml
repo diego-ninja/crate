@@ -70,7 +70,9 @@ services:
       - crate-dev
 
   api:
-    build: ./app
+    build:
+      context: ./app
+      target: api
     container_name: crate-dev-api
     environment:
       - TZ=Europe/Madrid
@@ -95,6 +97,8 @@ services:
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
+      - CRATE_SSE_REDIS_MAX_CONNECTIONS=${CRATE_SSE_REDIS_MAX_CONNECTIONS:-128}
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
@@ -105,6 +109,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY:-}
+      - CRATE_MEDIA_WORKER_URL=http://media-worker:8687
+      - CRATE_MEDIA_WORKER_MAX_ACTIVE=${CRATE_MEDIA_WORKER_MAX_ACTIVE:-1}
     volumes:
       - ./app/crate:/app/crate:ro
       - ./app/tests:/app/tests:ro
@@ -120,10 +126,16 @@ services:
       - postgres
       - redis
       - slskd
+      - media-worker
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: "1.0"
     command: ["api"]
 
   worker:
-    build: ./app
+    build:
+      context: ./app
+      target: worker
     container_name: crate-dev-worker
     environment:
       - TZ=Europe/Madrid
@@ -147,7 +159,16 @@ services:
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${CRATE_WORKER_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
@@ -165,10 +186,55 @@ services:
       - postgres
       - redis
       - slskd
-    command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons"]
+    mem_limit: 1536m
+    mem_reservation: 512m
+    cpus: "0.75"
+    command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons", "--no-projector"]
+
+  projector:
+    build:
+      context: ./app
+      target: worker
+    container_name: crate-dev-projector
+    environment:
+      - TZ=Europe/Madrid
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
+      - CRATE_RUNTIME=projector
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
+      - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
+      - CRATE_PROJECTOR_INTERVAL_SECONDS=${CRATE_PROJECTOR_INTERVAL_SECONDS:-5}
+      - CRATE_PROJECTOR_BATCH_LIMIT=${CRATE_PROJECTOR_BATCH_LIMIT:-200}
+      - CRATE_LEGACY_POOL_MAXCONN=${PROJECTOR_LEGACY_POOL_MAXCONN:-2}
+      - CRATE_SQLALCHEMY_POOL_SIZE=${PROJECTOR_SQLALCHEMY_POOL_SIZE:-1}
+      - CRATE_SQLALCHEMY_MAX_OVERFLOW=${PROJECTOR_SQLALCHEMY_MAX_OVERFLOW:-1}
+    volumes:
+      - ./app/crate:/app/crate:ro
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music:ro
+      - dev_data:/data
+    networks:
+      - crate-dev
+    depends_on:
+      - postgres
+      - redis
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: "0.25"
+    command: ["projector"]
 
   maintenance-worker:
-    build: ./app
+    build:
+      context: ./app
+      target: worker
     container_name: crate-dev-maintenance-worker
     environment:
       - TZ=Europe/Madrid
@@ -192,7 +258,16 @@ services:
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${MAINTENANCE_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${MAINTENANCE_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
@@ -209,10 +284,15 @@ services:
       - postgres
       - redis
       - slskd
+    mem_limit: 1g
+    mem_reservation: 384m
+    cpus: "0.5"
     command: ["worker", "--queues", "maintenance", "--processes", "${MAINTENANCE_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
 
   analysis-worker:
-    build: ./app
+    build:
+      context: ./app
+      target: worker
     container_name: crate-dev-analysis-worker
     environment:
       - TZ=Europe/Madrid
@@ -230,7 +310,16 @@ services:
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${ANALYSIS_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${ANALYSIS_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
     volumes:
       - ./app/crate:/app/crate:ro
       - ./app/tests:/app/tests:ro
@@ -242,10 +331,15 @@ services:
     depends_on:
       - postgres
       - redis
+    mem_limit: 2g
+    mem_reservation: 768m
+    cpus: "0.75"
     command: ["worker", "--queues", "heavy", "--processes", "${ANALYSIS_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-projector", "--no-telegram"]
 
   playback-worker:
-    build: ./app
+    build:
+      context: ./app
+      target: worker
     container_name: crate-dev-playback-worker
     environment:
       - TZ=Europe/Madrid
@@ -263,7 +357,16 @@ services:
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${PLAYBACK_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${PLAYBACK_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://redis:6379/0
+      - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - CRATE_STREAM_TRANSCODE_MAX_CONCURRENT=${STREAM_TRANSCODE_MAX_CONCURRENT:-1}
     volumes:
       - ./app/crate:/app/crate:ro
@@ -276,7 +379,31 @@ services:
     depends_on:
       - postgres
       - redis
+    mem_limit: 1g
+    mem_reservation: 384m
+    cpus: "1.0"
     command: ["worker", "--queues", "playback", "--processes", "${PLAYBACK_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
+
+  media-worker:
+    build:
+      context: ./app
+      target: media-worker
+    container_name: crate-dev-media-worker
+    environment:
+      - TZ=Europe/Madrid
+      - DATA_DIR=/data
+      - CRATE_MEDIA_WORKER_ADDR=0.0.0.0:8687
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./test-music:/music:ro
+      - dev_data:/data
+    ports:
+      - "8687:8687"
+    networks:
+      - crate-dev
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
 
   caddy:
     image: caddy:2-alpine

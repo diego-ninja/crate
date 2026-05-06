@@ -8,7 +8,8 @@ from crate.db.tx import read_scope
 def get_artists_count(joins: str, where_sql: str, params: dict) -> int:
     """Count distinct artists matching the filter."""
     with read_scope() as session:
-        count_sql = f"SELECT COUNT(DISTINCT la.name) AS cnt FROM library_artists la {joins} WHERE {where_sql}"
+        count_expr = "COUNT(DISTINCT la.name)" if joins.strip() else "COUNT(*)"
+        count_sql = f"SELECT {count_expr} AS cnt FROM library_artists la {joins} WHERE {where_sql}"
         row = session.execute(text(count_sql), params).mappings().first()
         return row["cnt"]
 
@@ -26,7 +27,7 @@ def get_artists_page(
     all_params = {**params, "per_page": per_page, "offset": offset}
     with read_scope() as session:
         query_sql = (
-            f"SELECT DISTINCT {select_cols} FROM library_artists la {joins} "
+            f"SELECT {select_cols} FROM library_artists la {joins} "
             f"WHERE {where_sql} ORDER BY {order_sql} LIMIT :per_page OFFSET :offset"
         )
         rows = session.execute(text(query_sql), all_params).mappings().all()

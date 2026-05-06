@@ -13,6 +13,7 @@ import {
   Headphones,
   Radio,
   RefreshCw,
+  Route,
   Zap,
 } from "lucide-react";
 
@@ -55,6 +56,13 @@ interface MetricsSummaryResponse {
   worker_resource_load_ratio: MetricSummary;
   worker_resource_iowait_percent: MetricSummary;
   worker_resource_swap_used_percent: MetricSummary;
+  media_worker_completed?: MetricSummary;
+  media_worker_failed?: MetricSummary;
+  media_worker_duration?: MetricSummary;
+  media_worker_bytes?: MetricSummary;
+  media_worker_admission_denied?: MetricSummary;
+  media_worker_cache_pruned?: MetricSummary;
+  media_worker_cache_bytes_removed?: MetricSummary;
 }
 
 interface TimeseriesPoint {
@@ -71,6 +79,7 @@ interface SystemHealthDashboardResponse {
   system: SystemMetrics;
   tasks: ActiveTask[];
   playback_delivery?: PlaybackDeliverySnapshot;
+  route_latency?: RouteLatencyRow[];
   timeseries: Record<string, TimeseriesPoint[]>;
 }
 
@@ -115,6 +124,25 @@ interface SystemMetrics {
   };
   load: { load_1m: number; load_5m: number; load_15m: number; cpu_count: number; load_percent: number };
   resource_pressure?: ResourcePressure;
+  media_worker?: MediaWorkerRuntime;
+}
+
+interface MediaWorkerRuntime {
+  redis_connected: boolean;
+  stream_key: string;
+  consumer_group: string;
+  stream_length: number;
+  pending: number;
+  max_active: number;
+  active_slots: Array<{ slot: number; key: string; job_id: string; ttl_ms: number }>;
+  recent_events?: Array<{
+    id: string;
+    job_id?: string | null;
+    event?: string | null;
+    status?: string | null;
+    kind?: string | null;
+    updated_at_ms?: number | string | null;
+  }>;
 }
 
 interface ResourceSnapshot {
@@ -188,6 +216,26 @@ interface PlaybackDeliverySnapshot {
   recent_variants: PlaybackVariant[];
 }
 
+interface RouteLatencyRow {
+  route_id: string;
+  target: string;
+  method: string;
+  path: string;
+  count: number;
+  sum: number;
+  min: number;
+  max: number;
+  avg: number;
+  p95: number;
+  p99: number;
+  status_2xx: number;
+  status_3xx: number;
+  status_4xx: number;
+  status_5xx: number;
+  status_other: number;
+  error_rate: number;
+}
+
 function formatBytes(bytes: number | null | undefined) {
   const value = Number(bytes || 0);
   if (value < 1024) return `${value} B`;
@@ -199,6 +247,19 @@ function formatBytes(bytes: number | null | undefined) {
     unitIndex += 1;
   }
   return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatMs(value: number | null | undefined) {
+  const ms = Number(value || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms >= 1000) return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s`;
+  return `${ms >= 100 ? ms.toFixed(0) : ms.toFixed(1)}ms`;
+}
+
+function formatRouteErrorRate(value: number | null | undefined) {
+  const pct = Number(value || 0) * 100;
+  if (!Number.isFinite(pct) || pct <= 0) return "0%";
+  return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
 }
 
 function ChartTooltip({
@@ -417,6 +478,109 @@ function MetricChart({
   );
 }
 
+function RouteLatencyOverview({ routes }: { routes: RouteLatencyRow[] }) {
+  const visibleRoutes = routes.slice(0, 8);
+  const maxP95 = Math.max(1, ...visibleRoutes.map((route) => route.p95 || 0));
+  const totalRequests = routes.reduce((acc, route) => acc + (route.count || 0), 0);
+  const slowest = visibleRoutes[0];
+  const highestP99 = visibleRoutes.reduce<RouteLatencyRow | null>(
+    (current, route) => (!current || route.p99 > current.p99 ? route : current),
+    null,
+  );
+  const failing = routes.reduce((acc, route) => acc + (route.status_5xx || 0), 0);
+
+  return (
+    <OpsPanel
+      icon={Route}
+      title="API Route Latency"
+      description="Recent endpoint latency ranked by p95, useful for finding the routes hurting admin and Listen first."
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <OpsStatTile
+            icon={Route}
+            label="Measured Routes"
+            value={routes.length.toLocaleString()}
+            caption={`${totalRequests.toLocaleString()} sampled requests`}
+            tone={routes.length > 0 ? "primary" : "default"}
+          />
+          <OpsStatTile
+            icon={Clock}
+            label="Slowest p95"
+            value={formatMs(slowest?.p95)}
+            caption={slowest ? `${slowest.method} ${slowest.path}` : "Waiting for route samples"}
+            tone={slowest && slowest.p95 > 1000 ? "warning" : "default"}
+          />
+          <OpsStatTile
+            icon={Gauge}
+            label="Highest p99"
+            value={formatMs(highestP99?.p99)}
+            caption={highestP99 ? `${highestP99.method} ${highestP99.path}` : "Waiting for route samples"}
+            tone={highestP99 && highestP99.p99 > 3000 ? "warning" : "default"}
+          />
+          <OpsStatTile
+            icon={AlertTriangle}
+            label="Route 5xx"
+            value={failing.toLocaleString()}
+            caption="Server errors in the sampled window"
+            tone={failing > 0 ? "danger" : "default"}
+          />
+        </div>
+
+        <div className="overflow-hidden rounded-md border border-white/8 bg-black/20 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+          {visibleRoutes.length > 0 ? (
+            <div className="divide-y divide-white/6">
+              {visibleRoutes.map((route) => {
+                const isSlow = route.p95 >= 1000;
+                const isVerySlow = route.p95 >= 3000 || route.error_rate > 0.01;
+                const barColor = isVerySlow ? "bg-red-400" : isSlow ? "bg-amber-400" : "bg-cyan-400";
+
+                return (
+                  <div key={route.route_id} className="grid gap-3 px-4 py-3 xl:grid-cols-[minmax(0,1fr)_7rem_7rem_7rem_6rem] xl:items-center">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CrateChip className="shrink-0 font-mono">{route.method}</CrateChip>
+                        <span className="min-w-0 truncate font-mono text-sm text-white/85">{route.path}</span>
+                      </div>
+                      <div className="mt-2 max-w-xl">
+                        <ProgressBar value={route.p95} max={maxP95} color={barColor} />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 xl:block">
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-white/30 xl:block">Count</span>
+                      <span className="text-sm font-medium tabular-nums text-white/75">{route.count.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 xl:block">
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-white/30 xl:block">Avg</span>
+                      <span className="text-sm font-medium tabular-nums text-white/75">{formatMs(route.avg)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 xl:block">
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-white/30 xl:block">p95 / p99</span>
+                      <span className={`text-sm font-medium tabular-nums ${isVerySlow ? "text-red-100" : isSlow ? "text-amber-100" : "text-white/80"}`}>
+                        {formatMs(route.p95)} · {formatMs(route.p99)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 xl:block">
+                      <span className="text-[10px] uppercase tracking-[0.12em] text-white/30 xl:block">5xx</span>
+                      <span className={`text-sm font-medium tabular-nums ${route.error_rate > 0 ? "text-red-100" : "text-white/65"}`}>
+                        {formatRouteErrorRate(route.error_rate)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex min-h-[132px] items-center justify-center text-sm text-white/30">
+              No route latency samples yet
+            </div>
+          )}
+        </div>
+      </div>
+    </OpsPanel>
+  );
+}
+
 function PlaybackTranscodingOverview({
   delivery,
   durationSummary,
@@ -580,6 +744,7 @@ export function SystemHealth() {
   const resourceDeferredTs = dashboard?.timeseries?.["worker.resource.deferred"] ?? [];
   const resourceLoadTs = dashboard?.timeseries?.["worker.resource.load_ratio"] ?? [];
   const playbackDelivery = dashboard?.playback_delivery;
+  const routeLatency = dashboard?.route_latency ?? [];
 
   const score = useMemo(() => {
     if (!summary) return 100;
@@ -747,6 +912,8 @@ export function SystemHealth() {
         />
       </div>
 
+      <RouteLatencyOverview routes={routeLatency} />
+
       <PlaybackTranscodingOverview
         delivery={playbackDelivery}
         durationSummary={summary?.stream_transcode_duration}
@@ -876,6 +1043,38 @@ export function SystemHealth() {
                     Window {system.resource_pressure.window.start}-{system.resource_pressure.window.end}
                     {" · "}
                     {system.resource_pressure.window.in_window ? "inside" : "outside"}
+                  </div>
+                ) : null}
+              </ResourceCard>
+            ) : null}
+
+            {system.media_worker ? (
+              <ResourceCard
+                icon={Radio}
+                label="Media Worker"
+                value={
+                  system.media_worker.redis_connected
+                    ? `${system.media_worker.active_slots?.length ?? 0} / ${system.media_worker.max_active ?? 1} active`
+                    : "Redis offline"
+                }
+              >
+                <ProgressBar
+                  value={system.media_worker.active_slots?.length ?? 0}
+                  max={Math.max(1, system.media_worker.max_active ?? 1)}
+                  color={system.media_worker.pending > 0 ? "bg-amber-500" : "bg-primary"}
+                  label={`${system.media_worker.pending ?? 0} pending bridge events`}
+                />
+                <div className="text-[10px] text-white/30">
+                  {system.media_worker.recent_events?.[0]?.event
+                    ? `Latest: ${String(system.media_worker.recent_events[0].event).replace(/_/g, " ")}`
+                    : system.media_worker.consumer_group}
+                </div>
+                {summary?.media_worker_completed ? (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-white/35">
+                    <span>Done: {summary.media_worker_completed.count}</span>
+                    <span>Failed: {summary.media_worker_failed?.count ?? 0}</span>
+                    <span>Denied: {summary.media_worker_admission_denied?.count ?? 0}</span>
+                    <span>Pruned: {formatBytes(summary.media_worker_cache_bytes_removed?.sum ?? 0)}</span>
                   </div>
                 ) : null}
               </ResourceCard>

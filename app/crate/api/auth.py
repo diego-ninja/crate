@@ -92,6 +92,17 @@ def _cookie_name_for_request(request) -> str:
     if "listen." in origin:
         return COOKIE_NAME_LISTEN
     return COOKIE_NAME
+
+
+def _auth_cookie_candidates(request) -> tuple[str, ...]:
+    preferred = _cookie_name_for_request(request)
+    candidates = [preferred]
+    for cookie_name in (COOKIE_NAME_LISTEN, COOKIE_NAME):
+        if cookie_name not in candidates:
+            candidates.append(cookie_name)
+    return tuple(candidates)
+
+
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -173,7 +184,7 @@ def _password_enabled() -> bool:
 def _provider_status(request: Request | None = None) -> dict[str, dict]:
     domain = os.environ.get("DOMAIN", "localhost")
     if request is not None:
-        base_origin = str(request.base_url).rstrip("/")
+        base_origin = _request_base_origin(request)
     else:
         scheme = "http" if domain == "localhost" else "https"
         host = os.environ.get("API_HOST")
@@ -200,6 +211,20 @@ def _provider_status(request: Request | None = None) -> dict[str, dict]:
             "login_url": f"{base_origin}/api/auth/apple",
         },
     }
+
+
+def _request_base_origin(request: Request) -> str:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    host = forwarded_host or request.headers.get("host") or request.url.netloc
+    scheme = forwarded_proto or request.url.scheme
+    domain = os.environ.get("DOMAIN", "localhost")
+    hostname = host.split(":", 1)[0].lower()
+
+    if scheme == "http" and domain != "localhost" and (hostname == domain or hostname.endswith(f".{domain}")):
+        scheme = "https"
+
+    return f"{scheme}://{host}".rstrip("/")
 
 
 def _provider_available(provider: str) -> bool:
@@ -431,9 +456,10 @@ class AuthMiddleware:
             token = request.query_params.get("token")
         # 3. Cookie auth — try app-specific cookie first, then default
         if not token:
-            token = request.cookies.get(_cookie_name_for_request(request))
-        if not token:
-            token = request.cookies.get(COOKIE_NAME)
+            for cookie_name in _auth_cookie_candidates(request):
+                token = request.cookies.get(cookie_name)
+                if token:
+                    break
 
         if token:
             payload = verify_jwt(token)
@@ -832,23 +858,32 @@ async def get_subsonic_token(request: Request):
     "/oauth/{provider}/start",
     response_model=OAuthStartResponse,
     responses=_AUTH_PUBLIC_RESPONSES,
-    summary="Start an OAuth login or link flow",
+    summary="Start an OAuth login flow",
 )
 async def oauth_start(request: Request, provider: str, body: OAuthStartRequest):
+    return await _oauth_start_response(request, provider, body, mode="login")
+
+
+async def _oauth_start_response(
+    request: Request,
+    provider: str,
+    body: OAuthStartRequest,
+    *,
+    mode: str,
+    user_id: int | None = None,
+):
     provider = provider.lower()
     if provider not in {"google", "apple"}:
         raise HTTPException(status_code=404, detail="Unknown auth provider")
     if not _provider_available(provider):
         raise HTTPException(status_code=403, detail=f"{provider.title()} login is unavailable")
 
-    user = getattr(request.state, "user", None)
-    mode = "link" if user else "login"
     app_id = request.headers.get("x-crate-app") or request.query_params.get("app_id")
     state = _build_oauth_state(
         provider=provider,
         return_to=body.return_to,
         mode=mode,
-        user_id=user["id"] if user and mode == "link" else None,
+        user_id=user_id if mode == "link" else None,
         invite_token=body.invite_token,
         app_id=app_id,
     )
@@ -1097,8 +1132,8 @@ async def oauth_unlink(request: Request, provider: str):
     summary="Start linking an OAuth provider to the current account",
 )
 async def oauth_link(request: Request, provider: str, body: OAuthStartRequest):
-    _require_auth(request)
-    return await oauth_start(request, provider, body)
+    user = _require_auth(request)
+    return await _oauth_start_response(request, provider, body, mode="link", user_id=user["id"])
 
 
 @router.post("/unlink-google")

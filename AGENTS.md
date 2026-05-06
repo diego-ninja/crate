@@ -50,7 +50,7 @@ app/listen/src/             Consumer listening frontend (25 pages)
 app/site/                   Marketing landing page
 app/reference/              Scalar API docs viewer
 app/tests/                  Python backend tests (35 files)
-tools/grooveyard-bliss/     Rust CLI for audio similarity (bliss-rs)
+tools/crate-cli/     Rust CLI for audio similarity (bliss-rs)
 docs/plans/                 Design documents
 test-music/                 Local dev music (3 artists, not committed)
 ```
@@ -242,7 +242,7 @@ Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 | `app/crate/analysis_daemon.py` | Audio analysis + bliss daemon loops |
 | `app/crate/enrichment.py` | Unified artist enrichment (all sources) |
 | `app/crate/audio_analysis.py` | Essentia/librosa dual backend |
-| `app/crate/bliss.py` | Python integration with grooveyard-bliss Rust CLI |
+| `app/crate/bliss.py` | Python integration with crate-cli Rust CLI |
 | `app/crate/tidal.py` | Tidal auth, search, download via tiddl |
 | `app/crate/library_sync.py` | Filesystem → DB sync |
 | `app/crate/metrics.py` | Redis metrics buckets → PostgreSQL rollups |

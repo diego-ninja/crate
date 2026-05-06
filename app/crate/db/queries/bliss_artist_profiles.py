@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 
 
 def build_user_radio_profile(
@@ -19,7 +19,7 @@ def build_user_radio_profile(
 
     recency_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
 
-    with transaction_scope() as session:
+    with read_scope() as session:
         liked_track_ids: set[int] = set()
         if track_ids:
             result = session.execute(

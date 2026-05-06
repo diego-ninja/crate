@@ -383,7 +383,7 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
     from crate.bliss import is_available
 
     if not is_available():
-        return {"error": "grooveyard-bliss binary not found"}
+        return {"error": "crate-cli bliss command not available"}
 
     if params.get("artists"):
         return _handle_bliss_chunk(task_id, params, config)

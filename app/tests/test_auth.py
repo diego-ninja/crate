@@ -129,6 +129,86 @@ class TestOAuthRedirectHelpers:
         assert _post_auth_redirect_url("/auth/callback?next=%2Fmix", "abc123") == "/auth/callback?next=%2Fmix&token=abc123"
 
 
+class TestOAuthStart:
+    @staticmethod
+    def _request(headers: list[tuple[bytes, bytes]] | None = None) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/auth/oauth/google/start",
+                "query_string": b"",
+                "headers": headers or [],
+                "client": ("127.0.0.1", 12345),
+                "scheme": "http",
+                "server": ("listen.lespedants.org", 80),
+            }
+        )
+
+    def test_public_oauth_start_uses_login_mode_even_with_authenticated_request(self):
+        from crate.api.auth import oauth_start
+        from crate.api.schemas.auth import OAuthStartRequest
+
+        captured_state: dict[str, Any] = {}
+        request = self._request()
+        request.state.user = {"id": 7, "email": "admin@cratemusic.app", "role": "admin"}
+
+        with patch("crate.api.auth._provider_available", return_value=True), \
+             patch("crate.api.auth._build_oauth_state", side_effect=lambda **kwargs: captured_state.update(kwargs) or "state-token"), \
+             patch("crate.api.auth._parse_oauth_state", return_value={"verifier": "verifier"}), \
+             patch("crate.api.auth._pkce_challenge", return_value="challenge"), \
+             patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "google-client"}):
+            result = asyncio.run(oauth_start(request, "google", OAuthStartRequest(return_to="https://listen.lespedants.org/auth/callback")))
+
+        assert result["provider"] == "google"
+        assert captured_state["mode"] == "login"
+        assert captured_state["user_id"] is None
+
+    def test_oauth_link_uses_link_mode_for_current_user(self):
+        from crate.api.auth import oauth_link
+        from crate.api.schemas.auth import OAuthStartRequest
+
+        captured_state: dict[str, Any] = {}
+        request = self._request()
+        request.state.user = {"id": 7, "email": "admin@cratemusic.app", "role": "admin"}
+
+        with patch("crate.api.auth._provider_available", return_value=True), \
+             patch("crate.api.auth._build_oauth_state", side_effect=lambda **kwargs: captured_state.update(kwargs) or "state-token"), \
+             patch("crate.api.auth._parse_oauth_state", return_value={"verifier": "verifier"}), \
+             patch("crate.api.auth._pkce_challenge", return_value="challenge"), \
+             patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "google-client"}):
+            result = asyncio.run(oauth_link(request, "google", OAuthStartRequest(return_to="https://listen.lespedants.org/settings")))
+
+        assert result["provider"] == "google"
+        assert captured_state["mode"] == "link"
+        assert captured_state["user_id"] == 7
+
+    def test_oauth_link_requires_authentication(self):
+        from fastapi import HTTPException
+
+        from crate.api.auth import oauth_link
+        from crate.api.schemas.auth import OAuthStartRequest
+
+        request = self._request()
+        request.state.user = None
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(oauth_link(request, "google", OAuthStartRequest(return_to="/settings")))
+
+        assert exc_info.value.status_code == 401
+
+    def test_provider_login_urls_keep_https_behind_proxy(self):
+        from crate.api.auth import _provider_status
+
+        request = self._request(headers=[(b"host", b"listen.lespedants.org")])
+
+        with patch.dict("os.environ", {"DOMAIN": "lespedants.org", "GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "secret"}), \
+             patch("crate.api.auth.get_setting", return_value=None):
+            providers = _provider_status(request)
+
+        assert providers["google"]["login_url"] == "https://listen.lespedants.org/api/auth/google"
+
+
 class TestOAuthCallback:
     @staticmethod
     def _request(path: str = "/api/auth/oauth/google/callback") -> Request:
@@ -354,6 +434,34 @@ class TestAuthMiddleware:
         assert response.status_code == 200
         assert response.json()["user"] == "admin@cratemusic.app"
         mock_touch.assert_not_called()
+
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
+    def test_auth_middleware_accepts_listen_cookie_without_origin_hint(self, _mock_secret):
+        from crate.api.auth import AuthMiddleware
+        from crate.auth import create_jwt
+
+        token = create_jwt(1, "admin@cratemusic.app", "admin", session_id="sess-123")
+
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        @app.get("/asset")
+        def asset(request: Request):
+            return {"user": request.state.user["email"]}
+
+        with patch(
+            "crate.api.auth_cache.get_cached_session",
+            return_value={"id": "sess-123", "expires_at": datetime.now(timezone.utc) + timedelta(hours=1), "revoked_at": None},
+        ), patch(
+            "crate.api.auth_cache.get_cached_user",
+            return_value={"id": 1, "email": "admin@cratemusic.app", "role": "admin"},
+        ):
+            with TestClient(app) as client:
+                client.cookies.set("crate_session_listen", token)
+                response = client.get("/asset")
+
+        assert response.status_code == 200
+        assert response.json()["user"] == "admin@cratemusic.app"
 
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")

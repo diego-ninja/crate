@@ -52,6 +52,9 @@ export default defineConfig({
   },
   server: {
     allowedHosts: [".crate.local", ".dev.lespedants.org"],
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+    },
     fs: {
       allow: [path.resolve(__dirname, "../..")],
     },
@@ -60,6 +63,7 @@ export default defineConfig({
         target: process.env.API_URL || "http://localhost:8585",
         changeOrigin: true,
         secure: false,
+        ws: true,
       },
     },
   },

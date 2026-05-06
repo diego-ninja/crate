@@ -1,6 +1,5 @@
 import logging
 import shutil
-import time
 from pathlib import Path
 
 from crate.db.audit import log_audit
@@ -21,6 +20,7 @@ from crate.db.jobs.enrichment import (
 )
 from crate.db.repositories.library import get_library_albums, get_library_artist, get_library_artists, get_library_tracks
 from crate.db.queries.tasks import get_task
+from crate.provider_rate_limits import wait_for_provider_slot
 from crate.storage_layout import looks_like_entity_uid, resolve_artist_dir
 from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
@@ -36,6 +36,7 @@ ENRICHMENT_CACHE_PREFIXES = (
     "nd:artist:",
     "spotify:artist:",
 )
+ENRICH_ARTISTS_CHUNK_SIZE = 20
 
 
 def _mark_processing(artist_name: str):
@@ -101,6 +102,7 @@ def _find_best_album_release(
 ) -> tuple[dict | None, int]:
     from crate.matcher import _get_release_detail, _score_match, _search_musicbrainz
 
+    wait_for_provider_slot("musicbrainz", 1.1)
     candidates = _search_musicbrainz(artist_name, clean_album, track_count)
     if not candidates:
         return None, 0
@@ -108,6 +110,7 @@ def _find_best_album_release(
     best_release = None
     best_score = 0
     for candidate in candidates[:max_candidates]:
+        wait_for_provider_slot("musicbrainz", 1.1)
         release = _get_release_detail(candidate["mbid"])
         if not release:
             continue
@@ -115,7 +118,6 @@ def _find_best_album_release(
         if score > best_score:
             best_score = score
             best_release = release
-        time.sleep(0.5)
 
     return best_release, best_score
 
@@ -208,22 +210,60 @@ def _sync_album_after_auto_apply(album_name: str, artist_name: str, album_dir: P
 def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     from crate.enrichment import enrich_artist
 
-    all_artists, total = get_library_artists(per_page=10000)
+    artist_names = [str(name).strip() for name in (params.get("artists") or []) if str(name).strip()]
+    if artist_names:
+        total = len(artist_names)
+    else:
+        all_artists, total = get_library_artists(per_page=10000)
+        artist_names = [artist["name"] for artist in all_artists]
+
+        try:
+            chunk_size = int(params.get("chunk_size") or get_setting("enrich_artists_chunk_size", str(ENRICH_ARTISTS_CHUNK_SIZE)))
+        except (TypeError, ValueError):
+            chunk_size = ENRICH_ARTISTS_CHUNK_SIZE
+        chunk_size = max(1, min(chunk_size, 100))
+        if total > chunk_size and not params.get("_chunk"):
+            from crate.db.repositories.tasks import create_task
+
+            chunks = [
+                artist_names[index : index + chunk_size]
+                for index in range(0, total, chunk_size)
+            ]
+            emit_task_event(
+                task_id,
+                "info",
+                {"message": f"Dispatching enrichment for {total} artists in {len(chunks)} chunks"},
+            )
+            for index, chunk in enumerate(chunks):
+                chunk_params = {
+                    "artists": chunk,
+                    "_chunk": True,
+                    "chunk_index": index,
+                    "total_chunks": len(chunks),
+                }
+                if params.get("force"):
+                    chunk_params["force"] = True
+                create_task("enrich_artists", chunk_params, parent_task_id=task_id)
+
+            p = TaskProgress(phase="dispatched", phase_count=1, total=len(chunks), done=0)
+            p.item = f"0/{len(chunks)} chunks"
+            emit_progress(task_id, p, force=True)
+            return {"_delegated": True, "chunks": len(chunks), "artists": total}
+
     enriched = 0
     skipped = 0
 
     p = TaskProgress(phase="enriching", phase_count=1, total=total)
 
-    for index, artist in enumerate(all_artists):
+    for index, name in enumerate(artist_names):
         if is_cancelled(task_id):
             break
 
-        name = artist["name"]
         p.done = index + 1
         p.item = entity_label(artist=name)
         emit_progress(task_id, p)
 
-        result = enrich_artist(name, config)
+        result = enrich_artist(name, config, force=bool(params.get("force", False)))
         if result.get("skipped"):
             skipped += 1
             emit_item_event(task_id, level="info", message=f"Skipped: {name}", artist=name)
@@ -442,7 +482,6 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
         if not best_release or best_score < min_score:
             failed += 1
-            time.sleep(0.5)
             continue
 
         auto_apply_threshold = int(get_setting("mb_auto_apply_threshold", "95"))
@@ -484,7 +523,6 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             best_score,
             best_release["mbid"],
         )
-        time.sleep(1)
 
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
@@ -602,6 +640,15 @@ def _process_new_content_enrich_artist(
         result["steps"]["enrich_artist"] = "failed"
 
 
+def _get_album_tracks_cached(album: dict) -> list[dict]:
+    cached = album.get("_tracks")
+    if isinstance(cached, list):
+        return cached
+    tracks = get_library_tracks(album["id"])
+    album["_tracks"] = tracks
+    return tracks
+
+
 def _process_new_content_album_genres(
     task_id: str,
     result: dict,
@@ -623,7 +670,7 @@ def _process_new_content_album_genres(
         for album in albums:
             if album_folder and album["name"] != album_folder:
                 continue
-            tracks = get_library_tracks(album["id"])
+            tracks = _get_album_tracks_cached(album)
             genres = derive_album_genres(
                 album.get("genre"),
                 [track.get("genre") for track in tracks if track.get("genre")],
@@ -662,7 +709,7 @@ def _process_new_content_album_mbids(
                 continue
 
             clean_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
-            tracks_db = get_library_tracks(album["id"])
+            tracks_db = _get_album_tracks_cached(album)
             track_count = album.get("track_count", 0)
             local_info = _build_album_match_local_info(
                 album,
@@ -683,7 +730,6 @@ def _process_new_content_album_mbids(
                 mbid = best_release["mbid"]
                 update_album_mbid_and_propagate(album["id"], mbid)
                 mbid_count += 1
-            time.sleep(1)
 
         result["steps"]["album_mbid"] = mbid_count
     except Exception:
@@ -716,6 +762,7 @@ def _process_new_content_popularity(
             if album_folder and album["name"] != album_folder:
                 continue
             album_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
+            wait_for_provider_slot("lastfm", 0.25)
             data = _lastfm_get("album.getinfo", artist=artist_name, album=album_name, autocorrect="1")
             if data and "album" in data:
                 info = data["album"]
@@ -724,7 +771,6 @@ def _process_new_content_popularity(
                 if listeners > 0:
                     update_album_popularity(album["id"], listeners, playcount)
                     pop_count += 1
-            time.sleep(0.25)
 
         refresh_result = refresh_artist_track_popularity_signals(artist_name)
         track_pop = int(refresh_result.get("lastfm_matches", 0))
@@ -771,11 +817,13 @@ def _process_new_content_missing_covers(
             cover_data = None
             mbid = album.get("musicbrainz_albumid")
             if mbid and mbid.strip():
+                wait_for_provider_slot("coverartarchive", 0.3)
                 cover_data = fetch_cover_from_caa(mbid)
 
             if not cover_data:
                 try:
                     album_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
+                    wait_for_provider_slot("deezer", 0.3)
                     resp = _requests.get(
                         "https://api.deezer.com/search/album",
                         params={"q": f"{artist_name} {album_name}", "limit": 1},
@@ -784,6 +832,7 @@ def _process_new_content_missing_covers(
                     if resp.status_code == 200:
                         data = resp.json().get("data", [])
                         if data and data[0].get("cover_xl"):
+                            wait_for_provider_slot("deezer", 0.3)
                             img_resp = _requests.get(data[0]["cover_xl"], timeout=10)
                             if img_resp.status_code == 200 and len(img_resp.content) > 1000:
                                 cover_data = img_resp.content
@@ -795,7 +844,6 @@ def _process_new_content_missing_covers(
                 covers_fetched += 1
                 update_album_has_cover(album["id"])
 
-            time.sleep(0.3)
         result["steps"]["covers"] = covers_fetched
     except Exception:
         log.warning("Cover fetching failed", exc_info=True)
@@ -893,7 +941,7 @@ def _process_new_content_lyrics(
         for album in albums:
             if album_folder and album["name"] != album_folder:
                 continue
-            tracks.extend(get_library_tracks(album["id"]))
+            tracks.extend(_get_album_tracks_cached(album))
 
         def _lyrics_progress(data: dict) -> None:
             p.done = data.get("done", p.done)
@@ -1065,6 +1113,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
             mb_data = get_cache(f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7)
             if not mb_data:
                 try:
+                    wait_for_provider_slot("musicbrainz", 1.1)
                     mb_artist = musicbrainzngs.get_artist_by_id(artist["mbid"])["artist"]
                     mb_name = mb_artist.get("name", "")
                     from thefuzz import fuzz
@@ -1074,6 +1123,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
                 except Exception:
                     pass
 
+                wait_for_provider_slot("musicbrainz", 1.1)
                 result = musicbrainzngs.browse_release_groups(
                     artist=artist["mbid"], release_type=["album"], limit=100
                 )
@@ -1090,7 +1140,6 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
                     ],
                 }
                 set_cache(f"mb:albums:{artist['mbid']}", mb_data, ttl=604800)
-                time.sleep(1)  # rate limit
 
             mb_count = mb_data["count"]
             local_count = artist["album_count"] or 0

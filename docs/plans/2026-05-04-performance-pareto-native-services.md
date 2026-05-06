@@ -201,12 +201,68 @@ Targets:
 - Serve with long cache headers and entity/version URLs.
 - Avoid Python for hot cover paths unless extracting embedded art on demand.
 
-## Phase 2: First Native Service, Rust Indexer
+## Phase 2: Native Primitives, Rust Indexer
 
 Expected impact: high.
 Language: Rust.
 
-Build `crate-indexer` as a read-mostly filesystem scanner and tag reader.
+Build this first inside `crate-cli` as Crate's native primitive toolbox and
+test harness. This phase is deliberately not a full worker rewrite. The CLI is
+for bounded operations with clean JSON IO, easy benchmarking, and safe fallback
+from Python. It should not become a second backend hidden behind long-running
+subprocesses.
+
+Large jobs with progress, cancellation, cache lifecycle, or backpressure should
+reuse these Rust modules later from a persistent worker, not grow as one huge
+CLI command.
+
+Recommended shape:
+
+- `crate-cli scan`: read-only filesystem scan, tags, identity tags, covers.
+- `crate-cli diff`: compare two scan snapshots and emit add/remove/change/move
+  facts.
+- `crate-cli tags inspect`: inspect normalized tags and Crate identity tags.
+- `crate-cli tags write-identity`: explicit worker-only identity tag writes.
+- `crate-cli fingerprint`: compact audio/file fingerprint helpers.
+- `crate-cli quality`: cheap technical media checks.
+
+Not in Phase 2 as CLI work:
+
+- Enriched album/track ZIP creation.
+- Artwork resize/embed/extract at export scale.
+- Long-running analysis or bulk mutation jobs.
+
+Those belong in Phase 4 as a Rust media worker once the primitive modules and
+contracts are stable.
+
+Easy high-return migrations:
+
+1. Content hashes and file-set diffs: already close to done via `scan --hash`;
+   removes repeated Python tree walks from content gating.
+2. Library scan/tag read: big return, low product risk if promoted through
+   shadow mode first.
+3. Cheap media quality probe: duration, bitrate, sample rate, bit depth, format,
+   corrupt-file detection; useful for health checks without loading heavy audio
+   stacks.
+4. Fingerprint helpers: good return if kept compact and cancellable, especially
+   for identity/rebuild flows.
+5. Identity tag inspection and conservative writes: useful for recovery and
+   portable metadata, but original-library writes remain worker-only and
+   dry-run friendly.
+
+Less immediate:
+
+- Artwork/export packaging: high value, but it needs progress, cancellation,
+  cache policy, and structured task events. That is worker-shaped, not CLI-shaped.
+- Full audio analysis and ML mood features: worthwhile, but dependency-heavy
+  and harder to ship than scan/probe primitives.
+- Transcoding: keep FFmpeg; only move supervision/cache lifecycle if needed.
+
+This keeps one native binary and one test harness for primitives without making
+Rust own Crate's product logic or forcing Python to supervise heavy subprocesses
+forever.
+
+The first command behaves as a read-mostly filesystem scanner and tag reader.
 
 Responsibilities:
 
@@ -238,6 +294,12 @@ Boundary:
 
 - Rust produces facts and diffs.
 - Python decides what those facts mean and what tasks to enqueue.
+- Rust writes only when a worker invokes an explicit mutating subcommand.
+- Mutating subcommands must emit structured progress/events and support dry-run
+  mode where practical.
+- CLI commands should remain bounded and observable. If a command needs queue
+  semantics, cancellation, incremental task events, or export cache ownership,
+  promote it to the Rust media worker instead.
 
 Expected wins:
 
@@ -250,6 +312,8 @@ Expected wins:
 
 Expected impact: high if Phase 1 shows FastAPI/read queries remain hot.
 Language: Go.
+
+Detailed implementation spec: `docs/plans/2026-05-05-go-read-plane-phase-3-spec.md`.
 
 Build `crate-readplane` only if the optimized Python read model is still not
 fast enough or still too memory-heavy.
@@ -286,33 +350,50 @@ Boundary:
 - Go read plane serves hot consumer reads.
 - Snapshots/events are the contract.
 
-## Phase 4: Native Media Utility Service
+## Phase 4: Native Media Worker, Not More CLI Glue
 
 Expected impact: medium-high.
-Language: Rust first, Go acceptable for process supervision.
+Language: Rust.
 
-Split media tooling into a native CLI/service:
+Detailed implementation spec: `docs/plans/2026-05-05-crate-media-worker-phase-4-spec.md`.
 
-- enriched zip creation
-- sidecar generation
-- identity tag inspection
-- optional identity tag writing
-- artwork embedding for export artifacts
-- lyrics embedding for export artifacts
-- file hashing
+Build `crate-media-worker` as a persistent worker for media jobs that are too
+large or stateful for one-off subprocess calls. It should reuse the Rust modules
+proven by `crate-cli`, but own worker concerns directly: progress, cancellation,
+resource limits, cache lifecycle, and structured task events.
+
+Responsibilities:
+
+- enriched album/track ZIP creation
+- sidecar generation for exported packages
+- artwork resize/embed/extract for cache/export artifacts
+- lyrics and rich tag embedding for generated copies
+- export cache admission, reuse, and eviction
+- structured progress events that admin/listen can consume
+- cancellation and cooperative backpressure
+
+What stays in `crate-cli`:
+
+- direct diagnostics
+- one-shot inspection/probe tools
+- benchmark harnesses
+- small primitives used by tests and local debugging
 
 Why Rust:
 
 - Strong binary/file manipulation.
 - Good archive/hash libraries.
-- Can share tag-reading code with `crate-indexer`.
+- Can share tag-reading, fingerprint, and artwork code with `crate-cli`.
 - Predictable memory and CPU.
+- Better fit than Go for audio tag/artwork/archive internals.
 
 Important constraint:
 
 - Mutating original audio files remains high-risk.
 - Prefer native writes first for generated/export artifacts.
 - Keep original-library tag writes conservative and heavily tested.
+- Python remains the task/control plane until a specific native worker proves it
+  can own its queue safely.
 
 ## Phase 5: Transcode Supervisor, Not Transcoder Rewrite
 
@@ -433,3 +514,96 @@ Then start native work:
 4. Run it read-only against production and compare diffs without applying.
 5. Promote it to the source of filesystem diffs once stable.
 
+Implementation note:
+
+- The first native slice reuses the existing Rust `crate-cli scan` binary
+  instead of introducing a second scanner binary immediately. It now exposes a
+  structured read-only scan result and extracts Crate portable identity tags
+  (`crate_artist_uid`, `crate_album_uid`, `crate_track_uid`,
+  `crate_audio_fingerprint`, etc.) from audio metadata. A dedicated
+  `crate-indexer` service can still be split out later once the read-only diff
+  contract is stable.
+- `crate-cli quality` is the second small native command. It probes technical
+  audio metadata without running analysis and returns duration, bitrate,
+  sample rate, bit depth, channels, file size, and per-file read errors. Python
+  `read_audio_quality()` now prefers this command when available and falls back
+  to Mutagen otherwise.
+- Library sync now has two native scan gates. `native_scan_payload_shadow`
+  compares the Rust album/track projection with the Python payload before DB
+  writes and reports drift without changing behavior. `native_scan_payload_prefer`
+  or `native_scan_payload_source=prefer` promotes the Rust projection only when
+  that comparison is clean; otherwise the sync falls back to the Python payload.
+- `crate-cli diff` is the next native indexer primitive. It compares two scan
+  JSON snapshots and emits added, removed, moved, changed, and unchanged counts.
+  Move detection is identity-aware, preferring Crate portable track UIDs, then
+  MusicBrainz recording IDs, then a conservative unique tag/audio signature.
+  This keeps Rust responsible for filesystem facts while Python still owns DB
+  policy and task orchestration.
+- `crate-cli tags inspect`, `crate-cli tags write-identity`, and
+  `crate-cli fingerprint` round out Phase 2 as bounded primitives. They are
+  useful for recovery, portable identity, and diagnostics, but they do not make
+  Rust own full export or enrichment workflows.
+- Worker `library_sync` can now run `native_scan_diff_shadow`. It persists scan
+  snapshots under `CRATE_NATIVE_SCAN_SNAPSHOT_DIR`,
+  `native_scan_snapshot_dir`, or `/data/native-scan-snapshots`, then emits the
+  Rust diff summary as task event/result data on subsequent syncs. This is
+  still observation-only: Python remains the source of truth for upserts and
+  deletions.
+- The Phase 2/Phase 4 boundary was tightened after revisiting the architecture:
+  `crate-cli` stays small and bounded, while export/artwork packaging moves to a
+  future persistent `crate-media-worker` rather than becoming long-running CLI
+  glue supervised by Python.
+
+Next native step after Phase 2:
+
+1. Define a minimal `crate-media-worker` contract for export packages only:
+   job input JSON, progress event schema, output artifact metadata, cache key,
+   cancellation behavior, and resource limits.
+2. Keep Python as the task/control plane initially. The Rust worker should own
+   only the media package execution path and report structured events back.
+3. Reuse the proven `crate-cli` modules for tags, fingerprints, quality, and
+   later artwork/archive helpers through a shared Rust crate instead of invoking
+   them as subprocesses from inside the media worker.
+4. Promote one workload at a time, starting with generated download packages,
+   because it touches copied artifacts rather than mutating the original library.
+
+Phase 4 first slice:
+
+- `app/media-worker` now contains a small Rust service with a minimal HTTP
+  contract and a one-shot `package-album` command for local debugging.
+- The first implemented workload creates stored ZIP packages from source files
+  and a `.crate/album.json` sidecar, using safe entry names and atomic publish.
+- Generated track copies can now receive rich tags, plain/synced lyrics,
+  analysis JSON, bliss vectors, and cover artwork before they are zipped.
+- FastAPI has an opt-in download client behind `CRATE_MEDIA_WORKER_URL` for
+  album ZIPs and single-track artifacts. The existing Python path remains the
+  fallback when the service is not configured, returns an error, or times out.
+- The native ZIP writer now emits ZIP64 structures when needed, so large
+  entries, large archive offsets, and large entry counts are no longer an
+  architectural blocker for album packages.
+- Media jobs now use Redis as the primary progress/cancellation tracker:
+  `XADD crate:media-worker:events`, `HSET crate:media-worker:job:{job_id}`,
+  and `EXISTS crate:media-worker:cancel:{job_id}`. JSONL progress/cancel files
+  remain only as local debug fallback.
+- The worker service loop now bridges Redis media-worker events back into
+  Crate task progress/events when `job_id` matches a real task id. Admin task
+  cancellation also writes `crate:media-worker:cancel:{task_id}` so delegated
+  media jobs can stop cooperatively.
+- API calls to the media worker now pass through a Redis slot gate
+  (`crate:media-worker:slot:{n}`) controlled by
+  `CRATE_MEDIA_WORKER_MAX_ACTIVE` and lease TTLs. When no slot is available, the
+  request falls back to the Python path instead of queueing more native IO work.
+- The media worker now owns native download-cache finalization for worker-built
+  artifacts: it writes the cache `manifest.json`, enforces
+  `CRATE_DOWNLOAD_CACHE_MAX_BYTES`, and prunes expired/LRU artifacts after
+  publishing the album ZIP or enriched track copy. Python still computes cache
+  keys and keeps the existing fallback/cache-reader path.
+- Media-worker package completions/failures, durations, bytes, slot denials, and
+  cache-prune removals are recorded as metrics and surfaced in System Health
+  alongside stream/slot runtime state.
+- The Docker target is `media-worker`; Compose exposes it behind an explicit
+  `media-worker` profile so it does not consume resources until the API/task
+  integration is enabled.
+- Phase 4 is now functionally complete for the first media-worker slice:
+  packaging, rich metadata, ZIP64, Redis progress/cancel, task-event bridging,
+  admission/backpressure, and native cache registration/pruning.

@@ -86,8 +86,34 @@ def read_tags(filepath: Path) -> dict:
     return tags
 
 
+def _read_audio_quality_native(filepath: Path) -> dict[str, int | float | None] | None:
+    try:
+        from crate.crate_cli import run_quality
+
+        payload = run_quality(file=str(filepath))
+    except Exception:
+        return None
+
+    if not payload or not payload.get("tracks"):
+        return None
+    track = payload["tracks"][0]
+    if not track.get("ok"):
+        return None
+
+    return {
+        "duration": float(track.get("duration") or 0) or None,
+        "bitrate": int(track.get("bitrate") or 0) or None,
+        "sample_rate": int(track.get("sample_rate") or 0) or None,
+        "bit_depth": int(track.get("bit_depth") or 0) or None,
+    }
+
+
 def read_audio_quality(filepath: Path) -> dict[str, int | float | None]:
     """Read lightweight technical audio metadata from a file."""
+    native = _read_audio_quality_native(filepath)
+    if native:
+        return native
+
     try:
         audio = mutagen.File(filepath)
     except Exception:

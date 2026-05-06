@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 
 
 def get_track_album_genres(track_id: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -25,7 +25,7 @@ def get_track_album_genres(track_id: int) -> list[dict]:
 
 
 def get_track_artist_genres(track_id: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """

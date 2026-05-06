@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from crate.db.cache_settings import get_setting, set_setting
 from crate.db.queries.tasks import list_tasks
-from crate.db.repositories.tasks import create_task
+from crate.db.repositories.tasks import create_task_dedup
 
 log = logging.getLogger(__name__)
 
@@ -103,5 +103,6 @@ def check_and_create_scheduled_tasks():
             except Exception:
                 log.debug("Resource governor check failed for scheduled %s", task_type, exc_info=True)
             log.info("Scheduling task: %s (interval=%ds)", task_type, interval)
-            create_task(task_type)
-            mark_run(task_type)
+            task_id = create_task_dedup(task_type, dedup_key=f"schedule:{task_type}")
+            if task_id:
+                mark_run(task_type)
