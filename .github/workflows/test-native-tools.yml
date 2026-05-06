@@ -32,6 +32,7 @@ jobs:
             -v "${{ github.workspace }}/tools/crate-cli:/src" \
             -w /src \
             -e DEBIAN_FRONTEND=noninteractive \
+            -e CARGO_TARGET_DIR=/tmp/crate-cli-target \
             rust:1.88-trixie \
             bash -lc "apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential libsqlite3-dev && /usr/local/cargo/bin/cargo test --locked"
 
@@ -55,6 +56,7 @@ jobs:
             --platform linux/amd64 \
             -v "${{ github.workspace }}/app/media-worker:/src" \
             -w /src \
+            -e CARGO_TARGET_DIR=/tmp/media-worker-target \
             rust:1.85-slim \
             /usr/local/cargo/bin/cargo test --locked
 

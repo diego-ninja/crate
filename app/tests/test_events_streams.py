@@ -78,12 +78,18 @@ def test_global_stream_pubsub_cleans_up_redis_connections(monkeypatch):
 
 
 def _install_fake_async_redis(monkeypatch, pubsub: _FakePubSub):
+    from crate.api import redis_sse
+
     fake_redis = _FakeRedis(pubsub)
     fake_asyncio_module = types.SimpleNamespace(from_url=lambda *_args, **_kwargs: fake_redis)
     fake_redis_package = types.ModuleType("redis")
     fake_redis_package.asyncio = fake_asyncio_module
     monkeypatch.setitem(sys.modules, "redis", fake_redis_package)
     monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio_module)
+    monkeypatch.setattr(redis_sse, "_redis_client", None)
+    monkeypatch.setattr(redis_sse, "_redis_pool", None)
+    monkeypatch.setattr(redis_sse, "_redis_module_marker", None)
+    monkeypatch.setattr(redis_sse, "_redis_url", None)
     return fake_redis
 
 
