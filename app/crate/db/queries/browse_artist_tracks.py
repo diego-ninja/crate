@@ -50,6 +50,7 @@ def get_artist_setlist_tracks(artist_name: str) -> list[dict]:
                 SELECT
                     t.id,
                     t.entity_uid::text AS track_entity_uid,
+                    t.storage_id::text AS track_storage_id,
                     t.title,
                     t.path,
                     t.album,

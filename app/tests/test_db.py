@@ -320,6 +320,144 @@ class TestPlaylistTrackEntityRefs:
         assert tracks[0]["artist"] == "Playlist Resolve Artist"
         assert tracks[0]["album"] == "Playlist Resolve Album"
 
+    def test_get_playlist_tracks_skips_stale_track_refs(self, pg_db):
+        from crate.db.repositories.playlists_create import create_playlist
+        from crate.db.repositories.playlists_detail_reads import get_playlist_tracks
+        from crate.db.tx import transaction_scope
+
+        playlist_id = create_playlist("Playlist Stale Ref Test")
+        stale_entity_uid = str(uuid4())
+        stale_storage_id = str(uuid4())
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO playlist_tracks (
+                        playlist_id,
+                        track_id,
+                        track_entity_uid,
+                        track_storage_id,
+                        track_path,
+                        title,
+                        artist,
+                        album,
+                        duration,
+                        position,
+                        added_at
+                    )
+                    VALUES (
+                        :playlist_id,
+                        NULL,
+                        :track_entity_uid,
+                        :track_storage_id,
+                        :track_path,
+                        :title,
+                        :artist,
+                        :album,
+                        :duration,
+                        1,
+                        NOW()
+                    )
+                    """
+                ),
+                {
+                    "playlist_id": playlist_id,
+                    "track_entity_uid": stale_entity_uid,
+                    "track_storage_id": stale_storage_id,
+                    "track_path": "legacy/relative/path.flac",
+                    "title": "Legacy Snapshot Title",
+                    "artist": "Legacy Snapshot Artist",
+                    "album": "Legacy Snapshot Album",
+                    "duration": 123.0,
+                },
+            )
+
+        tracks = get_playlist_tracks(playlist_id)
+
+        assert tracks == []
+
+    def test_replace_playlist_tracks_skips_unresolvable_tracks(self, pg_db):
+        from crate.db.repositories.playlists_create import create_playlist
+        from crate.db.repositories.playlists_tracks import replace_playlist_tracks
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Playlist Skip Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Playlist Skip Artist",
+                "name": "Playlist Skip Album",
+                "path": "/music/playlist-skip-artist/playlist-skip-album",
+                "track_count": 1,
+                "total_size": 1024,
+                "total_duration": 180.0,
+                "formats": ["flac"],
+            }
+        )
+        track_path = "/music/playlist-skip-artist/playlist-skip-album/01-track.flac"
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Playlist Skip Artist",
+                "album": "Playlist Skip Album",
+                "filename": "01-track.flac",
+                "title": "Playlist Skip Track",
+                "path": track_path,
+                "duration": 180.0,
+                "size": 1024,
+                "format": "flac",
+            }
+        )
+
+        with transaction_scope() as session:
+            track_row = session.execute(
+                text(
+                    """
+                    SELECT id, entity_uid::text AS entity_uid, storage_id::text AS storage_id, path
+                    FROM library_tracks
+                    WHERE path = :track_path
+                    """
+                ),
+                {"track_path": track_path},
+            ).mappings().first()
+
+        playlist_id = create_playlist("Playlist Skip Test")
+        inserted = replace_playlist_tracks(
+            playlist_id,
+            [
+                {"track_id": track_row["id"]},
+                {
+                    "track_entity_uid": str(uuid4()),
+                    "track_storage_id": str(uuid4()),
+                    "track_path": "stale/ghost.flac",
+                    "title": "Ghost",
+                },
+            ],
+        )
+
+        assert inserted == 1
+        with transaction_scope() as session:
+            playlist = session.execute(
+                text("SELECT track_count, total_duration FROM playlists WHERE id = :playlist_id"),
+                {"playlist_id": playlist_id},
+            ).mappings().first()
+            rows = session.execute(
+                text(
+                    """
+                    SELECT track_id, track_entity_uid::text AS track_entity_uid, track_storage_id::text AS track_storage_id
+                    FROM playlist_tracks
+                    WHERE playlist_id = :playlist_id
+                    """
+                ),
+                {"playlist_id": playlist_id},
+            ).mappings().all()
+
+        assert playlist["track_count"] == 1
+        assert playlist["total_duration"] == 180.0
+        assert len(rows) == 1
+        assert rows[0]["track_id"] == track_row["id"]
+        assert rows[0]["track_entity_uid"] == track_row["entity_uid"]
+        assert rows[0]["track_storage_id"] == track_row["storage_id"]
+
 
 class TestAnalyticsQueries:
     def test_get_insights_mood_distribution_aggregates_in_sql_with_shadow_fallback(self, pg_db):

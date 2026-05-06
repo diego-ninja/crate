@@ -67,6 +67,8 @@ def get_artist_tracks_for_setlist(artist_name: str, *, session: Session | None =
                 """
                 SELECT
                     t.id,
+                    t.entity_uid::text AS track_entity_uid,
+                    t.storage_id::text AS track_storage_id,
                     t.title,
                     t.path,
                     t.duration,

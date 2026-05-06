@@ -24,8 +24,6 @@ def get_track_path_by_pattern(path: str, escaped_like: str) -> str | None:
                 SELECT path
                 FROM library_tracks
                 WHERE path = :path
-                   OR path ILIKE ('%/' || :escaped_like) ESCAPE '\\'
-                ORDER BY CASE WHEN path = :path THEN 0 ELSE 1 END, path
                 LIMIT 1
                 """
             ),

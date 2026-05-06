@@ -371,6 +371,9 @@ def create_setlist_playlist(request: Request, name: str):
         used_ids.add(match["id"])
         matched_tracks.append(
             {
+                "track_id": match.get("id"),
+                "track_entity_uid": match.get("track_entity_uid"),
+                "track_storage_id": match.get("track_storage_id"),
                 "path": match.get("path", ""),
                 "title": match.get("title", ""),
                 "artist": name,

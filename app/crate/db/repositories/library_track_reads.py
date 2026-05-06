@@ -53,12 +53,12 @@ def resolve_library_track_reference(
             track = get_library_track_by_entity_uid(str(track_entity_uid), session=s)
             if track is not None:
                 return track
-        if track_path:
-            track = get_library_track_by_path(str(track_path), session=s)
-            if track is not None:
-                return track
         if track_storage_id:
             track = get_library_track_by_storage_id(str(track_storage_id), session=s)
+            if track is not None:
+                return track
+        if track_path:
+            track = get_library_track_by_path(str(track_path), session=s)
             if track is not None:
                 return track
         return None

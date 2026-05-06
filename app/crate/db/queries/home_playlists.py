@@ -48,18 +48,35 @@ def get_recent_playlist_rows_with_artwork(user_id: int, limit: int) -> list[dict
                     alb.id AS album_id,
                     alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug
-                FROM playlist_tracks pt
-                LEFT JOIN LATERAL (
-                    SELECT id, artist, album, album_id
-                    FROM library_tracks lt
-                    WHERE lt.id = pt.track_id
-                       OR (pt.track_id IS NULL AND lt.path = pt.track_path)
-                    ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 ELSE 1 END
-                    LIMIT 1
-                ) lt ON TRUE
+                FROM (
+                    SELECT
+                        pt.*,
+                        COALESCE(lt_id.id, lt_entity.id, lt_storage.id, lt_path.id) AS resolved_track_id
+                    FROM playlist_tracks pt
+                    LEFT JOIN library_tracks lt_id
+                      ON lt_id.id = pt.track_id
+                    LEFT JOIN library_tracks lt_entity
+                      ON lt_id.id IS NULL
+                     AND pt.track_entity_uid IS NOT NULL
+                     AND lt_entity.entity_uid = pt.track_entity_uid
+                    LEFT JOIN library_tracks lt_storage
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND pt.track_storage_id IS NOT NULL
+                     AND lt_storage.storage_id = pt.track_storage_id
+                    LEFT JOIN library_tracks lt_path
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND lt_storage.id IS NULL
+                     AND pt.track_path IS NOT NULL
+                     AND lt_path.path = pt.track_path
+                    WHERE pt.playlist_id = ANY(:playlist_ids)
+                ) pt
+                JOIN library_tracks lt
+                  ON lt.id = pt.resolved_track_id
+                 AND (lt.entity_uid IS NOT NULL OR lt.storage_id IS NOT NULL)
                 LEFT JOIN library_artists art ON art.name = lt.artist
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
-                WHERE pt.playlist_id = ANY(:playlist_ids) AND lt.id IS NOT NULL
                 ORDER BY pt.playlist_id ASC, pt.position ASC
                 """
             ),

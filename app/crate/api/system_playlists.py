@@ -37,6 +37,8 @@ from crate.db.repositories.tasks import create_task
 
 router = APIRouter(prefix="/api/admin/system-playlists", tags=["admin"])
 
+EDITOR_STREAM_POLL_SECONDS = 10
+
 _SYSTEM_PLAYLIST_RESPONSES = merge_responses(
     AUTH_ERROR_RESPONSES,
     {
@@ -103,8 +105,8 @@ async def _stream_system_playlist_editor(playlist_id: int) -> AsyncIterator[str]
         if signature != last_signature:
             last_signature = signature
             yield f"data: {json_dumps(surface)}\n\n"
-        await asyncio.sleep(2)
-        heartbeat_counter += 2
+        await asyncio.sleep(EDITOR_STREAM_POLL_SECONDS)
+        heartbeat_counter += EDITOR_STREAM_POLL_SECONDS
         if heartbeat_counter >= 30:
             heartbeat_counter = 0
             yield ": heartbeat\n\n"

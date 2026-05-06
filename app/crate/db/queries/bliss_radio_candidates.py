@@ -99,18 +99,34 @@ def get_playlist_tracks_for_radio(session=None, playlist_id: int | None = None) 
                     lt.danceability,
                     lt.valence,
                     lt.rating
-                FROM playlist_tracks pt
-                LEFT JOIN LATERAL (
-                    SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.bliss_vector, lt.album_id,
-                           lt.bpm, lt.audio_key, lt.audio_scale, lt.energy, lt.danceability, lt.valence, lt.rating
-                    FROM library_tracks lt
-                    WHERE lt.path = pt.track_path
-                       OR lt.path LIKE ('%/' || pt.track_path)
-                    ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
-                    LIMIT 1
-                ) lt ON TRUE
+                FROM (
+                    SELECT
+                        pt.*,
+                        COALESCE(lt_id.id, lt_entity.id, lt_storage.id, lt_path.id) AS resolved_track_id
+                    FROM playlist_tracks pt
+                    LEFT JOIN library_tracks lt_id
+                      ON lt_id.id = pt.track_id
+                    LEFT JOIN library_tracks lt_entity
+                      ON lt_id.id IS NULL
+                     AND pt.track_entity_uid IS NOT NULL
+                     AND lt_entity.entity_uid = pt.track_entity_uid
+                    LEFT JOIN library_tracks lt_storage
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND pt.track_storage_id IS NOT NULL
+                     AND lt_storage.storage_id = pt.track_storage_id
+                    LEFT JOIN library_tracks lt_path
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND lt_storage.id IS NULL
+                     AND pt.track_path IS NOT NULL
+                     AND lt_path.path = pt.track_path
+                    WHERE pt.playlist_id = :playlist_id
+                ) pt
+                JOIN library_tracks lt
+                  ON lt.id = pt.resolved_track_id
+                 AND (lt.entity_uid IS NOT NULL OR lt.storage_id IS NOT NULL)
                 LEFT JOIN library_albums la ON la.id = lt.album_id
-                WHERE pt.playlist_id = :playlist_id
                 ORDER BY pt.position
                 """
             ),

@@ -23,7 +23,6 @@ def get_track_seed(track_ref: str) -> tuple[list[float], str] | None:
                     OR (entity_uid IS NOT NULL AND CAST(entity_uid AS text) = :track_ref)
                     OR (storage_id IS NOT NULL AND CAST(storage_id AS text) = :track_ref)
                     OR path = :track_ref
-                    OR path LIKE ('%/' || :track_ref)
                   )
                 ORDER BY
                   CASE
@@ -56,30 +55,34 @@ def get_playlist_seed(playlist_id: int, limit: int = 30) -> tuple[list[list[floa
             text(
                 """
                 SELECT lt.bliss_vector
-                FROM playlist_tracks pt
-                LEFT JOIN LATERAL (
-                    SELECT lt.bliss_vector
-                    FROM library_tracks lt
-                    WHERE lt.bliss_vector IS NOT NULL
-                      AND (
-                        (pt.track_id IS NOT NULL AND lt.id = pt.track_id)
-                        OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)
-                        OR (pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id)
-                        OR lt.path = pt.track_path
-                        OR lt.path LIKE ('%/' || pt.track_path)
-                      )
-                    ORDER BY
-                      CASE
-                        WHEN pt.track_id IS NOT NULL AND lt.id = pt.track_id THEN 0
-                        WHEN pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid THEN 1
-                        WHEN pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id THEN 2
-                        WHEN lt.path = pt.track_path THEN 3
-                        ELSE 4
-                      END
-                    LIMIT 1
-                ) lt ON TRUE
-                WHERE pt.playlist_id = :playlist_id
-                  AND lt.bliss_vector IS NOT NULL
+                FROM (
+                    SELECT
+                        pt.*,
+                        COALESCE(lt_id.id, lt_entity.id, lt_storage.id, lt_path.id) AS resolved_track_id
+                    FROM playlist_tracks pt
+                    LEFT JOIN library_tracks lt_id
+                      ON lt_id.id = pt.track_id
+                    LEFT JOIN library_tracks lt_entity
+                      ON lt_id.id IS NULL
+                     AND pt.track_entity_uid IS NOT NULL
+                     AND lt_entity.entity_uid = pt.track_entity_uid
+                    LEFT JOIN library_tracks lt_storage
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND pt.track_storage_id IS NOT NULL
+                     AND lt_storage.storage_id = pt.track_storage_id
+                    LEFT JOIN library_tracks lt_path
+                      ON lt_id.id IS NULL
+                     AND lt_entity.id IS NULL
+                     AND lt_storage.id IS NULL
+                     AND pt.track_path IS NOT NULL
+                     AND lt_path.path = pt.track_path
+                    WHERE pt.playlist_id = :playlist_id
+                ) pt
+                JOIN library_tracks lt
+                  ON lt.id = pt.resolved_track_id
+                 AND (lt.entity_uid IS NOT NULL OR lt.storage_id IS NOT NULL)
+                WHERE lt.bliss_vector IS NOT NULL
                 ORDER BY pt.position
                 LIMIT :limit
                 """
@@ -105,7 +108,7 @@ def get_home_playlist_seed(user_id: int, playlist_id: str, limit: int = 30) -> t
         track_ref = (
             str(track.get("track_id"))
             if track.get("track_id") is not None
-            else str(track.get("track_entity_uid") or track.get("track_path") or track.get("track_storage_id") or "")
+            else str(track.get("track_entity_uid") or track.get("track_storage_id") or track.get("track_path") or "")
         )
         if not track_ref:
             continue

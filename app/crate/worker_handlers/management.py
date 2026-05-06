@@ -866,30 +866,32 @@ def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -
         track_dicts = [
             {"track_path": t.get("path", ""), "track_id": t.get("id"),
              "track_entity_uid": t.get("entity_uid"),
+             "track_storage_id": t.get("storage_id"),
              "title": t.get("title", ""), "artist": t.get("artist", ""),
              "album": t.get("album", ""), "duration": t.get("duration")}
             for t in tracks
         ]
-        replace_playlist_tracks(playlist_id, track_dicts)
-        total_duration = sum(t.get("duration") or 0 for t in tracks)
+        track_count = replace_playlist_tracks(playlist_id, track_dicts)
+        refreshed = get_playlist(playlist_id) or {}
+        total_duration = refreshed.get("total_duration") or 0
 
         set_generation_status(playlist_id, "idle")
-        log_generation_complete(log_id, len(tracks), total_duration)
+        log_generation_complete(log_id, track_count, total_duration)
         emit_task_event(task_id, "info", {
-            "message": f"Generated {name}: {len(tracks)} tracks, {total_duration // 60}m",
+            "message": f"Generated {name}: {track_count} tracks, {total_duration // 60}m",
         })
 
         try:
             from crate.telegram import send_message
             send_message(
                 f"\U0001f3b6 Smart Playlist <b>{name}</b> regenerated\n"
-                f"{len(tracks)} tracks \u00b7 {total_duration // 60}m\n"
+                f"{track_count} tracks \u00b7 {total_duration // 60}m\n"
                 f"Triggered by: {triggered_by}"
             )
         except Exception:
             pass
 
-        return {"track_count": len(tracks), "duration_sec": total_duration}
+        return {"track_count": track_count, "duration_sec": total_duration}
 
     except Exception as e:
         set_generation_status(playlist_id, "failed", str(e))

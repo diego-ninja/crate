@@ -15,8 +15,8 @@ from crate.db.repositories.playlists_shared import emit_playlist_domain_event
 from crate.db.tx import optional_scope
 
 
-def _resolve_playlist_track(track: dict, *, session: Session) -> dict:
-    track_id = track.get("track_id") or track.get("libraryTrackId")
+def _resolve_playlist_track(track: dict, *, session: Session) -> dict | None:
+    track_id = track.get("track_id") or track.get("libraryTrackId") or track.get("id")
     track_entity_uid = (
         track.get("track_entity_uid")
         or track.get("entity_uid")
@@ -39,10 +39,13 @@ def _resolve_playlist_track(track: dict, *, session: Session) -> dict:
 
     if library_track:
         resolved_entity_uid = library_track.get("entity_uid") or track_entity_uid
+        resolved_storage_id = library_track.get("storage_id") or track_storage_id
+        if not resolved_entity_uid and not resolved_storage_id:
+            return None
         return {
             "track_id": library_track.get("id"),
             "track_entity_uid": resolved_entity_uid,
-            "track_storage_id": None if resolved_entity_uid else (library_track.get("storage_id") or track_storage_id),
+            "track_storage_id": resolved_storage_id,
             "track_path": library_track.get("path") or track_path,
             "title": track.get("title") or library_track.get("title") or library_track.get("filename") or "",
             "artist": track.get("artist") or library_track.get("artist") or "",
@@ -50,29 +53,24 @@ def _resolve_playlist_track(track: dict, *, session: Session) -> dict:
             "duration": float(track.get("duration") or library_track.get("duration") or 0),
         }
 
-    return {
-        "track_id": track_id,
-        "track_entity_uid": track_entity_uid,
-        "track_storage_id": None if track_entity_uid else track_storage_id,
-        "track_path": track_path,
-        "title": track.get("title", ""),
-        "artist": track.get("artist", ""),
-        "album": track.get("album", ""),
-        "duration": float(track.get("duration") or 0),
-    }
+    return None
 
 
-def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Session | None = None) -> None:
-    def _impl(s: Session) -> None:
+def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Session | None = None) -> int:
+    def _impl(s: Session) -> int:
         now = datetime.now(timezone.utc)
         max_position = int(
             s.execute(select(func.coalesce(func.max(PlaylistTrack.position), 0)).where(PlaylistTrack.playlist_id == playlist_id)).scalar_one()
             or 0
         )
         position = max_position
+        added = 0
         for track in tracks:
-            position += 1
             resolved = _resolve_playlist_track(track, session=s)
+            if resolved is None:
+                continue
+            position += 1
+            added += 1
             s.add(
                 PlaylistTrack(
                     playlist_id=playlist_id,
@@ -103,11 +101,12 @@ def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Sessio
             s,
             playlist_id=playlist_id,
             action="tracks_added",
-            payload={"track_count_delta": len(tracks)},
+            payload={"track_count_delta": added, "requested_count": len(tracks)},
         )
+        return added
 
     with optional_scope(session) as s:
-        _impl(s)
+        return _impl(s)
 
 
 def remove_playlist_track(playlist_id: int, position: int, *, session: Session | None = None) -> None:
@@ -170,15 +169,19 @@ def reorder_playlist(playlist_id: int, track_ids: list[int], *, session: Session
         _impl(s)
 
 
-def replace_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Session | None = None) -> None:
-    def _impl(s: Session) -> None:
+def replace_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Session | None = None) -> int:
+    def _impl(s: Session) -> int:
         now = datetime.now(timezone.utc)
         s.execute(text("DELETE FROM playlist_tracks WHERE playlist_id = :playlist_id"), {"playlist_id": playlist_id})
 
         position = 0
+        total_duration = 0.0
         for track in tracks:
-            position += 1
             resolved = _resolve_playlist_track(track, session=s)
+            if resolved is None:
+                continue
+            position += 1
+            total_duration += float(resolved["duration"] or 0)
             s.add(
                 PlaylistTrack(
                     playlist_id=playlist_id,
@@ -197,18 +200,19 @@ def replace_playlist_tracks(playlist_id: int, tracks: list[dict], *, session: Se
 
         playlist = s.get(Playlist, playlist_id)
         if playlist is not None:
-            playlist.track_count = len(tracks)
-            playlist.total_duration = float(sum(float(track.get("duration") or 0) for track in tracks))
+            playlist.track_count = position
+            playlist.total_duration = total_duration
             playlist.updated_at = now
         emit_playlist_domain_event(
             s,
             playlist_id=playlist_id,
             action="tracks_replaced",
-            payload={"track_count": len(tracks)},
+            payload={"track_count": position, "requested_count": len(tracks)},
         )
+        return position
 
     with optional_scope(session) as s:
-        _impl(s)
+        return _impl(s)
 
 
 __all__ = ["add_playlist_tracks", "remove_playlist_track", "replace_playlist_tracks", "reorder_playlist"]

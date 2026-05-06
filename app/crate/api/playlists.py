@@ -240,8 +240,8 @@ def add_tracks(request: Request, playlist_id: int, body: AddTracksRequest):
         raise HTTPException(status_code=403, detail="Not allowed to edit this playlist")
     if not body.tracks:
         raise HTTPException(status_code=422, detail="No tracks provided")
-    add_playlist_tracks(playlist_id, body.tracks)
-    return {"ok": True, "added": len(body.tracks)}
+    added = add_playlist_tracks(playlist_id, body.tracks)
+    return {"ok": True, "added": added}
 
 
 @router.delete(
@@ -298,9 +298,9 @@ def generate_smart(request: Request, playlist_id: int):
     rules = pl["smart_rules"]
     tracks = execute_smart_rules(rules)
 
-    replace_playlist_tracks(playlist_id, tracks or [])
+    track_count = replace_playlist_tracks(playlist_id, tracks or [])
 
-    return {"ok": True, "track_count": len(tracks)}
+    return {"ok": True, "track_count": track_count}
 
 
 @router.get(

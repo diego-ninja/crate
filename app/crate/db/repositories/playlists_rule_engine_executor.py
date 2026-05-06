@@ -27,7 +27,8 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
                     FROM library_tracks t
                     LEFT JOIN library_albums a ON t.album_id = a.id
                     LEFT JOIN library_artists a_artist ON t.artist = a_artist.name
-                    WHERE {where}
+                    WHERE ({where})
+                      AND (t.entity_uid IS NOT NULL OR t.storage_id IS NOT NULL)
                     """
                 ),
                 params,
@@ -47,14 +48,16 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
         rows = session.execute(
             text(
                 f"""
-                SELECT t.id, t.entity_uid::text AS entity_uid, t.path, t.title, t.artist, a.name AS album,
+                SELECT t.id, t.entity_uid::text AS entity_uid, t.storage_id::text AS storage_id,
+                       t.path, t.title, t.artist, a.name AS album,
                        t.duration, t.format, t.bpm, t.energy, t.genre, t.year,
                        a.id AS album_id, a.slug AS album_slug,
                        a_artist.id AS artist_id, a_artist.slug AS artist_slug
                 FROM library_tracks t
                 LEFT JOIN library_albums a ON t.album_id = a.id
                 LEFT JOIN library_artists a_artist ON t.artist = a_artist.name
-                WHERE {where}
+                WHERE ({where})
+                  AND (t.entity_uid IS NOT NULL OR t.storage_id IS NOT NULL)
                 ORDER BY {sort_clause}
                 LIMIT :lim
                 """
