@@ -14,13 +14,14 @@ ROLLBACK_TAG="rollback-${DEPLOY_ID}"
 cd "$SERVER_PATH"
 
 COMPOSE=(docker compose -f docker-compose.yaml -f docker-compose.project.yaml)
-PROJECT_SERVICES=(crate-api crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+PROJECT_SERVICES=(crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference)
 HEALTHY_SERVICES=(crate-redis crate-postgres crate-api)
-RUNNING_SERVICES=(crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+RUNNING_SERVICES=(crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference)
 PROJECT_IMAGES=(
   ghcr.io/diego-ninja/crate-api
   ghcr.io/diego-ninja/crate-readplane
   ghcr.io/diego-ninja/crate-worker
+  ghcr.io/diego-ninja/crate-media-worker
   ghcr.io/diego-ninja/crate-ui
   ghcr.io/diego-ninja/crate-listen
   ghcr.io/diego-ninja/crate-site
@@ -32,9 +33,11 @@ declare -A SERVICE_IMAGE_REPOS=(
   [crate-api]=ghcr.io/diego-ninja/crate-api
   [crate-readplane]=ghcr.io/diego-ninja/crate-readplane
   [crate-worker]=ghcr.io/diego-ninja/crate-worker
+  [crate-projector]=ghcr.io/diego-ninja/crate-worker
   [crate-maintenance-worker]=ghcr.io/diego-ninja/crate-worker
   [crate-analysis-worker]=ghcr.io/diego-ninja/crate-worker
   [crate-playback-worker]=ghcr.io/diego-ninja/crate-worker
+  [crate-media-worker]=ghcr.io/diego-ninja/crate-media-worker
   [crate-ui]=ghcr.io/diego-ninja/crate-ui
   [crate-listen]=ghcr.io/diego-ninja/crate-listen
   [crate-site]=ghcr.io/diego-ninja/crate-site
@@ -337,7 +340,7 @@ cmd_ps() {
 
 cmd_diagnose() {
   dc ps || true
-  dc logs --tail=120 crate-api crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference || true
+  dc logs --tail=120 crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference || true
 }
 
 case "${1:-}" in
