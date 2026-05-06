@@ -91,7 +91,7 @@ export function AppModal({
     >
       <div
         className={cn(
-          "bg-modal-surface max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-white/10 shadow-2xl animate-sheet-up sm:rounded-3xl sm:animate-pop-in",
+          "bg-modal-surface max-h-[calc(var(--listen-viewport-height)-var(--listen-safe-top)-0.75rem)] w-full overflow-hidden rounded-t-3xl border border-white/10 pb-[var(--listen-safe-bottom)] shadow-2xl animate-sheet-up sm:max-h-[92vh] sm:rounded-3xl sm:pb-0 sm:animate-pop-in",
           maxWidthClassName,
           panelClassName,
         )}
@@ -105,7 +105,7 @@ export function AppModal({
         onTouchEnd={onSwipeEnd}
       >
         {/* Drag handle — visible on mobile only */}
-        <div ref={dragHandleRef} className="flex justify-center pt-2 pb-1 sm:hidden">
+        <div ref={dragHandleRef} className="flex touch-pan-y justify-center pt-2 pb-1 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
         {children}

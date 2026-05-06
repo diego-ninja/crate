@@ -4,7 +4,7 @@ import threading
 from crate.db.cache_store import set_cache
 from crate.db.core import init_db
 from crate.db.queries.tasks import get_task, get_task_activity_snapshot
-from crate.db.repositories.tasks import cleanup_orphaned_tasks, cleanup_zombie_tasks
+from crate.db.repositories.tasks import cleanup_orphaned_tasks, cleanup_zombie_tasks, redispatch_stale_pending_tasks
 from crate.worker_handlers.acquisition import ACQUISITION_TASK_HANDLERS
 from crate.worker_handlers.analysis import ANALYSIS_TASK_HANDLERS
 from crate.worker_handlers.artwork import ARTWORK_TASK_HANDLERS
@@ -138,15 +138,9 @@ def run_worker(config: dict):
 
 def _run_projector_loop(stop_event: threading.Event):
     """Dedicated thread: consume domain events from Redis Stream and warm snapshots."""
-    from crate.projector import process_domain_events
+    from crate.projector_daemon import run_projector_loop
 
-    while not stop_event.is_set():
-        try:
-            process_domain_events(limit=200)
-        except Exception:
-            log.debug("Snapshot projector failed", exc_info=True)
-        stop_event.wait(5)
-    log.info("Projector loop stopped")
+    run_projector_loop(stop_event, interval_seconds=5, limit=200)
 
 
 def _run_service_loop(config: dict, stop_event: threading.Event):
@@ -167,11 +161,13 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
 
     last_schedule_check = 0
     last_zombie_check = 0
+    last_pending_redispatch = 0
     last_import_check = 0
     last_cleanup = 0
     last_status_update = 0
     last_metrics_flush = 0
     last_shadow_backfill = 0
+    last_media_worker_bridge = 0
 
     while not stop_event.is_set():
         now = _time.time()
@@ -204,6 +200,16 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                 cleanup_zombie_tasks(heartbeat_timeout_min=5, no_heartbeat_timeout_min=3)
             except Exception:
                 log.debug("Zombie cleanup failed", exc_info=True)
+
+        # Redispatch old pending DB tasks every minute.  The DB row is the
+        # durable source of truth; this heals lost Dramatiq messages after
+        # Redis restarts or post-commit dispatch failures.
+        if now - last_pending_redispatch > 60:
+            last_pending_redispatch = now
+            try:
+                redispatch_stale_pending_tasks(age_seconds=300, limit=100)
+            except Exception:
+                log.debug("Pending task redispatch failed", exc_info=True)
 
         # Worker status cache + queue depth metrics every 15s
         if now - last_status_update > 15:
@@ -302,6 +308,16 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                 flush_to_postgres()
             except Exception:
                 log.debug("Metrics flush failed", exc_info=True)
+
+        # Media-worker Redis events → task progress/events every 2s.
+        if now - last_media_worker_bridge > 2:
+            last_media_worker_bridge = now
+            try:
+                from crate.media_worker_progress import bridge_media_worker_task_events
+
+                bridge_media_worker_task_events(limit=200, block_ms=0, consumer_name="service-loop")
+            except Exception:
+                log.debug("Media-worker event bridge failed", exc_info=True)
 
         # Incrementally backfill shadow pipeline read models every 30s
         if now - last_shadow_backfill > 30:

@@ -1,0 +1,47 @@
+name: Readplane Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/readplane/**"
+      - ".github/workflows/test-readplane.yml"
+  pull_request:
+    paths:
+      - "app/readplane/**"
+      - ".github/workflows/test-readplane.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Go test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/app/readplane:/src" \
+            -w /src \
+            golang:1.23-alpine \
+            go test ./...
+
+      - name: Go vet
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/app/readplane:/src" \
+            -w /src \
+            golang:1.23-alpine \
+            go vet ./...
+
+      - name: Build readplane image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./app/readplane
+          push: false
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+          tags: crate-readplane:ci

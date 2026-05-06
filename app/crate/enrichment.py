@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
 from crate.db.cache_settings import get_setting
-from crate.db.cache_store import delete_cache, set_cache
+from crate.db.cache_store import delete_cache, get_cache, set_cache
 from crate.db.genres import set_artist_genres
 from crate.db.repositories.library import get_library_artist, update_artist_enrichment, update_artist_has_photo
 from crate.db.similarities import bulk_upsert_similarities
+from crate.provider_rate_limits import wait_for_provider_slot
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +26,37 @@ _ENRICHMENT_FETCH_ORDER = (
     "fanart",
     "discogs",
 )
+
+_SOURCE_CACHE_PREFIX = "enrichment:source"
+_SOURCE_TTLS_SECONDS = {
+    "lastfm": 86400 * 7,
+    "spotify": 86400 * 3,
+    "musicbrainz": 86400 * 30,
+    "setlist": 86400,
+    "fanart": 86400 * 30,
+    "discogs": 86400 * 30,
+}
+_PROVIDER_MIN_INTERVAL_SECONDS = {
+    "lastfm": 0.25,
+    "spotify": 0.15,
+    "musicbrainz": 1.1,
+    "setlist": 1.0,
+    "fanart": 1.0,
+    "discogs": 1.0,
+}
+_EXECUTORS: dict[int, ThreadPoolExecutor] = {}
+_EXECUTOR_LOCK = threading.Lock()
+
+
+def _shutdown_executors() -> None:
+    with _EXECUTOR_LOCK:
+        executors = list(_EXECUTORS.values())
+        _EXECUTORS.clear()
+    for executor in executors:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+atexit.register(_shutdown_executors)
 
 
 def _get_enrichment_parallelism(config: dict) -> int:
@@ -46,8 +80,47 @@ def _provider_label(source: str) -> str:
     return labels.get(source, source)
 
 
+def _source_cache_key(source: str, artist_name: str) -> str:
+    return f"{_SOURCE_CACHE_PREFIX}:{source}:{artist_name.lower()}"
+
+
+def _source_ttl(source: str) -> int:
+    return _SOURCE_TTLS_SECONDS.get(source, 86400)
+
+
+def _get_cached_source_payload(source: str, artist_name: str) -> Any | None:
+    ttl = _source_ttl(source)
+    cached = get_cache(_source_cache_key(source, artist_name), max_age_seconds=ttl)
+    if cached is not None:
+        return cached
+
+    legacy = get_cache(f"enrichment:{artist_name.lower()}", max_age_seconds=ttl)
+    if isinstance(legacy, dict) and source in legacy:
+        payload = legacy[source]
+        set_cache(_source_cache_key(source, artist_name), payload, ttl=ttl)
+        return payload
+    return None
+
+
+def _set_cached_source_payload(source: str, artist_name: str, payload: Any) -> None:
+    set_cache(_source_cache_key(source, artist_name), payload, ttl=_source_ttl(source))
+
+
+def _get_executor(worker_count: int) -> ThreadPoolExecutor:
+    with _EXECUTOR_LOCK:
+        executor = _EXECUTORS.get(worker_count)
+        if executor is None:
+            executor = ThreadPoolExecutor(
+                max_workers=worker_count,
+                thread_name_prefix=f"enrichment-{worker_count}",
+            )
+            _EXECUTORS[worker_count] = executor
+        return executor
+
+
 def _execute_enrichment_fetcher(source: str, artist_name: str, fetcher: Callable[[], Any]) -> Any | None:
     try:
+        wait_for_provider_slot(source, _PROVIDER_MIN_INTERVAL_SECONDS.get(source, 0.0))
         payload = fetcher()
     except Exception:
         log.debug("%s failed for %s", _provider_label(source), artist_name, exc_info=True)
@@ -73,20 +146,20 @@ def _run_enrichment_fetchers(
                 results[source] = payload
         return results
 
-    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="enrichment") as executor:
-        future_map = {
-            executor.submit(_execute_enrichment_fetcher, source, artist_name, fetcher): source
-            for source, fetcher in fetchers.items()
-        }
-        for future in as_completed(future_map):
-            source = future_map[future]
-            try:
-                payload = future.result()
-            except Exception:
-                log.debug("%s failed for %s", _provider_label(source), artist_name, exc_info=True)
-                continue
-            if payload is not None:
-                results[source] = payload
+    executor = _get_executor(worker_count)
+    future_map = {
+        executor.submit(_execute_enrichment_fetcher, source, artist_name, fetcher): source
+        for source, fetcher in fetchers.items()
+    }
+    for future in as_completed(future_map):
+        source = future_map[future]
+        try:
+            payload = future.result()
+        except Exception:
+            log.debug("%s failed for %s", _provider_label(source), artist_name, exc_info=True)
+            continue
+        if payload is not None:
+            results[source] = payload
     return results
 
 
@@ -143,8 +216,8 @@ def _discogs_is_configured() -> bool:
     return bool(discogs_configured())
 
 
-def _collect_enrichment_payloads(name: str, *, max_workers: int) -> dict[str, Any]:
-    fetchers: dict[str, Callable[[], Any]] = {
+def _collect_enrichment_payloads(name: str, *, max_workers: int, force: bool = False) -> dict[str, Any]:
+    available_fetchers: dict[str, Callable[[], Any]] = {
         "lastfm": lambda: _fetch_lastfm_payload(name),
         "spotify": lambda: _fetch_spotify_payload(name),
         "musicbrainz": lambda: _fetch_musicbrainz_payload(name),
@@ -152,8 +225,22 @@ def _collect_enrichment_payloads(name: str, *, max_workers: int) -> dict[str, An
         "fanart": lambda: _fetch_fanart_payload(name),
     }
     if _discogs_is_configured():
-        fetchers["discogs"] = lambda: _fetch_discogs_payload(name)
-    return _run_enrichment_fetchers(name, fetchers, max_workers=max_workers)
+        available_fetchers["discogs"] = lambda: _fetch_discogs_payload(name)
+
+    payloads: dict[str, Any] = {}
+    fetchers: dict[str, Callable[[], Any]] = {}
+    for source, fetcher in available_fetchers.items():
+        cached = None if force else _get_cached_source_payload(source, name)
+        if cached is not None:
+            payloads[source] = cached
+        else:
+            fetchers[source] = fetcher
+
+    fetched = _run_enrichment_fetchers(name, fetchers, max_workers=max_workers)
+    for source, payload in fetched.items():
+        _set_cached_source_payload(source, name, payload)
+    payloads.update(fetched)
+    return payloads
 
 
 def _has_local_artist_photo(artist_dir: Path) -> bool:
@@ -211,11 +298,17 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
         for prefix in ("enrichment:", "lastfm:artist:", "fanart:artist:",
                         "fanart:bg:", "fanart:all:", "deezer:artist_img:"):
             delete_cache(f"{prefix}{name.lower()}")
+        for source in _ENRICHMENT_FETCH_ORDER:
+            delete_cache(_source_cache_key(source, name))
 
     enrichment_data: dict = {}
     persist_data: dict = {}
     similar_list: list[dict] = []
-    payloads = _collect_enrichment_payloads(name, max_workers=_get_enrichment_parallelism(config))
+    payloads = _collect_enrichment_payloads(
+        name,
+        max_workers=_get_enrichment_parallelism(config),
+        force=force,
+    )
 
     info = payloads.get("lastfm")
     if info:
@@ -295,7 +388,7 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
 
     # ── Persist to cache ──
     if enrichment_data:
-        set_cache(f"enrichment:{name.lower()}", enrichment_data)
+        set_cache(f"enrichment:{name.lower()}", enrichment_data, ttl=86400 * 7)
 
     # ── Persist to DB ──
     if persist_data:

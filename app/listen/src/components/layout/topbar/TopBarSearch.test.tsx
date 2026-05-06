@@ -106,8 +106,7 @@ describe("TopBarSearch", () => {
     fireEvent.change(input, { target: { value: "high" } });
 
     await act(async () => {
-      vi.advanceTimersByTime(250);
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(250);
     });
     vi.useRealTimers();
 

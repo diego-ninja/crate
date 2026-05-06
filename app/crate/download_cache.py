@@ -238,6 +238,58 @@ def get_cached_download(kind: str, key: str, filename: str, *, ttl_seconds: int)
     return CachedDownload(key=key, path=path, filename=path.name, bytes=stat_size)
 
 
+def cached_download_artifact_path(kind: str, key: str, filename: str) -> Path:
+    return _artifact_path(kind, key, filename)
+
+
+def register_cached_download(
+    kind: str,
+    key: str,
+    filename: str,
+    artifact_path: str | Path,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> CachedDownload | None:
+    if not download_cache_enabled():
+        return None
+    source = Path(str(artifact_path))
+    if not source.is_file():
+        return None
+    source_size = source.stat().st_size
+    if source_size > download_cache_max_bytes():
+        with contextlib.suppress(Exception):
+            source.unlink()
+        return None
+
+    path = _artifact_path(kind, key, filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if source.resolve() != path.resolve():
+            tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+            shutil.copy2(source, tmp_path)
+            tmp_path.replace(path)
+        stat = path.stat()
+        now = time.time()
+        _write_manifest(
+            kind,
+            key,
+            {
+                "version": DOWNLOAD_CACHE_VERSION,
+                "kind": kind,
+                "key": key,
+                "filename": path.name,
+                "bytes": stat.st_size,
+                "created_at": now,
+                "last_accessed_at": now,
+                "metadata": metadata or {},
+            },
+        )
+        prune_download_cache()
+        return CachedDownload(key=key, path=path, filename=path.name, bytes=stat.st_size)
+    except Exception:
+        return None
+
+
 def store_cached_download(kind: str, key: str, filename: str, source_path: str | Path, *, metadata: dict[str, Any] | None = None) -> CachedDownload | None:
     if not download_cache_enabled():
         return None
@@ -378,9 +430,11 @@ __all__ = [
     "CachedDownload",
     "album_cache_ttl_seconds",
     "album_download_cache_key",
+    "cached_download_artifact_path",
     "download_cache_lock",
     "get_cached_download",
     "prune_download_cache",
+    "register_cached_download",
     "safe_download_filename",
     "store_cached_download",
     "track_cache_ttl_seconds",

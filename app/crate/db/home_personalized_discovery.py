@@ -104,7 +104,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
             "id": section_id,
             "title": "Core tracks",
             "subtitle": "Artist-focused sets built from the names most present in your listening.",
-            "items": _build_core_playlists(user_id, top_artists, min(limit, 6)),
+            "items": _build_core_playlists(user_id, top_artists, min(limit, 7)),
         }
 
     return None
@@ -161,7 +161,7 @@ def build_home_discovery_payload(user_id: int) -> dict:
         "recommended_tracks": [_track_payload(row) for row in recommended_tracks],
         "radio_stations": _build_radio_stations(merged_artists, top_albums, 14),
         "favorite_artists": get_home_favorite_artists(user_id),
-        "essentials": _build_core_playlists(user_id, merged_artists, 6),
+        "essentials": _build_core_playlists(user_id, merged_artists, 7),
         "recent_global_artists": _build_recent_global_artists(7),
         "replay": get_replay_mix(user_id, window="30d", limit=18),
         "upcoming": _build_home_upcoming(user_id, lookup_limit=120, item_limit=12),

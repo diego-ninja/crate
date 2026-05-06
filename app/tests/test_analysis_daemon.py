@@ -244,6 +244,55 @@ class TestAnalysisJobsIntegration:
             ("bliss", "pending"),
         }
 
+    def test_fingerprint_backfill_artist_scope_includes_album_tracks_with_feature_artists(self, pg_db):
+        from crate.db.jobs.analysis_fingerprints import list_tracks_missing_audio_fingerprints
+
+        artist = "KNEECAP"
+        album = "Fine Art"
+        album_folder = "2024 - Fine Art"
+        pg_db.upsert_artist({"name": artist})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": artist,
+                "name": album,
+                "path": f"/music/{artist}/{album_folder}",
+                "track_count": 2,
+                "total_size": 2000,
+                "total_duration": 300.0,
+                "formats": ["flac"],
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": artist,
+                "album": album,
+                "filename": "01-main.flac",
+                "title": "Main Track",
+                "path": f"/music/{artist}/{album_folder}/01-main.flac",
+                "duration": 120.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Grian Chatten, KNEECAP",
+                "album": album,
+                "filename": "02-feature.flac",
+                "title": "Feature Track",
+                "path": f"/music/{artist}/{album_folder}/02-feature.flac",
+                "duration": 180.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+
+        rows = list_tracks_missing_audio_fingerprints(artist=artist, album=album_folder, limit=10)
+
+        assert {row["title"] for row in rows} >= {"Main Track", "Feature Track"}
+
     def test_claim_track_updates_state_and_status(self, pg_db):
         from crate.db.jobs import analysis as analysis_jobs
         from crate.db.tx import transaction_scope
@@ -280,6 +329,20 @@ class TestAnalysisJobsIntegration:
                 text("UPDATE library_tracks SET analysis_state = 'analyzing', bliss_state = 'pending' WHERE id = :id"),
                 {"id": track["id"]},
             )
+            session.execute(
+                text(
+                    """
+                    UPDATE track_processing_state
+                    SET state = 'analyzing',
+                        claimed_by = 'test-suite',
+                        claimed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE track_id = :id
+                      AND pipeline = 'analysis'
+                    """
+                ),
+                {"id": track["id"]},
+            )
 
         reset = analysis_jobs.reset_stale_claims("analysis_state")
         assert reset == 1
@@ -310,6 +373,22 @@ class TestAnalysisJobsIntegration:
 
         last_bliss = get_last_bliss_track()
         assert last_bliss["title"] == "Track bliss"
+
+    def test_reset_stale_claims_ignores_legacy_only_analyzing_state(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "legacy-only-stale")
+        with transaction_scope() as session:
+            session.execute(
+                text("UPDATE library_tracks SET analysis_state = 'analyzing' WHERE id = :id"),
+                {"id": track["id"]},
+            )
+
+        reset = analysis_jobs.reset_stale_claims("analysis_state")
+
+        assert reset == 0
+        assert analysis_jobs.get_pending_count("analysis_state") == 1
 
     def test_store_analysis_results_updates_multiple_tracks_and_processing_rows(self, pg_db):
         from crate.db.jobs import analysis as analysis_jobs

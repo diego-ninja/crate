@@ -50,6 +50,7 @@ vi.mock("@/lib/play-event-queue", () => ({
 }));
 
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AUTH_RUNTIME_RESET_EVENT } from "@/contexts/auth-runtime";
 
 function AuthProbe() {
   const { user, loading, logout } = useAuth();
@@ -117,6 +118,8 @@ describe("AuthProvider", () => {
   });
 
   it("drops previous playback state when the hydrated user changes", async () => {
+    const authReset = vi.fn();
+    window.addEventListener(AUTH_RUNTIME_RESET_EVENT, authReset as EventListener);
     localStorage.setItem("listen-auth-user-id", "41");
     localStorage.setItem("listen-player-state", "{\"queue\":[]}");
     localStorage.setItem("listen-recently-played", "[]");
@@ -139,9 +142,14 @@ describe("AuthProvider", () => {
     expect(localStorage.getItem("listen-player-state")).toBeNull();
     expect(localStorage.getItem("listen-recently-played")).toBeNull();
     expect(clearQueueMock).toHaveBeenCalledTimes(1);
+    expect(authReset).toHaveBeenCalledTimes(1);
+    expect((authReset.mock.calls[0]?.[0] as CustomEvent).detail.reason).toBe("user-change");
+    window.removeEventListener(AUTH_RUNTIME_RESET_EVENT, authReset as EventListener);
   });
 
   it("cleans session state and navigates to login on logout", async () => {
+    const authReset = vi.fn();
+    window.addEventListener(AUTH_RUNTIME_RESET_EVENT, authReset as EventListener);
     apiMock
       .mockResolvedValueOnce({
         id: 11,
@@ -172,7 +180,10 @@ describe("AuthProvider", () => {
     expect(localStorage.getItem("listen-recently-played")).toBeNull();
     expect(localStorage.getItem("listen-auth-user-id")).toBeNull();
     expect(clearQueueMock).toHaveBeenCalled();
+    expect(authReset).toHaveBeenCalledTimes(1);
+    expect((authReset.mock.calls[0]?.[0] as CustomEvent).detail.reason).toBe("logout");
     expect(navigateMock).toHaveBeenCalledWith("/login");
+    window.removeEventListener(AUTH_RUNTIME_RESET_EVENT, authReset as EventListener);
   });
 
   it("rehydrates and navigates when the native OAuth event arrives", async () => {

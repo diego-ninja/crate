@@ -5,6 +5,37 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+          if (id.includes("/node_modules/@nivo/") || id.includes("/node_modules/d3-")) {
+            return "charts-vendor";
+          }
+          if (id.includes("/node_modules/react-leaflet/") || id.includes("/node_modules/leaflet/")) {
+            return "maps-vendor";
+          }
+          if (id.includes("/node_modules/react-force-graph-2d/") || id.includes("/node_modules/force-graph/")) {
+            return "graph-vendor";
+          }
+          if (id.includes("/node_modules/@radix-ui/") || id.includes("/node_modules/cmdk/")) {
+            return "ui-vendor";
+          }
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/react-router/")
+          ) {
+            return "react-vendor";
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },

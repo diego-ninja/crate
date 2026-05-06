@@ -111,9 +111,9 @@ def optional_scope(session=None):
 def read_scope():
     """Open a read-only Session that rolls back on exit.
 
-    Use for SELECT queries that don't need a commit. This avoids
-    holding a write-transaction lock for the duration of the block,
-    reducing contention under concurrent load.
+    Use for SELECT queries that don't need commit semantics. Rolling
+    back on exit keeps the lifecycle explicit and avoids unnecessary
+    commit work on read-only paths.
 
     Usage::
 

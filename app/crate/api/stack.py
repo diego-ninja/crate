@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +12,7 @@ from starlette.responses import StreamingResponse
 from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.api.schemas.utility import (
     AdminStackSnapshotResponse,
     StackActionResponse,
@@ -43,18 +43,12 @@ _STACK_RESPONSES = merge_responses(
 )
 
 
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-
 async def _stack_stream() -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_stack_surface())}\n\n"
+    pubsub = None
+    channel = snapshot_channel(STACK_SNAPSHOT_SCOPE, "global")
     try:
-        import redis.asyncio as aioredis
-
-        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(snapshot_channel(STACK_SNAPSHOT_SCOPE, "global"))
+        pubsub = await open_pubsub(channel)
         heartbeat_counter = 0
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
@@ -70,6 +64,9 @@ async def _stack_stream() -> AsyncIterator[str]:
         while True:
             yield f"data: {json_dumps(get_cached_stack_surface())}\n\n"
             await asyncio.sleep(30)
+    finally:
+        if pubsub is not None:
+            await close_pubsub(pubsub, channel)
 
 
 @router.get(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,14 @@ from crate.db.repositories.streaming import get_variant_by_cache_key, mark_varia
 
 class StreamVariantError(RuntimeError):
     pass
+
+
+def _ffmpeg_threads() -> str:
+    raw = os.environ.get("CRATE_FFMPEG_THREADS", "1")
+    try:
+        return str(max(1, int(raw)))
+    except ValueError:
+        return "1"
 
 
 def transcode_variant(cache_key: str, *, timeout_seconds: int = 900) -> dict:
@@ -44,6 +53,8 @@ def transcode_variant(cache_key: str, *, timeout_seconds: int = 900) -> dict:
         "-hide_banner",
         "-nostdin",
         "-y",
+        "-threads",
+        _ffmpeg_threads(),
         "-i",
         str(source_path),
         "-vn",

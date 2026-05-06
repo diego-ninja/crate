@@ -314,16 +314,47 @@ class TestArtistEnrichment:
             barrier.wait()
             return {"source": "spotify"}
 
-        result = _run_enrichment_fetchers(
-            "Radiohead",
-            {"lastfm": _fetch_lastfm, "spotify": _fetch_spotify},
-            max_workers=2,
-        )
+        with patch("crate.enrichment.wait_for_provider_slot", return_value=0):
+            result = _run_enrichment_fetchers(
+                "Radiohead",
+                {"lastfm": _fetch_lastfm, "spotify": _fetch_spotify},
+                max_workers=2,
+            )
 
         assert result == {
             "lastfm": {"source": "lastfm"},
             "spotify": {"source": "spotify"},
         }
+
+    def test_collect_enrichment_payloads_uses_source_cache(self):
+        from crate.enrichment import _collect_enrichment_payloads
+
+        cached_lastfm = {"bio": "cached bio"}
+
+        def _get_cache(key, max_age_seconds=None):
+            if key == "enrichment:source:lastfm:radiohead":
+                return cached_lastfm
+            return None
+
+        with patch("crate.enrichment.get_cache", side_effect=_get_cache), \
+             patch("crate.enrichment.set_cache") as mock_set_cache, \
+             patch("crate.enrichment.wait_for_provider_slot", return_value=0), \
+             patch("crate.enrichment._discogs_is_configured", return_value=False), \
+             patch("crate.enrichment._fetch_lastfm_payload") as mock_lastfm, \
+             patch("crate.enrichment._fetch_spotify_payload", return_value={"artist": {"id": "sp1"}}), \
+             patch("crate.enrichment._fetch_musicbrainz_payload", return_value=None), \
+             patch("crate.enrichment._fetch_setlist_payload", return_value=None), \
+             patch("crate.enrichment._fetch_fanart_payload", return_value=None):
+            result = _collect_enrichment_payloads("Radiohead", max_workers=1)
+
+        assert result["lastfm"] == cached_lastfm
+        assert result["spotify"] == {"artist": {"id": "sp1"}}
+        mock_lastfm.assert_not_called()
+        mock_set_cache.assert_any_call(
+            "enrichment:source:spotify:radiohead",
+            {"artist": {"id": "sp1"}},
+            ttl=86400 * 3,
+        )
 
     def test_enrich_artist_merges_parallel_payloads_and_persists(self, tmp_path):
         artist_dir = tmp_path / "Radiohead"
@@ -420,3 +451,30 @@ class TestArtistEnrichment:
         genre_rows = mock_set_artist_genres.call_args.args[1]
         assert [row[0] for row in genre_rows] == ["rock", "alternative rock"]
         mock_download_artist_photo.assert_not_called()
+
+    def test_enrich_artists_delegates_large_batches(self, monkeypatch):
+        from crate.worker_handlers import enrichment as worker_enrichment
+
+        artists = [{"name": f"Artist {index:02d}"} for index in range(45)]
+        created: list[tuple[str, dict, str | None]] = []
+
+        def _create_task(task_type, params=None, *, parent_task_id=None, **kwargs):
+            created.append((task_type, params or {}, parent_task_id))
+            return f"task-{len(created)}"
+
+        monkeypatch.setattr(worker_enrichment, "get_library_artists", lambda per_page=10000: (artists, len(artists)))
+        monkeypatch.setattr(worker_enrichment, "get_setting", lambda name, default: default)
+        monkeypatch.setattr(worker_enrichment, "emit_task_event", lambda *args, **kwargs: None)
+        monkeypatch.setattr(worker_enrichment, "emit_progress", lambda *args, **kwargs: None)
+
+        with patch("crate.db.repositories.tasks.create_task", side_effect=_create_task):
+            result = worker_enrichment._handle_enrich_artists(
+                "parent-task",
+                {"chunk_size": 20},
+                {"library_path": "/tmp/music"},
+            )
+
+        assert result == {"_delegated": True, "chunks": 3, "artists": 45}
+        assert [call[0] for call in created] == ["enrich_artists", "enrich_artists", "enrich_artists"]
+        assert [len(call[1]["artists"]) for call in created] == [20, 20, 5]
+        assert {call[2] for call in created} == {"parent-task"}

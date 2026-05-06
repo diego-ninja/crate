@@ -1,0 +1,70 @@
+name: Native Tool Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/media-worker/**"
+      - "tools/crate-cli/**"
+      - "app/Dockerfile"
+      - ".github/workflows/test-native-tools.yml"
+  pull_request:
+    paths:
+      - "app/media-worker/**"
+      - "tools/crate-cli/**"
+      - "app/Dockerfile"
+      - ".github/workflows/test-native-tools.yml"
+
+jobs:
+  crate-cli:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Run crate-cli tests
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "${{ github.workspace }}/tools/crate-cli:/src" \
+            -w /src \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e CARGO_TARGET_DIR=/tmp/crate-cli-target \
+            rust:1.88-trixie \
+            bash -lc "apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev build-essential libsqlite3-dev && /usr/local/cargo/bin/cargo test --locked"
+
+      - name: Build production crate-cli Linux binary
+        run: |
+          docker build --platform linux/amd64 --output type=local,dest=/tmp/crate-cli-build tools/crate-cli
+          test -x /tmp/crate-cli-build/crate-cli
+
+  media-worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Run media-worker tests
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            -v "${{ github.workspace }}/app/media-worker:/src" \
+            -w /src \
+            -e CARGO_TARGET_DIR=/tmp/media-worker-target \
+            rust:1.85-slim \
+            /usr/local/cargo/bin/cargo test --locked
+
+      - name: Build media-worker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          target: media-worker
+          push: false
+          tags: crate-media-worker:ci

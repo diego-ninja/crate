@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cacheClear, cacheGet, cacheInvalidate, cacheSet } from "@/lib/cache";
+import { cacheClear, cacheGet, cacheInvalidate, cacheSet, scopesForUrl } from "@/lib/cache";
 
 describe("listen api cache", () => {
   beforeEach(() => {
@@ -83,5 +83,10 @@ describe("listen api cache", () => {
     expect(setItemSpy).not.toHaveBeenCalled();
     expect(cacheGet("/api/me/stats/overview?window=30d")).toBeNull();
     expect(localStorage.getItem("crate-api-cache:/api/me/stats/overview?window=30d")).toBeNull();
+  });
+
+  it("maps jam room endpoints to the jam scope", () => {
+    expect(scopesForUrl("/api/jam/rooms")).toContain("jam");
+    expect(scopesForUrl("/api/jam/rooms/room-1")).toContain("jam");
   });
 });

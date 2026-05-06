@@ -16,8 +16,11 @@ from crate.db.repositories.tasks import (
     create_task_dedup,
     delete_old_finished_tasks,
     delete_tasks_by_status,
+    fail_or_retry_task,
     heartbeat_task,
+    redispatch_stale_pending_tasks,
     save_scan_result,
+    start_task,
     update_task,
 )
 
@@ -30,11 +33,14 @@ __all__ = [
     "create_task_dedup",
     "delete_old_finished_tasks",
     "delete_tasks_by_status",
+    "fail_or_retry_task",
     "get_latest_scan",
     "get_task",
     "heartbeat_task",
     "list_child_tasks",
     "list_tasks",
+    "redispatch_stale_pending_tasks",
     "save_scan_result",
+    "start_task",
     "update_task",
 ]

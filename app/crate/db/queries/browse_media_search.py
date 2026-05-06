@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 
 
 def search_artists(like: str, limit: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -28,7 +28,7 @@ def search_artists(like: str, limit: int) -> list[dict]:
 
 
 def search_albums(like: str, limit: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """
@@ -55,7 +55,7 @@ def search_albums(like: str, limit: int) -> list[dict]:
 
 
 def search_tracks(like: str, limit: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 """

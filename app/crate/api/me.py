@@ -14,6 +14,7 @@ from crate.api.cache_events import (
     get_latest_invalidation_event_id,
 )
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.me import (
     ChangePasswordRequest,
@@ -210,12 +211,10 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
     if include_initial:
         yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
 
+    pubsub = None
+    channel = snapshot_channel("home:discovery", str(user_id))
     try:
-        import redis.asyncio as aioredis
-
-        redis = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(snapshot_channel("home:discovery", str(user_id)))
+        pubsub = await open_pubsub(channel)
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if message and message.get("type") == "message":
@@ -239,11 +238,14 @@ async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_in
                     refresh = True
 
             if refresh:
-                yield f"id: {last_event_id}\ndata: {json_dumps(_get_home_discovery_payload(user_id, fresh=True))}\n\n"
+                yield f"id: {last_event_id}\ndata: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
                 heartbeat_counter = 0
             elif heartbeat_counter >= 30:
                 heartbeat_counter = 0
                 yield heartbeat_payload()
+    finally:
+        if pubsub is not None:
+            await close_pubsub(pubsub, channel)
 
 
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:

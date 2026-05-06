@@ -137,7 +137,62 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
-    sync = LibrarySync(config)
+    sync_config = dict(config)
+    if "native_scan_payload_shadow" in params:
+        sync_config["native_scan_payload_shadow"] = params.get("native_scan_payload_shadow")
+    if "native_scan_payload_prefer" in params:
+        sync_config["native_scan_payload_prefer"] = params.get("native_scan_payload_prefer")
+    if "native_scan_payload_source" in params:
+        sync_config["native_scan_payload_source"] = params.get("native_scan_payload_source")
+    if "native_scan_diff_shadow" in params:
+        sync_config["native_scan_diff_shadow"] = params.get("native_scan_diff_shadow")
+    if "native_scan_diff_skip_unchanged" in params:
+        sync_config["native_scan_diff_skip_unchanged"] = params.get("native_scan_diff_skip_unchanged")
+    if "native_scan_diff_source" in params:
+        sync_config["native_scan_diff_source"] = params.get("native_scan_diff_source")
+    if "native_scan_snapshot_dir" in params:
+        sync_config["native_scan_snapshot_dir"] = params.get("native_scan_snapshot_dir")
+    sync = LibrarySync(sync_config)
+
+    def _emit_native_shadow(root: Path) -> dict | None:
+        from crate.native_scan import (
+            diff_skip_unchanged_enabled,
+            maybe_compare_native_scan_file_set,
+            maybe_update_native_scan_diff_snapshot,
+            native_scan_diff_is_unchanged,
+        )
+
+        shadow_config = dict(sync_config)
+        if "native_scan_shadow" in params:
+            shadow_config["native_scan_shadow"] = params.get("native_scan_shadow")
+        file_set_summary = maybe_compare_native_scan_file_set(root, sync.extensions, shadow_config)
+        diff_summary = maybe_update_native_scan_diff_snapshot(root, sync.extensions, shadow_config)
+        if file_set_summary:
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": "Native scan shadow complete",
+                    "native_scan_shadow": file_set_summary,
+                },
+            )
+        if diff_summary:
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": "Native scan diff shadow complete",
+                    "native_scan_diff_shadow": diff_summary,
+                },
+            )
+        if not file_set_summary and not diff_summary:
+            return None
+        return {
+            "file_set": file_set_summary,
+            "diff": diff_summary,
+            "skip_unchanged": diff_skip_unchanged_enabled(shadow_config)
+            and native_scan_diff_is_unchanged(diff_summary),
+        }
 
     album_dir_param = params.get("album_dir")
     if album_dir_param:
@@ -157,6 +212,30 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
             "info",
             {"message": "Starting scoped library sync", "artist": canonical, "album": album_dir.name},
         )
+        native_shadow = _emit_native_shadow(album_dir)
+        if native_shadow and native_shadow.get("skip_unchanged"):
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": "Scoped library sync skipped by native scan diff",
+                    "artist": canonical,
+                    "album": album_dir.name,
+                    "native_scan_diff_shadow": native_shadow.get("diff"),
+                },
+            )
+            return {
+                "mode": "album",
+                "artist": canonical,
+                "album": album_dir.name,
+                "skipped": "native_scan_diff_unchanged",
+                "album_result": {},
+                "artist_tracks": None,
+                "process_task_id": None,
+                "native_scan_shadow": native_shadow.get("file_set"),
+                "native_scan_diff_shadow": native_shadow.get("diff"),
+            }
+
         album_result = sync.sync_album(album_dir, canonical) if album_dir.is_dir() else {}
         artist_tracks = sync.sync_artist(artist_dir)
 
@@ -168,6 +247,7 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
                 process_task_id = queue_process_new_content_if_needed(
                     canonical,
                     library_path=sync.library_path,
+                    triggered_by="scoped_library_sync",
                 )
                 if process_task_id:
                     emit_task_event(
@@ -189,9 +269,26 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
             "album_result": album_result,
             "artist_tracks": artist_tracks,
             "process_task_id": process_task_id,
+            "native_scan_shadow": (native_shadow or {}).get("file_set"),
+            "native_scan_diff_shadow": (native_shadow or {}).get("diff"),
         }
 
     emit_task_event(task_id, "info", {"message": "Starting library sync..."})
+    native_shadow = _emit_native_shadow(sync.library_path)
+    if native_shadow and native_shadow.get("skip_unchanged"):
+        emit_task_event(
+            task_id,
+            "info",
+            {
+                "message": "Library sync skipped by native scan diff",
+                "native_scan_diff_shadow": native_shadow.get("diff"),
+            },
+        )
+        return {
+            "skipped": "native_scan_diff_unchanged",
+            "native_scan_shadow": native_shadow.get("file_set"),
+            "native_scan_diff_shadow": native_shadow.get("diff"),
+        }
 
     p = TaskProgress(phase="syncing", phase_count=1)
 
@@ -201,7 +298,11 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
         p.item = data.get("artist", p.item)
         emit_progress(task_id, p)
 
-    return sync.full_sync(progress_callback=_sync_progress)
+    result = sync.full_sync(progress_callback=_sync_progress)
+    if native_shadow:
+        result["native_scan_shadow"] = native_shadow.get("file_set")
+        result["native_scan_diff_shadow"] = native_shadow.get("diff")
+    return result
 
 
 def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:

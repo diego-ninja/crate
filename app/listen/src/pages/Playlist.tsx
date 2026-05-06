@@ -26,6 +26,7 @@ import { fetchPlaylistRadio } from "@/lib/radio";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { WindowVirtualList } from "@/components/ui/WindowVirtualList";
 
 interface PlaylistTrack {
   id: number;
@@ -601,10 +602,12 @@ export function Playlist() {
           </p>
         </div>
       ) : (
-        <div>
-          {filteredTracks.map((t, i) => (
+        <WindowVirtualList
+          items={filteredTracks}
+          estimateSize={72}
+          itemKey={(t) => t.id ?? `${t.track_path}-${t.position}`}
+          renderItem={(t, i) => (
             <TrackRow
-              key={t.id ?? `${t.track_path}-${t.position}`}
               track={toTrackRowData({
                 ...t,
                 id: t.track_id ?? t.track_path ?? t.title,
@@ -619,8 +622,8 @@ export function Playlist() {
               onActionMenuOpen={ensurePlaylistOptionsLoaded}
               onPlayOverride={() => handlePlayTrack(t.id)}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       <PlaylistCreateModal

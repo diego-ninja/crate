@@ -101,7 +101,7 @@ class TestExploreSearchContract:
         ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.db.queries.browse_media_search.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_media_search.read_scope", mock_scope):
             resp = test_app.get("/api/search?q=converge&limit=10")
             assert resp.status_code == 200
             data = resp.json()

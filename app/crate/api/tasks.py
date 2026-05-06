@@ -1,6 +1,5 @@
 import asyncio
 import json as _json
-import os
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
@@ -35,7 +34,9 @@ from crate.db.cache_store import get_cache
 from crate.db.queries.tasks import get_task, list_tasks
 from crate.db.repositories.tasks import create_task, delete_old_finished_tasks, delete_tasks_by_status, update_task
 from crate.docker_ctl import restart_container
+from crate.media_worker_progress import cancel_media_worker_job
 from crate.scheduler import get_schedules, set_schedules
+from crate.api.redis_sse import close_pubsub, open_pubsub
 
 router = APIRouter(tags=["tasks"])
 
@@ -54,25 +55,16 @@ _TASK_RESPONSES = merge_responses(
 )
 
 
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-
 async def _tasks_stream(limit: int) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
-    redis = None
     pubsub = None
     try:
-        import redis.asyncio as aioredis
-
-        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(TASKS_SURFACE_STREAM_CHANNEL)
+        pubsub = await open_pubsub(TASKS_SURFACE_STREAM_CHANNEL)
         heartbeat_counter = 0
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if message and message.get("type") == "message":
-                yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit, fresh=True))}\n\n"
+                yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
                 heartbeat_counter = 0
                 continue
             heartbeat_counter += 1
@@ -85,9 +77,7 @@ async def _tasks_stream(limit: int) -> AsyncIterator[str]:
             await asyncio.sleep(15)
     finally:
         if pubsub is not None:
-            await pubsub.unsubscribe(TASKS_SURFACE_STREAM_CHANNEL)
-        if redis is not None:
-            await redis.aclose()
+            await close_pubsub(pubsub, TASKS_SURFACE_STREAM_CHANNEL)
 
 
 @router.get(
@@ -345,6 +335,7 @@ def api_cancel_all_tasks(request: Request):
     cancelled = 0
     for t in running + pending:
         update_task(t["id"], status="cancelled")
+        cancel_media_worker_job(t["id"])
         cancelled += 1
     return {"cancelled": cancelled}
 
@@ -478,4 +469,5 @@ def api_cancel_task(request: Request, task_id: str):
         return JSONResponse({"error": f"Cannot cancel task in '{task['status']}' status"}, status_code=400)
 
     update_task(task_id, status="cancelled")
+    cancel_media_worker_job(task_id)
     return {"status": "cancelled", "id": task_id}

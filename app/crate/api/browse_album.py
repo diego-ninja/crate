@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import shutil
 
 import mutagen
@@ -14,6 +15,7 @@ from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, me
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
+from crate.db.cache_store import get_cache, set_cache
 from crate.db.repositories.library import (
     get_library_album_by_id,
     get_library_album_by_entity_uid,
@@ -30,6 +32,7 @@ from crate.db.queries.streaming_admin import get_track_variant_summaries
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
+log = logging.getLogger(__name__)
 
 _BROWSE_RESPONSES = merge_responses(
     AUTH_ERROR_RESPONSES,
@@ -48,6 +51,7 @@ _IMAGE_RESPONSES = merge_responses(
             "content": {
                 "image/jpeg": {},
                 "image/png": {},
+                "image/webp": {},
                 "image/svg+xml": {},
             },
         },
@@ -141,6 +145,11 @@ def api_album(request: Request, artist: str, album: str):
             return JSONResponse({"error": "Not found"}, status_code=404)
         return result
 
+    cache_key = f"listen:album_detail:v2:{album_data['id']}"
+    cached = get_cache(cache_key, max_age_seconds=30)
+    if cached is not None:
+        return cached
+
     tracks_data = get_library_tracks(album_data["id"])
     lib = library_path()
     album_dir = find_album_dir(lib, artist, album)
@@ -232,7 +241,7 @@ def api_album(request: Request, artist: str, album: str):
     if db_mbid and db_mbid.strip():
         album_tags["musicbrainz_albumid"] = db_mbid
 
-    return {
+    payload = {
         "id": album_data["id"],
         "entity_uid": album_data.get("entity_uid"),
         "slug": album_data.get("slug"),
@@ -257,6 +266,8 @@ def api_album(request: Request, artist: str, album: str):
         "popularity_score": album_data.get("popularity_score"),
         "popularity_confidence": album_data.get("popularity_confidence"),
     }
+    set_cache(cache_key, payload, ttl=45)
+    return payload
 
 
 @router.get(
@@ -375,7 +386,14 @@ def _extract_embedded_cover(audio_file: Path) -> tuple[bytes, str] | None:
     return None
 
 
-def api_cover(artist: str, album: str, album_dir: Path | None = None, *, size: int | None = None):
+def api_cover(
+    artist: str,
+    album: str,
+    album_dir: Path | None = None,
+    *,
+    size: int | None = None,
+    image_format: str | None = None,
+):
     lib = library_path()
     # Prefer the caller-supplied canonical directory (from api_cover_by_id)
     # so we don't get fooled by a loose duplicate folder under /Artist/Album
@@ -391,7 +409,13 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None, *, size: i
         cover = album_dir / cover_name
         if cover.exists():
             media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-            return build_image_response(cover.read_bytes(), media_type, size=size, headers=_IMG_CACHE)
+            return build_image_response(
+                cover.read_bytes(),
+                media_type,
+                size=size,
+                output_format=image_format,
+                headers=_IMG_CACHE,
+            )
 
     exts = extensions()
     tracks = get_audio_files(album_dir, exts)
@@ -399,7 +423,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None, *, size: i
         extracted = _extract_embedded_cover(track)
         if extracted:
             data, mime = extracted
-            return build_image_response(data, mime, size=size, headers=_IMG_CACHE)
+            return build_image_response(data, mime, size=size, output_format=image_format, headers=_IMG_CACHE)
 
     return _placeholder_cover(album or artist)
 
@@ -420,6 +444,7 @@ def api_enrich_album(request: Request, album_id: int):
         "artist": album["artist"],
         "album": album["name"],
         "force": True,
+        "triggered_by": "ui",
     })
     return {"task_id": task_id}
 
@@ -477,13 +502,17 @@ def api_fetch_cover_by_entity_uid(request: Request, album_entity_uid: str):
     responses=_IMAGE_RESPONSES,
     summary="Get album artwork",
 )
-def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024)):
+def api_cover_by_id(
+    album_id: int,
+    size: int | None = Query(None, ge=32, le=1024),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
+):
     album = get_library_album_by_id(album_id)
     if not album:
         return _placeholder_cover("?")
     artist = get_library_artist(album["artist"])
     album_dir = resolve_album_dir(library_path(), album, artist=artist)
-    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size, image_format=image_format)
 
 
 @router.get(
@@ -491,13 +520,17 @@ def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024
     responses=_IMAGE_RESPONSES,
     summary="Get album artwork by entity UID",
 )
-def api_cover_by_entity_uid(album_entity_uid: str, size: int | None = Query(None, ge=32, le=1024)):
+def api_cover_by_entity_uid(
+    album_entity_uid: str,
+    size: int | None = Query(None, ge=32, le=1024),
+    image_format: str | None = Query(None, alias="format", pattern="^webp$"),
+):
     album = get_library_album_by_entity_uid(album_entity_uid)
     if not album:
         return _placeholder_cover("?")
     artist = get_library_artist(album["artist"])
     album_dir = resolve_album_dir(library_path(), album, artist=artist)
-    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size, image_format=image_format)
 
 
 def api_download_album(request: Request, artist: str, album: str):
@@ -526,12 +559,15 @@ def api_download_album(request: Request, artist: str, album: str):
             from crate.download_cache import (
                 album_cache_ttl_seconds,
                 album_download_cache_key,
+                cached_download_artifact_path,
                 download_cache_lock,
+                download_cache_enabled,
                 get_cached_download,
                 safe_download_filename,
                 store_cached_download,
             )
             from crate.db.queries.portable_metadata import get_portable_album_payload
+            from crate.media_worker import build_album_download_package
             from crate.portable_metadata import export_album_rich_metadata, find_album_artwork_file
 
             payload = get_portable_album_payload(int(album_row["id"]))
@@ -545,28 +581,56 @@ def api_download_album(request: Request, artist: str, album: str):
                     with download_cache_lock("album", cache_key):
                         cached = get_cached_download("album", cache_key, cache_filename, ttl_seconds=album_cache_ttl_seconds())
                         if cached is None:
-                            export_result = export_album_rich_metadata(
-                                payload,
-                                export_root=tmp_dir / "rich",
-                                include_audio=True,
-                                write_rich_tags=True,
-                            )
-                            export_dir = Path(str(export_result["export_path"]))
-                            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
-                                for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
-                                    zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
-                            cached = store_cached_download(
-                                "album",
-                                cache_key,
-                                cache_filename,
-                                zip_path,
-                                metadata={
-                                    "album_id": album_row["id"],
-                                    "album_entity_uid": album_payload.get("entity_uid"),
-                                    "tracks": export_result.get("tracks"),
-                                    "artwork_files": export_result.get("artwork_files"),
-                                },
-                            )
+                            if download_cache_enabled():
+                                worker_output_path = cached_download_artifact_path("album", cache_key, cache_filename)
+                                worker_result = build_album_download_package(
+                                    payload,
+                                    output_path=worker_output_path,
+                                    filename=cache_filename,
+                                    job_id=cache_key,
+                                    artwork_path=artwork_path,
+                                    write_rich_tags=True,
+                                    cache_kind="album",
+                                    cache_key=cache_key,
+                                    cache_metadata={
+                                        "album_id": album_row["id"],
+                                        "album_entity_uid": album_payload.get("entity_uid"),
+                                        "engine": "crate-media-worker",
+                                        "tracks": len(payload.get("tracks") or []),
+                                    },
+                                )
+                                if worker_result and worker_result.get("ok"):
+                                    cached = get_cached_download(
+                                        "album",
+                                        cache_key,
+                                        cache_filename,
+                                        ttl_seconds=album_cache_ttl_seconds(),
+                                    )
+                                elif worker_result:
+                                    log.debug("crate-media-worker package failed: %s", worker_result)
+                            if cached is None:
+                                export_result = export_album_rich_metadata(
+                                    payload,
+                                    export_root=tmp_dir / "rich",
+                                    include_audio=True,
+                                    write_rich_tags=True,
+                                )
+                                export_dir = Path(str(export_result["export_path"]))
+                                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zip_file:
+                                    for file_path in sorted(path for path in export_dir.rglob("*") if path.is_file()):
+                                        zip_file.write(str(file_path), str(file_path.relative_to(export_dir)))
+                                cached = store_cached_download(
+                                    "album",
+                                    cache_key,
+                                    cache_filename,
+                                    zip_path,
+                                    metadata={
+                                        "album_id": album_row["id"],
+                                        "album_entity_uid": album_payload.get("entity_uid"),
+                                        "tracks": export_result.get("tracks"),
+                                        "artwork_files": export_result.get("artwork_files"),
+                                    },
+                                )
                 if cached is not None:
                     cached_zip = cached.path
         except Exception:

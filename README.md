@@ -117,7 +117,7 @@ snapshot/read-model plane for admin and Listen surfaces.
                  projector)             Redis 7
                     /music:rw      (cache / broker / event bus)
                        |
-                 grooveyard-bliss
+                 crate-cli
                     (Rust CLI)
 ```
 
@@ -303,7 +303,7 @@ app/
     scheduler.py        Settings-driven recurring task scheduler
     enrichment.py       Last.fm / MusicBrainz / Fanart / Setlist pipeline
     audio_analysis.py   PANNs + Essentia hybrid engine
-    bliss.py            grooveyard-bliss CLI integration
+    bliss.py            crate-cli Rust CLI integration
     tidal.py            Tidal search + download orchestration (tiddl)
     soulseek.py         slskd REST client
     library_sync.py     Filesystem → DB sync
@@ -329,7 +329,7 @@ app/
     download_models.sh  Essentia + PANNs model downloader
 
 tools/
-  grooveyard-bliss/     Rust CLI for audio similarity (bliss-rs)
+  crate-cli/     Rust CLI for audio similarity (bliss-rs)
 
 docs/
   architecture.md       System architecture
@@ -355,7 +355,7 @@ The hybrid split uses PANNs for genre-based moods (where it excels) and signal h
 
 ## Bliss song similarity
 
-The `grooveyard-bliss` Rust CLI computes a 20-dimensional feature vector per track using [bliss-rs](https://github.com/Polochon-street/bliss-rs). These vectors encode tempo, timbre, loudness, chroma, and spectral characteristics into a compact representation that enables:
+The `crate-cli` Rust CLI computes a 20-dimensional feature vector per track using [bliss-rs](https://github.com/Polochon-street/bliss-rs). These vectors encode tempo, timbre, loudness, chroma, and spectral characteristics into a compact representation that enables:
 
 - **Artist radio** — find the N most similar tracks to a seed
 - **Transition playlists** — order tracks by smooth transitions

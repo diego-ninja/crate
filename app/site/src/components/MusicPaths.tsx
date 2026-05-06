@@ -106,32 +106,28 @@ export function MusicPaths() {
         {/* Text */}
         <div>
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
-            Coming soon
+            Experiment
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Music Paths — a GPS for your taste.
+            Music Paths.
           </h2>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            Pick a starting point and a destination — a genre, an artist, a track —
-            and Crate traces a listening route through the acoustic space between them.
-            Each step is a track that naturally bridges the gap, using bliss similarity
-            vectors to find songs that sound like they belong in the transition.
+            Pick a starting point and an ending point, then let Crate try to find
+            a route between them. It is an experiment in listening through a collection
+            instead of jumping around it.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
             <li className="flex gap-3">
               <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-cyan-400" />
-              <span>Add waypoints to steer the journey — "go through doom metal
-                on the way to post-rock."</span>
+              <span>Add waypoints when you want the route to pass through a certain sound.</span>
             </li>
             <li className="flex gap-3">
               <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-cyan-400" />
-              <span>20-float bliss vectors interpolate across the acoustic space,
-                not genre labels. The transitions sound natural.</span>
+              <span>Similarity comes from audio features, with genre labels as context.</span>
             </li>
             <li className="flex gap-3">
               <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-cyan-400" />
-              <span>Save paths as playlists, share them, or let them regenerate
-                with fresh tracks every time.</span>
+              <span>Save a path as a playlist, or regenerate it when the library changes.</span>
             </li>
           </ul>
           <a

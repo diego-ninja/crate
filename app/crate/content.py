@@ -107,6 +107,7 @@ def queue_process_new_content_if_needed(
     *,
     library_path: Path | str | None = None,
     force: bool = False,
+    triggered_by: str | None = None,
 ) -> str | None:
     """Enqueue ``process_new_content`` for ``artist_name`` only if the
     filesystem content has actually changed since the last time the artist
@@ -126,6 +127,8 @@ def queue_process_new_content_if_needed(
     params: dict = {"artist": artist_name}
     if force:
         params["force"] = True
+    if triggered_by:
+        params["triggered_by"] = triggered_by
     return _create_process_new_content_task(
         params,
         dedup_key=process_new_content_dedup_key(artist_name),

@@ -190,6 +190,46 @@ def test_preview_fix_artist_reports_legacy_album_moves(monkeypatch, tmp_path):
     ]
 
 
+def test_preview_fix_artist_does_not_scan_unrelated_library_dirs(monkeypatch, tmp_path):
+    from crate.worker_handlers import migration
+
+    library_root = tmp_path / "library"
+    artist_uid = "b81635c8-3132-57d2-8d22-920251dc2627"
+    target_artist_dir = library_root / artist_uid
+    target_album_dir = target_artist_dir / "7ed07c07-1754-5db2-9922-e324ad124f3f"
+    target_album_dir.mkdir(parents=True)
+    (target_album_dir / "01 - Dine Alone.flac").write_bytes(b"audio")
+
+    unrelated_album_dir = library_root / "Other Artist" / "Other Album"
+    unrelated_album_dir.mkdir(parents=True)
+    (unrelated_album_dir / "01 - Other.flac").write_bytes(b"audio")
+
+    artist = {
+        "name": "Quicksand",
+        "entity_uid": artist_uid,
+        "folder_name": artist_uid,
+        "album_count": 1,
+    }
+
+    monkeypatch.setattr(
+        "crate.worker_handlers.migration.get_artist_album_paths",
+        lambda artist_name, limit=5000: [{"path": str(target_album_dir)}],
+    )
+
+    def fail_on_unrelated(album_dir, fallback_artist=""):
+        if album_dir == unrelated_album_dir:
+            raise AssertionError("repair preview should not inspect unrelated library dirs")
+        return ("Quicksand", "Slip")
+
+    monkeypatch.setattr(migration, "infer_album_identity", fail_on_unrelated)
+
+    preview = preview_fix_artist(library_root, artist, {"library_path": str(library_root)})
+
+    assert preview["status"] == "already_canonical"
+    assert preview["album_moves"] == []
+    assert str(library_root / "Other Artist") not in preview["candidate_dirs"]
+
+
 def test_build_artist_layout_fix_issue_from_preview():
     preview = {
         "status": "needs_fix",

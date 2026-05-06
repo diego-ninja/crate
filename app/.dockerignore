@@ -28,6 +28,7 @@ tests/
 **/coverage/
 listen/android/
 listen/ios/
+bin/grooveyard-bliss-linux-amd64
 
 # Local config and editor noise
 .env

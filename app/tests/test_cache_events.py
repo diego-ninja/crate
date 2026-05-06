@@ -160,3 +160,10 @@ def test_artist_invalidation_clears_listen_artist_page_cache(monkeypatch):
     assert "artist:52" in deleted_prefixes
     assert "listen:artist_page:" in deleted_prefixes
     assert ("home:", None) in marked
+
+
+def test_jam_mutations_invalidate_jam_scope():
+    from crate.api import cache_events
+
+    assert cache_events._match_invalidation_scopes("/api/jam/rooms") == ["jam"]
+    assert cache_events._match_invalidation_scopes("/api/jam/rooms/abc/end") == ["jam"]

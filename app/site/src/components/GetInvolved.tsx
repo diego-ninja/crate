@@ -26,22 +26,22 @@ const PATHS: Path[] = [
   {
     icon: BookOpen,
     kicker: "Self-hosters",
-    title: "Run it on your server.",
-    body: "One compose file, GHCR images, opinionated defaults. Mount your /music directory, hit play. The docs walk you through the full stack.",
+    title: "Try it on your server.",
+    body: "The docs explain the compose setup, volumes, domains, and first run. It is still early, so expect to read a bit and make decisions.",
     cta: { label: "Read the docs", href: "https://docs.cratemusic.app" },
   },
   {
     icon: GithubIcon,
     kicker: "Contributors",
-    title: "The repo is open.",
-    body: "Python, TypeScript, Rust. The technical docs cover every subsystem. Open an issue, claim one, or start a PR — the codebase is deliberately readable.",
+    title: "Look around the code.",
+    body: "The repo mixes Python, TypeScript, Go, and Rust. There is plenty to improve, and the project is more useful when more people can understand it.",
     cta: { label: "Browse the source", href: "https://github.com/diego-ninja/crate" },
   },
   {
     icon: MessageCircle,
     kicker: "Community",
-    title: "Tell us what's missing.",
-    body: "Issues, feature requests, weird edge cases in your library. The best feedback comes from people running the code against real collections, not from abstract design reviews.",
+    title: "Tell us what feels wrong.",
+    body: "Weird libraries, failed imports, confusing UI, bad assumptions. That feedback matters more than generic praise.",
     cta: {
       label: "Open an issue",
       href: "https://github.com/diego-ninja/crate/issues/new",
@@ -57,25 +57,24 @@ export function GetInvolved() {
           Join in
         </div>
         <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-[44px] sm:leading-[1.05]">
-          Three ways to show up.
+          Ways to take part.
         </h2>
         <p className="mt-4 text-base leading-7 text-white/60 sm:text-lg">
-          Crate is not a closed beta looking for customers — it's an open project
-          looking for the kind of people who will still be self-hosting things in ten
-          years. Pick whichever role fits.
+          Crate is not looking for customers. It needs people willing to run it,
+          question it, and help make it less fragile.
         </p>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className="grid gap-10 md:grid-cols-3">
         {PATHS.map(({ icon: Icon, kicker, title, body, cta }) => (
           <a
             key={title}
             href={cta.href}
             target={cta.href.startsWith("http") ? "_blank" : undefined}
             rel="noreferrer"
-            className="group relative flex flex-col rounded-[22px] border border-white/10 bg-white/[0.03] p-7 transition hover:border-cyan-400/30 hover:bg-white/[0.05]"
+            className="group flex flex-col border-t border-white/10 pt-6 transition hover:border-cyan-400/35"
           >
-            <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-300">
+            <div className="mb-5 text-cyan-300">
               <Icon size={19} />
             </div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">

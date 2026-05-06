@@ -25,7 +25,7 @@ pipeline, output, and consumer:
    and anywhere else that needs a single-track signature.
 2. **Bliss song-DNA vectors** — a 20-float vector per track used as the
    backbone for nearest-neighbour similarity. Produced by the Rust CLI at
-   [tools/grooveyard-bliss](https://github.com/diego-ninja/crate/blob/main/tools/grooveyard-bliss),
+   [tools/crate-cli](https://github.com/diego-ninja/crate/blob/main/tools/crate-cli),
    integrated via
    [app/crate/bliss.py](https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py).
    Consumed by radio continuation, transition scoring, and smart playlists.

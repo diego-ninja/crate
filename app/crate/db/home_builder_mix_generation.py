@@ -9,11 +9,19 @@ from crate.db.home_builder_discovery import (
 from crate.db.home_builder_shared import (
     _artwork_artists,
     _artwork_tracks,
+    _daily_rotation_index,
     _merge_track_rows,
     _select_diverse_tracks_with_backfill,
 )
 from crate.db.releases import get_new_releases
 from crate.genre_taxonomy import get_genre_display_name, get_related_genre_terms
+
+
+def _daily_rotate_rows(rows: list[dict], user_id: int) -> list[dict]:
+    if len(rows) <= 1:
+        return rows
+    offset = _daily_rotation_index(len(rows), user_id)
+    return rows[offset:] + rows[:offset]
 
 
 def _build_mix_rows(
@@ -48,7 +56,12 @@ def _build_mix_rows(
         return (
             "Daily Discovery",
             "Fresh tracks orbiting around your favorite scenes.",
-            _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=2, max_per_album=2),
+            _select_diverse_tracks_with_backfill(
+                _daily_rotate_rows(rows, user_id),
+                limit=limit,
+                max_per_artist=2,
+                max_per_album=2,
+            ),
         )
 
     if mix_id == "my-new-arrivals":
@@ -172,6 +185,7 @@ def _build_custom_mix_summaries(
 
 
 __all__ = [
+    "_daily_rotate_rows",
     "_build_custom_mix_summaries",
     "_build_mix_rows",
     "_mix_summary_payload",

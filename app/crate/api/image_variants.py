@@ -14,9 +14,19 @@ _RASTER_MEDIA_TO_FORMAT = {
     "image/webp": "WEBP",
 }
 
+_OUTPUT_FORMAT_TO_MEDIA = {
+    "webp": "image/webp",
+}
 
-def resize_image_bytes(content: bytes, media_type: str, *, size: int | None = None) -> tuple[bytes, str]:
-    if not size:
+def resize_image_bytes(
+    content: bytes,
+    media_type: str,
+    *,
+    size: int | None = None,
+    output_format: str | None = None,
+) -> tuple[bytes, str]:
+    target_media_type = _OUTPUT_FORMAT_TO_MEDIA.get((output_format or "").lower())
+    if not size and not target_media_type:
         return content, media_type
 
     image_format = _RASTER_MEDIA_TO_FORMAT.get(media_type)
@@ -28,22 +38,24 @@ def resize_image_bytes(content: bytes, media_type: str, *, size: int | None = No
     except (UnidentifiedImageError, OSError):
         return content, media_type
 
-    if max(image.size) <= size:
+    if size and max(image.size) > size:
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+    elif not target_media_type:
         return content, media_type
 
-    image.thumbnail((size, size), Image.Resampling.LANCZOS)
     output = BytesIO()
+    save_format = _RASTER_MEDIA_TO_FORMAT.get(target_media_type or media_type, image_format)
 
-    if image_format == "JPEG":
+    if save_format == "JPEG":
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
-        image.save(output, format=image_format, quality=85, optimize=True, progressive=True)
-    elif image_format == "PNG":
-        image.save(output, format=image_format, optimize=True)
+        image.save(output, format=save_format, quality=85, optimize=True, progressive=True)
+    elif save_format == "PNG":
+        image.save(output, format=save_format, optimize=True)
     else:
-        image.save(output, format=image_format, quality=85, method=6)
+        image.save(output, format=save_format, quality=82, method=4)
 
-    return output.getvalue(), media_type
+    return output.getvalue(), target_media_type or media_type
 
 
 def build_image_response(
@@ -51,9 +63,15 @@ def build_image_response(
     media_type: str,
     *,
     size: int | None = None,
+    output_format: str | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> Response:
-    resized_content, resized_media_type = resize_image_bytes(content, media_type, size=size)
+    resized_content, resized_media_type = resize_image_bytes(
+        content,
+        media_type,
+        size=size,
+        output_format=output_format,
+    )
     return Response(
         content=resized_content,
         media_type=resized_media_type,

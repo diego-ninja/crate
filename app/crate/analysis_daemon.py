@@ -91,9 +91,12 @@ def analysis_daemon(config: dict):
     Loads PANNs model once and keeps it in memory."""
     log.info("Audio analysis daemon starting...")
 
-    _reset_stale_claims("analysis_state")
-    pending = _get_pending_count("analysis_state")
-    log.info("Audio analysis daemon: %d tracks pending", pending)
+    try:
+        _reset_stale_claims("analysis_state")
+        pending = _get_pending_count("analysis_state")
+        log.info("Audio analysis daemon: %d tracks pending", pending)
+    except Exception:
+        log.warning("Audio analysis daemon: startup state check failed; continuing", exc_info=True)
 
     # Import analysis functions (loads Essentia/PANNs on first use)
     from crate.audio_analysis import analyze_batch, analyze_track
@@ -193,9 +196,12 @@ def bliss_daemon(config: dict):
 
     log.info("Bliss daemon starting...")
 
-    _reset_stale_claims("bliss_state")
-    pending = _get_pending_count("bliss_state")
-    log.info("Bliss daemon: %d tracks pending", pending)
+    try:
+        _reset_stale_claims("bliss_state")
+        pending = _get_pending_count("bliss_state")
+        log.info("Bliss daemon: %d tracks pending", pending)
+    except Exception:
+        log.warning("Bliss daemon: startup state check failed; continuing", exc_info=True)
 
     from crate.bliss import analyze_directory, analyze_file
 

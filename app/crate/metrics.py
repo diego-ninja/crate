@@ -1,6 +1,7 @@
 """Metrics collection and query.
 
-Hot path: record() stores samples in Redis hash buckets (minute granularity, 48h TTL).
+Hot path: record() stores samples in Redis hash buckets (minute granularity,
+24h TTL by default).
 Cold path: flush_to_postgres() rolls up into hourly/daily aggregates in PostgreSQL.
 Query: read from Redis (recent) or PostgreSQL (historical).
 """
@@ -9,6 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
+import math
+import os
 import time
 from datetime import datetime, timezone
 from queue import Empty, Full, Queue
@@ -17,8 +21,11 @@ from threading import Lock, Thread
 log = logging.getLogger(__name__)
 
 _REDIS_PREFIX = "crate:metrics"
-_BUCKET_TTL = 48 * 3600  # 48 hours
+_DEFAULT_BUCKET_TTL_SECONDS = 24 * 3600
+_MIN_BUCKET_TTL_SECONDS = 3600
+_MAX_BUCKET_TTL_SECONDS = 7 * 86400
 _ASYNC_QUEUE_MAX = 10_000
+_ROUTE_LATENCY_METRIC = "api.route.latency"
 _async_metric_queue: Queue[tuple[str, float, dict | None]] = Queue(maxsize=_ASYNC_QUEUE_MAX)
 _async_worker_lock = Lock()
 _async_worker_started = False
@@ -34,6 +41,55 @@ def _bucket_key(name: str, minute_ts: int) -> str:
     return f"{_REDIS_PREFIX}:{name}:{minute_ts}"
 
 
+def _route_bucket_key(minute_ts: int) -> str:
+    return f"{_REDIS_PREFIX}:routes:{minute_ts}"
+
+
+def _route_metric_key(route_id: str, minute_ts: int) -> str:
+    return f"{_REDIS_PREFIX}:route:{route_id}:{minute_ts}"
+
+
+def _route_sample_limit() -> int:
+    raw = os.environ.get("CRATE_ROUTE_METRIC_SAMPLE_LIMIT", "1000")
+    try:
+        return max(50, min(10_000, int(raw)))
+    except ValueError:
+        return 1000
+
+
+def _bucket_ttl_seconds() -> int:
+    raw = os.environ.get("CRATE_METRICS_REDIS_TTL_SECONDS")
+    if raw is None or raw == "":
+        return _DEFAULT_BUCKET_TTL_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_BUCKET_TTL_SECONDS
+    return max(_MIN_BUCKET_TTL_SECONDS, min(_MAX_BUCKET_TTL_SECONDS, value))
+
+
+def _decode_mapping(data: dict) -> dict[str, str]:
+    decoded: dict[str, str] = {}
+    for key, value in data.items():
+        k = key.decode() if isinstance(key, bytes) else str(key)
+        v = value.decode() if isinstance(value, bytes) else str(value)
+        decoded[k] = v
+    return decoded
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(len(ordered) * percentile) - 1))
+    return round(ordered[index], 2)
+
+
+def _route_id(target: str, method: str, path: str) -> str:
+    payload = f"{target}\0{method}\0{path}".encode("utf-8", errors="replace")
+    return hashlib.sha1(payload).hexdigest()[:16]
+
+
 # ── Recording ────────────────────────────────────────────────────
 
 def _record_sync(name: str, value: float, tags: dict | None = None):
@@ -46,6 +102,7 @@ def _record_sync(name: str, value: float, tags: dict | None = None):
 
         bucket_ts = _minute_bucket()
         key = _bucket_key(name, bucket_ts)
+        ttl_seconds = _bucket_ttl_seconds()
 
         pipe = r.pipeline(transaction=False)
         pipe.hincrby(key, "count", 1)
@@ -67,16 +124,80 @@ def _record_sync(name: str, value: float, tags: dict | None = None):
             """,
             1, key, str(value),
         )
-        pipe.expire(key, _BUCKET_TTL)
+        pipe.expire(key, ttl_seconds)
 
         # Store tags as JSON if present (once per key)
         if tags:
             tags_key = f"{key}:tags"
-            pipe.set(tags_key, json.dumps(tags, separators=(",", ":")), ex=_BUCKET_TTL, nx=True)
+            pipe.set(tags_key, json.dumps(tags, separators=(",", ":")), ex=ttl_seconds, nx=True)
 
         pipe.execute()
     except Exception:
         # Metrics must never break the hot path
+        pass
+
+
+def _record_route_latency_sync(value: float, tags: dict | None = None):
+    """Record per-route latency samples for recent p95/p99 reporting."""
+    if not tags:
+        return
+    method = str(tags.get("method") or "GET")
+    path = str(tags.get("path") or "")
+    target = str(tags.get("target") or "api")
+    status = str(tags.get("status") or "0")
+    if not path:
+        return
+
+    try:
+        from crate.db.cache_runtime import _get_redis
+        r = _get_redis()
+        if r is None:
+            return
+
+        bucket_ts = _minute_bucket()
+        ttl_seconds = _bucket_ttl_seconds()
+        route_id = _route_id(target, method, path)
+        bucket_key = _route_bucket_key(bucket_ts)
+        key = _route_metric_key(route_id, bucket_ts)
+        samples_key = f"{key}:samples"
+        status_family = f"status_{status[:1]}xx" if status and status[0].isdigit() else "status_other"
+
+        pipe = r.pipeline(transaction=False)
+        pipe.sadd(bucket_key, route_id)
+        pipe.expire(bucket_key, ttl_seconds)
+        pipe.hset(
+            key,
+            mapping={
+                "route_id": route_id,
+                "target": target,
+                "method": method,
+                "path": path,
+            },
+        )
+        pipe.hincrby(key, "count", 1)
+        pipe.hincrbyfloat(key, "sum", value)
+        pipe.hincrby(key, status_family, 1)
+        pipe.eval(
+            """
+            local key = KEYS[1]
+            local val = tonumber(ARGV[1])
+            local cur_min = tonumber(redis.call('hget', key, 'min'))
+            local cur_max = tonumber(redis.call('hget', key, 'max'))
+            if cur_min == nil or val < cur_min then
+                redis.call('hset', key, 'min', val)
+            end
+            if cur_max == nil or val > cur_max then
+                redis.call('hset', key, 'max', val)
+            end
+            """,
+            1, key, str(value),
+        )
+        pipe.rpush(samples_key, round(float(value), 3))
+        pipe.ltrim(samples_key, -_route_sample_limit(), -1)
+        pipe.expire(key, ttl_seconds)
+        pipe.expire(samples_key, ttl_seconds)
+        pipe.execute()
+    except Exception:
         pass
 
 
@@ -87,7 +208,10 @@ def _async_record_loop():
         except Empty:
             continue
         try:
-            _record_sync(name, value, tags)
+            if name == _ROUTE_LATENCY_METRIC:
+                _record_route_latency_sync(value, tags)
+            else:
+                _record_sync(name, value, tags)
         finally:
             _async_metric_queue.task_done()
 
@@ -132,6 +256,26 @@ def record_later(name: str, value: float, tags: dict | None = None):
 
 def record_counter_later(name: str, tags: dict | None = None):
     record_later(name, 1.0, tags)
+
+
+def record_route_latency_later(
+    *,
+    method: str,
+    path: str,
+    status: str | int,
+    elapsed_ms: float,
+    target: str = "api",
+):
+    record_later(
+        _ROUTE_LATENCY_METRIC,
+        elapsed_ms,
+        {
+            "method": method,
+            "path": path,
+            "status": str(status),
+            "target": target,
+        },
+    )
 
 
 # ── Querying ─────────────────────────────────────────────────────
@@ -314,6 +458,116 @@ def query_summaries(specs: dict[str, tuple[str, int]]) -> dict[str, dict]:
     except Exception:
         log.debug("Failed to query batched metric summaries", exc_info=True)
         return defaults
+
+
+def query_route_latency(minutes: int = 15, limit: int = 20, target: str | None = None) -> list[dict]:
+    """Aggregate recent per-route latency with p95/p99 from sampled Redis data."""
+    minutes = max(1, min(240, int(minutes)))
+    limit = max(1, min(100, int(limit)))
+    try:
+        from crate.db.cache_runtime import _get_redis
+
+        r = _get_redis()
+        if r is None:
+            return []
+
+        now_bucket = _minute_bucket()
+        route_ids: set[str] = set()
+        minute_buckets = [now_bucket - offset * 60 for offset in range(minutes)]
+
+        pipe = r.pipeline(transaction=False)
+        for bucket_ts in minute_buckets:
+            pipe.smembers(_route_bucket_key(bucket_ts))
+        for route_set in pipe.execute():
+            for raw_id in route_set or []:
+                route_ids.add(raw_id.decode() if isinstance(raw_id, bytes) else str(raw_id))
+
+        if not route_ids:
+            return []
+
+        pipe = r.pipeline(transaction=False)
+        lookup: list[tuple[str, int]] = []
+        for route_id in sorted(route_ids):
+            for bucket_ts in minute_buckets:
+                key = _route_metric_key(route_id, bucket_ts)
+                pipe.hgetall(key)
+                pipe.lrange(f"{key}:samples", 0, -1)
+                lookup.append((route_id, bucket_ts))
+
+        raw = pipe.execute()
+        aggregates: dict[str, dict] = {}
+        for index, (route_id, _bucket_ts) in enumerate(lookup):
+            data = raw[index * 2] if index * 2 < len(raw) else {}
+            samples_raw = raw[index * 2 + 1] if index * 2 + 1 < len(raw) else []
+            if not data:
+                continue
+            row = _decode_mapping(data)
+            if target and row.get("target") != target:
+                continue
+
+            current = aggregates.setdefault(
+                route_id,
+                {
+                    "route_id": route_id,
+                    "target": row.get("target") or "api",
+                    "method": row.get("method") or "GET",
+                    "path": row.get("path") or "",
+                    "count": 0,
+                    "sum": 0.0,
+                    "min": None,
+                    "max": None,
+                    "status_2xx": 0,
+                    "status_3xx": 0,
+                    "status_4xx": 0,
+                    "status_5xx": 0,
+                    "status_other": 0,
+                    "samples": [],
+                },
+            )
+            count = int(row.get("count") or 0)
+            total = float(row.get("sum") or 0)
+            current["count"] += count
+            current["sum"] += total
+
+            if count > 0:
+                min_value = float(row.get("min") or 0)
+                max_value = float(row.get("max") or 0)
+                current["min"] = min_value if current["min"] is None else min(float(current["min"]), min_value)
+                current["max"] = max_value if current["max"] is None else max(float(current["max"]), max_value)
+
+            for family in ("status_2xx", "status_3xx", "status_4xx", "status_5xx", "status_other"):
+                current[family] += int(row.get(family) or 0)
+
+            for raw_sample in samples_raw or []:
+                try:
+                    current["samples"].append(float(raw_sample.decode() if isinstance(raw_sample, bytes) else raw_sample))
+                except (TypeError, ValueError):
+                    continue
+
+        results = []
+        for row in aggregates.values():
+            count = int(row["count"])
+            if count <= 0:
+                continue
+            samples = row.pop("samples")
+            errors = int(row["status_5xx"])
+            results.append(
+                {
+                    **row,
+                    "avg": round(float(row["sum"]) / count, 2),
+                    "min": round(float(row["min"] or 0), 2),
+                    "max": round(float(row["max"] or 0), 2),
+                    "p95": _percentile(samples, 0.95),
+                    "p99": _percentile(samples, 0.99),
+                    "error_rate": round(errors / count, 4),
+                }
+            )
+
+        results.sort(key=lambda row: (float(row.get("p95") or 0), int(row.get("count") or 0)), reverse=True)
+        return results[:limit]
+    except Exception:
+        log.debug("Failed to query route latency metrics", exc_info=True)
+        return []
 
 
 # ── Flush to PostgreSQL ──────────────────────────────────────────

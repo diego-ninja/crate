@@ -28,7 +28,8 @@ from crate.db.tasks import (
     create_task, create_task_dedup, update_task, get_task, list_tasks, claim_next_task,
     list_child_tasks, heartbeat_task, cleanup_zombie_tasks, cleanup_orphaned_tasks,
     save_scan_result, get_latest_scan, check_siblings_complete,
-    delete_tasks_by_status, delete_old_finished_tasks,
+    delete_tasks_by_status, delete_old_finished_tasks, redispatch_stale_pending_tasks,
+    start_task, fail_or_retry_task,
 )
 
 # Cache & Settings
@@ -129,7 +130,7 @@ from crate.db.audit import (
 from crate.db.health import (
     upsert_health_issue, get_open_issues, get_issue_counts,
     resolve_issue, resolve_issues_by_type, dismiss_issue,
-    resolve_stale_issues, cleanup_old_resolved,
+    resolve_stale_issues, resolve_stale_artist_issues, cleanup_old_resolved,
     get_artist_issues, get_artist_issue_count, get_all_artist_issue_counts,
 )
 
@@ -152,10 +153,11 @@ from crate.db.bliss_vectors import (
 )
 
 from crate.db.jam import (
-    create_jam_room, get_jam_room, get_jam_room_members, get_jam_room_member,
+    create_jam_room, delete_jam_room, get_jam_room, get_jam_room_members, get_jam_room_member,
     is_jam_room_member, upsert_jam_room_member, touch_jam_room_member,
     append_jam_room_event, list_jam_room_events, update_jam_room_state,
-    create_jam_room_invite, consume_jam_room_invite,
+    create_jam_room_invite, consume_jam_room_invite, list_jam_rooms_for_user,
+    reactivate_permanent_jam_room, update_jam_room_settings,
 )
 
 # Management

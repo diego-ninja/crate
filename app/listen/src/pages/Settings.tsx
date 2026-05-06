@@ -1,10 +1,12 @@
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getMobileEnhancedAudioPreference,
   getPlaybackDeliveryPolicyPreference,
   getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
+  setMobileEnhancedAudioPreference,
   setPlaybackDeliveryPolicyPreference,
   setInfinitePlaybackPreference,
   setCrossfadeDurationPreference,
@@ -22,6 +24,7 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { ServersSection } from "@/components/settings/ServersSection";
 import { api } from "@/lib/api";
+import { isMobileAudioRuntime } from "@/lib/mobile-audio-mode";
 import {
   subscribeSleepTimer,
   startSleepTimer,
@@ -193,6 +196,7 @@ export function Settings() {
     getSmartPlaylistSuggestionsCadencePreference,
   );
   const [playbackDeliveryPolicy, setPlaybackDeliveryPolicy] = useState(getPlaybackDeliveryPolicyPreference);
+  const [mobileEnhancedAudioEnabled, setMobileEnhancedAudioEnabled] = useState(getMobileEnhancedAudioPreference);
   const publicProfilePath = useMemo(() => {
     return user?.username ? `/users/${user.username}` : "/people";
   }, [user?.username]);
@@ -243,6 +247,22 @@ export function Settings() {
             })}
           </div>
         </div>
+        {isMobileAudioRuntime ? (
+          <ToggleRow
+            label="Enhanced mobile audio (EQ)"
+            description="Off by default on iOS/Android for steadier background playback. Turn it on to enable EQ through WebAudio; Safari/PWA background playback can become less reliable. Restart Listen after changing this."
+            checked={mobileEnhancedAudioEnabled}
+            onChange={(value) => {
+              setMobileEnhancedAudioEnabled(value);
+              setMobileEnhancedAudioPreference(value);
+              toast.info(
+                value
+                  ? "Enhanced mobile audio will be enabled after restarting Listen."
+                  : "Stable mobile playback will be restored after restarting Listen.",
+              );
+            }}
+          />
+        ) : null}
         <ToggleRow
           label="Infinite playback"
           description="When an album or playlist ends, keep the session going with context-aware continuation."

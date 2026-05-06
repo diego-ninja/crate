@@ -12,6 +12,7 @@ from crate.db.queries.browse_artist_genres import (
     get_artist_genre_profile,
     get_artist_genres_by_name,
     get_artist_list_genres,
+    get_artist_list_genres_map,
     get_artist_top_genres,
 )
 from crate.db.queries.browse_artist_listing import (
@@ -38,6 +39,7 @@ __all__ = [
     "get_artist_genre_profile",
     "get_artist_genres_by_name",
     "get_artist_list_genres",
+    "get_artist_list_genres_map",
     "get_artist_refs_by_names_full",
     "get_artist_setlist_tracks",
     "get_artist_top_genres",

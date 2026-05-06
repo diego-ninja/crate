@@ -28,13 +28,11 @@ def get_insights_popularity(limit: int = 20) -> list[dict]:
                     la.popularity,
                     la.popularity_score,
                     la.listeners,
-                    COUNT(DISTINCT alb.id) AS albums
+                    COALESCE(la.album_count, 0) AS albums
                 FROM library_artists la
-                LEFT JOIN library_albums alb ON alb.artist = la.name
                 WHERE (la.popularity_score IS NOT NULL AND la.popularity_score > 0)
                    OR (la.popularity IS NOT NULL AND la.popularity > 0)
                    OR (la.listeners IS NOT NULL AND la.listeners > 0)
-                GROUP BY la.id, la.name, la.popularity, la.popularity_score, la.listeners
                 ORDER BY la.popularity_score DESC NULLS LAST, la.popularity DESC NULLS LAST, la.listeners DESC NULLS LAST
                 LIMIT :limit
                 """
@@ -54,13 +52,10 @@ def get_insights_artist_depth(limit: int = 120) -> list[dict]:
                     la.popularity,
                     la.popularity_score,
                     la.listeners,
-                    COUNT(DISTINCT alb.id) AS albums,
-                    COUNT(DISTINCT t.id) AS tracks
+                    COALESCE(la.album_count, 0) AS albums,
+                    COALESCE(la.track_count, 0) AS tracks
                 FROM library_artists la
-                LEFT JOIN library_albums alb ON alb.artist = la.name
-                LEFT JOIN library_tracks t ON t.album_id = alb.id
-                GROUP BY la.id, la.name, la.popularity, la.popularity_score, la.listeners
-                HAVING COUNT(DISTINCT alb.id) > 0
+                WHERE COALESCE(la.album_count, 0) > 0
                 ORDER BY la.popularity_score DESC NULLS LAST, la.popularity DESC NULLS LAST, la.listeners DESC NULLS LAST
                 LIMIT :limit
                 """

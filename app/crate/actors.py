@@ -52,6 +52,9 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "fetch_album_cover":    ("fast",    0, 120, 1),
     "upload_image":         ("default", 0, 60, 0),
     "library_upload":       ("default", 0, 7200, 1),
+    "import_queue_item":    ("default", 0, 3600, 0),
+    "import_queue_all":     ("default", 0, 14400, 0),
+    "import_queue_remove":  ("default", 0, 300, 0),
     "reset_enrichment":     ("fast",    1, 120, 0),
     "refresh_user_listening_stats": ("fast", 1, 300, 0),
 
@@ -120,7 +123,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
 # DB-heavy tasks — only one at a time via Redis mutex
 DB_HEAVY_TASK_TYPES = frozenset({
     "library_sync", "library_pipeline", "wipe_library",
-    "rebuild_library", "repair", "enrich_mbids",
+    "rebuild_library", "repair",
     "migrate_storage_v2", "fix_artist",
 })
 
@@ -128,9 +131,9 @@ DB_HEAVY_TASK_TYPES = frozenset({
 # ── Heartbeat ─────────────────────────────────────────────────────
 
 def _heartbeat_loop(task_id: str, stop_event: threading.Event):
-    """Background thread: updates heartbeat_at every 30s while task runs."""
+    """Background thread: updates heartbeat_at while task runs."""
     from crate.db.repositories.tasks import heartbeat_task
-    while not stop_event.wait(30):
+    while not stop_event.wait(15):
         try:
             heartbeat_task(task_id)
         except Exception:
@@ -421,7 +424,7 @@ def _execute_task(task_type: str, task_id: str):
     """Generic wrapper: read PG task → run handler → update PG → check memory."""
     from crate.config import load_config
     from crate.db.queries.tasks import get_task
-    from crate.db.repositories.tasks import update_task
+    from crate.db.repositories.tasks import fail_or_retry_task, start_task, update_task
     from crate.resource_governor import record_decision, should_defer_task
     from crate.worker import TASK_HANDLERS, _is_cancelled
 
@@ -497,11 +500,27 @@ def _execute_task(task_type: str, task_id: str):
                 actor.send_with_options(args=(task_id,), delay=30_000)
             return
 
-    # Mark running + start heartbeat
+    # Atomically claim the DB task row.  Dramatiq can redeliver a message or
+    # receive a redispatch for a stale pending task; only the first worker that
+    # flips pending -> running is allowed to execute the handler.
+    worker_id = f"{os.uname().nodename}:{os.getpid()}:{threading.get_ident()}"
+    started = start_task(task_id, worker_id=worker_id)
+    if not started:
+        fresh = get_task(task_id)
+        if fresh and fresh.get("status") in {"completed", "failed", "cancelled", "running", "delegated", "completing"}:
+            log.info("Task %s (%s) is already %s; skipping duplicate message", task_id, task_type, fresh.get("status"))
+        else:
+            log.warning("Task %s (%s) could not be started; skipping", task_id, task_type)
+        if is_db_heavy:
+            _release_db_heavy_lock(task_id)
+        if is_download:
+            _release_download_slot(task_id)
+        return
+
+    # Start heartbeat
     import time as _time
     _task_start = _time.monotonic()
 
-    update_task(task_id, status="running")
     hb_stop = threading.Event()
     hb_thread = threading.Thread(target=_heartbeat_loop, args=(task_id, hb_stop), daemon=True)
     hb_thread.start()
@@ -528,6 +547,26 @@ def _execute_task(task_type: str, task_id: str):
             # Set status to 'delegated' so zombie cleanup doesn't kill it.
             update_task(task_id, status="delegated", result={"chunks": result.get("chunks", 0), "artists": result.get("artists", 0)})
             log.info("Task %s (%s) delegated to %d chunks", task_id, task_type, result.get("chunks", 0))
+        elif isinstance(result, dict) and result.get("error"):
+            error = str(result.get("error") or "Task failed")[:500]
+            update_task(task_id, status="failed", result=result, error=error)
+            log.warning("Task %s (%s) failed: %s", task_id, task_type, error)
+            _try_fan_in_parent(task, task_type, task_id)
+            try:
+                from crate.metrics import record as _record
+                _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "failed"})
+            except Exception:
+                pass
+            try:
+                from crate.telegram import notify_task_failed
+                notify_task_failed(task_type, task_id, error[:300])
+            except Exception:
+                pass
+            try:
+                from crate.db.events import _publish_to_redis
+                _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "failed", "task_type": task_type, "error": error[:200]}, "")
+            except Exception:
+                pass
         else:
             update_task(task_id, status="completed", result=result or {})
             log.info("Task %s (%s) completed", task_id, task_type)
@@ -547,14 +586,7 @@ def _execute_task(task_type: str, task_id: str):
             except Exception:
                 pass
 
-            # Fan-in: if this task has a parent, check if all siblings are done
-            parent_id = task.get("parent_task_id")
-            if parent_id:
-                try:
-                    from crate.worker_handlers.analysis import _try_complete_parent
-                    _try_complete_parent(parent_id, task_type)
-                except Exception:
-                    log.warning("Fan-in check failed for parent %s", parent_id, exc_info=True)
+            _try_fan_in_parent(task, task_type, task_id)
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)
@@ -564,7 +596,9 @@ def _execute_task(task_type: str, task_id: str):
         except Exception:
             pass
         try:
-            update_task(task_id, status="failed", error=str(e)[:500])
+            terminal_status = fail_or_retry_task(task_id, str(e)[:500])
+            if terminal_status == "failed":
+                _try_fan_in_parent(task, task_type, task_id)
         except Exception:
             log.error("Could not mark task %s as failed", task_id)
         try:
@@ -579,6 +613,28 @@ def _execute_task(task_type: str, task_id: str):
             pass
         raise  # let dramatiq handle retry logic
 
+    except BaseException as e:
+        if e.__class__.__name__ != "TimeLimitExceeded":
+            raise
+        log.exception("Task %s (%s) exceeded time limit", task_id, task_type)
+        try:
+            from crate.metrics import record as _record
+            _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "timeout"})
+        except Exception:
+            pass
+        try:
+            terminal_status = fail_or_retry_task(task_id, f"Task exceeded time limit: {task_type}")
+            if terminal_status == "failed":
+                _try_fan_in_parent(task, task_type, task_id)
+        except Exception:
+            log.error("Could not mark timed-out task %s as failed", task_id)
+        try:
+            from crate.db.events import _publish_to_redis
+            _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "failed", "task_type": task_type, "error": "time limit exceeded"}, "")
+        except Exception:
+            pass
+        raise
+
     finally:
         hb_stop.set()
         hb_thread.join(timeout=2)
@@ -587,6 +643,17 @@ def _execute_task(task_type: str, task_id: str):
         if is_download:
             _release_download_slot(task_id)
         _check_memory()
+
+
+def _try_fan_in_parent(task: dict, task_type: str, task_id: str) -> None:
+    parent_id = task.get("parent_task_id")
+    if not parent_id:
+        return
+    try:
+        from crate.worker_handlers.analysis import _try_complete_parent
+        _try_complete_parent(parent_id, task_type)
+    except Exception:
+        log.warning("Fan-in check failed for parent %s after child %s", parent_id, task_id, exc_info=True)
 
 
 # ── Dynamic actor registration ────────────────────────────────────
@@ -606,12 +673,13 @@ def _make_actor_fn(task_type: str):
 
 def _register_actors():
     """Register all task types as dramatiq actors."""
-    for task_type, (queue, _priority, timeout_sec, max_retries) in TASK_POOL_CONFIG.items():
+    for task_type, (queue, priority, timeout_sec, max_retries) in TASK_POOL_CONFIG.items():
         fn = _make_actor_fn(task_type)
         actor = dramatiq.actor(
             fn,
             actor_name=task_type,
             queue_name=queue,
+            priority=priority,
             max_retries=max_retries,
             time_limit=timeout_sec * 1000,
             min_backoff=5_000,

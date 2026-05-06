@@ -175,7 +175,15 @@ def cleanup_ended_jam_rooms(max_age_days: int = 30, *, session=None) -> int:
             return cleanup_ended_jam_rooms(max_age_days, session=s)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
     rows = session.execute(
-        text("SELECT id FROM jam_rooms WHERE status = 'ended' AND ended_at < :cutoff"),
+        text(
+            """
+            SELECT id
+            FROM jam_rooms
+            WHERE status = 'ended'
+              AND ended_at < :cutoff
+              AND COALESCE(is_permanent, false) = false
+            """
+        ),
         {"cutoff": cutoff},
     ).mappings().all()
     room_ids = [row["id"] for row in rows]

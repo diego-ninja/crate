@@ -13,6 +13,7 @@ from starlette.responses import StreamingResponse
 from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.api.schemas.operations import AdminLogsSnapshotResponse
 from crate.db.admin_logs_surface import LOGS_SURFACE_STREAM_CHANNEL, get_cached_logs_surface
 
@@ -64,11 +65,14 @@ _SUMMARY_METRICS = {
     "worker_resource_load_ratio": ("worker.resource.load_ratio", 60),
     "worker_resource_iowait_percent": ("worker.resource.iowait_percent", 60),
     "worker_resource_swap_used_percent": ("worker.resource.swap_used_percent", 60),
+    "media_worker_completed": ("media_worker.package.completed", 60),
+    "media_worker_failed": ("media_worker.package.failed", 60),
+    "media_worker_duration": ("media_worker.package.duration", 60),
+    "media_worker_bytes": ("media_worker.package.bytes", 60),
+    "media_worker_admission_denied": ("media_worker.admission.denied", 60),
+    "media_worker_cache_pruned": ("media_worker.cache.pruned", 60),
+    "media_worker_cache_bytes_removed": ("media_worker.cache.bytes_removed", 60),
 }
-
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
 
 def _build_metrics_summary() -> dict:
     from crate.metrics import query_summaries
@@ -188,6 +192,14 @@ def _build_metrics_system() -> dict:
     except Exception:
         resource_pressure = {}
 
+    media_worker = {}
+    try:
+        from crate.media_worker_progress import get_media_worker_runtime
+
+        media_worker = get_media_worker_runtime(limit=5)
+    except Exception:
+        media_worker = {}
+
     return {
         "disk": disk,
         "db_pool": db_pool,
@@ -195,6 +207,7 @@ def _build_metrics_system() -> dict:
         "analysis": analysis,
         "load": load,
         "resource_pressure": resource_pressure,
+        "media_worker": media_worker,
     }
 
 
@@ -240,7 +253,7 @@ def _build_playback_delivery() -> dict:
 
 def _build_metrics_dashboard(period: str, minutes: int) -> dict:
     from crate.db.cache_store import get_cache, set_cache
-    from crate.metrics import query_historical, query_recent, query_recent_rolled
+    from crate.metrics import query_historical, query_recent, query_recent_rolled, query_route_latency
 
     cache_key = f"admin:metrics:dashboard:{period}:{minutes}"
     cached = get_cache(cache_key, max_age_seconds=10)
@@ -261,6 +274,7 @@ def _build_metrics_dashboard(period: str, minutes: int) -> dict:
         "system": _build_metrics_system(),
         "tasks": _list_running_tasks(limit=10),
         "playback_delivery": _build_playback_delivery(),
+        "route_latency": query_route_latency(minutes=min(minutes, 60), limit=20),
         "timeseries": timeseries,
     }
     set_cache(cache_key, payload, ttl=10)
@@ -297,6 +311,24 @@ def metrics_timeseries(
         }
 
     return {"name": name, "period": period, "data": query_historical(metric_name, period, start, end)}
+
+
+@router.get("/metrics/routes", responses=AUTH_ERROR_RESPONSES, summary="Recent API route latency")
+def metrics_routes(
+    request: Request,
+    minutes: int = Query(15, ge=1, le=240, description="Recent minutes to aggregate"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum routes to return"),
+    target: str | None = Query(None, description="Optional target filter, e.g. api"),
+):
+    _require_admin(request)
+    from crate.metrics import query_route_latency
+
+    return {
+        "minutes": minutes,
+        "limit": limit,
+        "target": target,
+        "routes": query_route_latency(minutes=minutes, limit=limit, target=target),
+    }
 
 
 @router.get("/metrics/dashboard", responses=AUTH_ERROR_RESPONSES, summary="Bundled system health payload")
@@ -392,19 +424,14 @@ def admin_logs_snapshot(request: Request, fresh: bool = False, limit: int = Quer
 
 async def _admin_logs_stream(limit: int) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
-    redis = None
     pubsub = None
     try:
-        import redis.asyncio as aioredis
-
-        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(LOGS_SURFACE_STREAM_CHANNEL)
+        pubsub = await open_pubsub(LOGS_SURFACE_STREAM_CHANNEL)
         heartbeat_counter = 0
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if message and message.get("type") == "message":
-                yield f"data: {json_dumps(get_cached_logs_surface(limit=limit, fresh=True))}\n\n"
+                yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
                 heartbeat_counter = 0
                 continue
             heartbeat_counter += 1
@@ -417,9 +444,7 @@ async def _admin_logs_stream(limit: int) -> AsyncIterator[str]:
             await asyncio.sleep(15)
     finally:
         if pubsub is not None:
-            await pubsub.unsubscribe(LOGS_SURFACE_STREAM_CHANNEL)
-        if redis is not None:
-            await redis.aclose()
+            await close_pubsub(pubsub, LOGS_SURFACE_STREAM_CHANNEL)
 
 
 @router.get(

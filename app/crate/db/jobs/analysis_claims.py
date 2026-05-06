@@ -106,28 +106,41 @@ def release_claims(track_ids: list[int], state_column: str) -> int:
 
 
 def reset_stale_claims(state_column: str) -> int:
-    """On startup, reset any tracks stuck in analyzing from a previous crash."""
+    """On startup, reset processing rows stuck in analyzing from a previous crash.
+
+    The shadow ``track_processing_state`` row is the authoritative claim state.
+    Avoid scanning ``library_tracks`` here: on large libraries that legacy state
+    update can hit statement timeouts before the daemon even starts.
+    """
     col = validate_state_column(state_column)
+    pipeline = pipeline_name_for_state_column(col)
     with transaction_scope() as session:
-        result = session.execute(
-            text(f"UPDATE library_tracks SET {col} = 'pending' WHERE {col} = 'analyzing'")
-        )
-        session.execute(
+        rows = session.execute(
             text(
-                """
-                UPDATE track_processing_state
-                SET state = 'pending',
-                    claimed_by = NULL,
-                    claimed_at = NULL,
-                    updated_at = NOW()
-                WHERE pipeline = :pipeline AND state = 'analyzing'
+                f"""
+                WITH reset AS (
+                    UPDATE track_processing_state
+                    SET state = 'pending',
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        updated_at = NOW()
+                    WHERE pipeline = :pipeline
+                      AND state = 'analyzing'
+                    RETURNING track_id
+                )
+                UPDATE library_tracks lt
+                SET {col} = 'pending'
+                FROM reset
+                WHERE lt.id = reset.track_id
+                RETURNING reset.track_id
                 """
             ),
-            {"pipeline": pipeline_name_for_state_column(col)},
-        )
-        if result.rowcount:
+            {"pipeline": pipeline},
+        ).mappings().all()
+        reset_count = len(rows)
+        if reset_count:
             mark_ops_snapshot_dirty(session)
-        return int(result.rowcount or 0)
+        return reset_count
 
 
 def get_pending_count(state_column: str) -> int:

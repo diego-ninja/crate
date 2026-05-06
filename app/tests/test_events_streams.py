@@ -74,16 +74,22 @@ def test_global_stream_pubsub_cleans_up_redis_connections(monkeypatch):
     assert live == "data: {\"tasks\": []}\n\n"
     assert fake_pubsub.subscribed == [events.REDIS_CHANNEL_GLOBAL]
     assert fake_pubsub.unsubscribed == [events.REDIS_CHANNEL_GLOBAL]
-    assert fake_redis.closed is True
+    assert fake_redis.closed is False
 
 
 def _install_fake_async_redis(monkeypatch, pubsub: _FakePubSub):
+    from crate.api import redis_sse
+
     fake_redis = _FakeRedis(pubsub)
     fake_asyncio_module = types.SimpleNamespace(from_url=lambda *_args, **_kwargs: fake_redis)
     fake_redis_package = types.ModuleType("redis")
     fake_redis_package.asyncio = fake_asyncio_module
     monkeypatch.setitem(sys.modules, "redis", fake_redis_package)
     monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio_module)
+    monkeypatch.setattr(redis_sse, "_redis_client", None)
+    monkeypatch.setattr(redis_sse, "_redis_pool", None)
+    monkeypatch.setattr(redis_sse, "_redis_module_marker", None)
+    monkeypatch.setattr(redis_sse, "_redis_url", None)
     return fake_redis
 
 
@@ -111,7 +117,7 @@ def test_ops_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
     assert fallback == "data: {\"fresh\": false}\n\n"
     assert fake_pubsub.subscribed == [admin_ops.snapshot_channel("ops", "dashboard")]
     assert fake_pubsub.unsubscribed == [admin_ops.snapshot_channel("ops", "dashboard")]
-    assert fake_redis.closed is True
+    assert fake_redis.closed is False
 
 
 def test_tasks_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
@@ -127,7 +133,7 @@ def test_tasks_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
     assert fallback == "data: {\"limit\": 25, \"fresh\": false}\n\n"
     assert fake_pubsub.subscribed == [tasks.TASKS_SURFACE_STREAM_CHANNEL]
     assert fake_pubsub.unsubscribed == [tasks.TASKS_SURFACE_STREAM_CHANNEL]
-    assert fake_redis.closed is True
+    assert fake_redis.closed is False
 
 
 def test_health_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
@@ -147,7 +153,7 @@ def test_health_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
     assert fallback == "data: {\"check_type\": \"tags\", \"limit\": 33, \"fresh\": false}\n\n"
     assert fake_pubsub.subscribed == [management.HEALTH_SURFACE_STREAM_CHANNEL]
     assert fake_pubsub.unsubscribed == [management.HEALTH_SURFACE_STREAM_CHANNEL]
-    assert fake_redis.closed is True
+    assert fake_redis.closed is False
 
 
 def test_admin_logs_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
@@ -163,4 +169,4 @@ def test_admin_logs_stream_cleans_up_redis_on_pubsub_error(monkeypatch):
     assert fallback == "data: {\"limit\": 40, \"fresh\": false}\n\n"
     assert fake_pubsub.subscribed == [admin_metrics.LOGS_SURFACE_STREAM_CHANNEL]
     assert fake_pubsub.unsubscribed == [admin_metrics.LOGS_SURFACE_STREAM_CHANNEL]
-    assert fake_redis.closed is True
+    assert fake_redis.closed is False

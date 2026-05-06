@@ -5,6 +5,7 @@ import logging
 import multiprocessing
 import os
 import signal
+import threading
 import time
 
 from crate.config import load_config
@@ -12,7 +13,7 @@ from crate.db.cache_settings import get_setting
 from crate.db.cache_store import set_cache
 from crate.db.core import init_db
 from crate.db.queries.tasks import list_tasks
-from crate.db.repositories.tasks import claim_next_task, update_task
+from crate.db.repositories.tasks import claim_next_task, fail_or_retry_task, heartbeat_task, update_task
 
 log = logging.getLogger(__name__)
 
@@ -344,7 +345,8 @@ def _worker_process_entry(config: dict, worker_id: int, max_tasks: int, max_rss_
 
         # Claim a task
         max_running = int(get_setting("max_workers", "5") or 5)
-        task = claim_next_task(max_running=max_running)
+        worker_db_id = f"orchestrator:{os.getpid()}:{worker_id}"
+        task = claim_next_task(max_running=max_running, worker_id=worker_db_id)
         if not task:
             time.sleep(2)
             continue
@@ -354,6 +356,9 @@ def _worker_process_entry(config: dict, worker_id: int, max_tasks: int, max_rss_
         params = task.get("params", {})
 
         wlog.info("Processing task %s (type=%s)", task_id, task_type)
+        hb_stop = threading.Event()
+        hb_thread = threading.Thread(target=_heartbeat_until_stopped, args=(task_id, hb_stop), daemon=True)
+        hb_thread.start()
 
         try:
             handler = TASK_HANDLERS.get(task_type)
@@ -364,16 +369,46 @@ def _worker_process_entry(config: dict, worker_id: int, max_tasks: int, max_rss_
             result = handler(task_id, params, config)
             if _is_cancelled(task_id):
                 wlog.info("Task %s was cancelled", task_id)
+            elif isinstance(result, dict) and result.get("error"):
+                error = str(result.get("error") or "Task failed")[:500]
+                update_task(task_id, status="failed", result=result, error=error)
+                _try_fan_in_parent(task, task_type, task_id)
+                wlog.warning("Task %s failed: %s", task_id, error)
             else:
                 update_task(task_id, status="completed", result=result or {})
+                _try_fan_in_parent(task, task_type, task_id)
                 wlog.info("Task %s completed", task_id)
             tasks_completed += 1
 
         except Exception as e:
             wlog.exception("Task %s failed", task_id)
             try:
-                update_task(task_id, status="failed", error=str(e)[:500])
+                terminal_status = fail_or_retry_task(task_id, str(e)[:500])
+                if terminal_status == "failed":
+                    _try_fan_in_parent(task, task_type, task_id)
             except Exception:
                 wlog.error("Could not mark task %s as failed", task_id)
+        finally:
+            hb_stop.set()
+            hb_thread.join(timeout=2)
 
     wlog.info("Exiting after %d tasks", tasks_completed)
+
+
+def _heartbeat_until_stopped(task_id: str, stop_event: threading.Event) -> None:
+    while not stop_event.wait(15):
+        try:
+            heartbeat_task(task_id)
+        except Exception:
+            pass
+
+
+def _try_fan_in_parent(task: dict, task_type: str, task_id: str) -> None:
+    parent_id = task.get("parent_task_id")
+    if not parent_id:
+        return
+    try:
+        from crate.worker_handlers.analysis import _try_complete_parent
+        _try_complete_parent(parent_id, task_type)
+    except Exception:
+        log.warning("Fan-in check failed for parent %s after child %s", parent_id, task_id, exc_info=True)

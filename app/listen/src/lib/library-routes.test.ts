@@ -1,8 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", () => ({
   getApiBase: vi.fn(() => "https://api.example.test"),
   getAuthToken: vi.fn(() => "listen-token"),
+  apiAssetUrl: vi.fn((path: string) => {
+    const url = /^https?:\/\//i.test(path)
+      ? path
+      : `https://api.example.test${path}`;
+    if (/[?&]token=/.test(url)) return url;
+    return `${url}${url.includes("?") ? "&" : "?"}token=listen-token`;
+  }),
 }));
 
 import {
@@ -26,28 +33,47 @@ import {
 } from "@/lib/library-routes";
 
 describe("library route asset helpers", () => {
+  afterEach(() => {
+    delete (window as Window & typeof globalThis & {
+      __crateResolveApiAssetUrl?: (path: string) => string;
+    }).__crateResolveApiAssetUrl;
+  });
+
   it("appends query options before the auth token for album covers", () => {
     const url = albumCoverApiUrl({ albumId: 42 }, { size: 256 });
 
-    expect(url).toBe("https://api.example.test/api/albums/42/cover?size=256&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/albums/42/cover?size=256&format=webp&token=listen-token");
+  });
+
+  it("does not double-prefix URLs already resolved by the shared asset resolver", () => {
+    (window as Window & typeof globalThis & {
+      __crateResolveApiAssetUrl?: (path: string) => string;
+    }).__crateResolveApiAssetUrl = (path: string) => {
+      const url = `https://api.example.test${path}`;
+      return `${url}${url.includes("?") ? "&" : "?"}token=listen-token`;
+    };
+
+    const url = albumCoverApiUrl({ albumId: 42 }, { size: 256 });
+
+    expect(url).toBe("https://api.example.test/api/albums/42/cover?size=256&format=webp&token=listen-token");
   });
 
   it("preserves multiple asset query params when adding the auth token", () => {
     const url = artistBackgroundApiUrl({ artistId: 7 }, { size: 1280, random: true });
 
-    expect(url).toBe("https://api.example.test/api/artists/7/background?size=1280&random=1&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/artists/7/background?size=1280&random=1&format=webp&token=listen-token");
   });
 
   it("builds sized artist photo URLs for small listen surfaces", () => {
     const url = artistPhotoApiUrl({ artistId: 9 }, { size: 128 });
 
-    expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&format=webp&token=listen-token");
   });
 
   it("falls back to entity UID artist assets when numeric ids are unavailable", () => {
     const url = artistPhotoApiUrl({ artistEntityUid: "artist-entity-9" }, { size: 128 });
 
-    expect(url).toBe("https://api.example.test/api/artists/by-entity/artist-entity-9/photo?size=128&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/artists/by-entity/artist-entity-9/photo?size=128&format=webp&token=listen-token");
   });
 
   it("adds a cache-busting artist asset version after invalidation", () => {
@@ -55,7 +81,7 @@ describe("library route asset helpers", () => {
 
     const url = artistPhotoApiUrl({ artistId: 9 }, { size: 128 });
 
-    expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&v=artwork-2&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&v=artwork-2&format=webp&token=listen-token");
   });
 
   it("prefers the runtime invalidation version over a stale explicit asset version", () => {
@@ -63,7 +89,7 @@ describe("library route asset helpers", () => {
 
     const url = artistBackgroundApiUrl({ artistId: 11 }, { size: 1280, version: "stale-db-version" });
 
-    expect(url).toBe("https://api.example.test/api/artists/11/background?size=1280&v=artwork-live&token=listen-token");
+    expect(url).toBe("https://api.example.test/api/artists/11/background?size=1280&v=artwork-live&format=webp&token=listen-token");
   });
 
   it("preserves the artist slug as a backend fallback for deep links", () => {
@@ -118,7 +144,7 @@ describe("library route asset helpers", () => {
     const cover = albumCoverApiUrl({ albumEntityUid: "album-entity-42" }, { size: 256 });
 
     expect(path).toBe("/api/albums/by-entity/album-entity-42");
-    expect(cover).toBe("https://api.example.test/api/albums/by-entity/album-entity-42/cover?size=256&token=listen-token");
+    expect(cover).toBe("https://api.example.test/api/albums/by-entity/album-entity-42/cover?size=256&format=webp&token=listen-token");
   });
 
   it("builds canonical track routes preferring entity_uid", () => {

@@ -218,6 +218,34 @@ describe("getEffectiveCrossfadeSeconds", () => {
     ).toBe(ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS);
   });
 
+  it("uses the same short mask for iOS/Safari HTML5 playback", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(
+        ALBUM_TRACK_A,
+        ALBUM_TRACK_B,
+        ALBUM_SOURCE,
+        false,
+        6,
+        true,
+        { html5OnlyPlayback: true },
+      ),
+    ).toBe(ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS);
+  });
+
+  it("keeps true gapless album playback when enhanced mobile audio is enabled", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(
+        ALBUM_TRACK_A,
+        ALBUM_TRACK_B,
+        ALBUM_SOURCE,
+        false,
+        6,
+        true,
+        { androidNative: true, mobileEnhancedAudio: true },
+      ),
+    ).toBe(0);
+  });
+
   it("uses the context fallback for album playback when shuffle is on and analysis is missing", () => {
     expect(
       getEffectiveCrossfadeSeconds(ALBUM_TRACK_A, ALBUM_TRACK_B, ALBUM_SOURCE, true, 6, true),

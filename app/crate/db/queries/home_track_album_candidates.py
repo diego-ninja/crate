@@ -3,7 +3,7 @@ from __future__ import annotations
 from crate.db.queries.home_track_rows import _fetch_rows
 
 
-def get_track_candidates_for_album_ids(album_ids: list[int], limit: int = 240) -> list[dict]:
+def get_track_candidates_for_album_ids(*, user_id: int, album_ids: list[int], limit: int = 240) -> list[dict]:
     if not album_ids:
         return []
     capped_ids = album_ids[:30]
@@ -34,10 +34,19 @@ def get_track_candidates_for_album_ids(album_ids: list[int], limit: int = 240) -
             t.danceability,
             t.valence,
             t.bliss_vector,
-            COALESCE(t.lastfm_playcount, 0) AS popularity
+            COALESCE(t.lastfm_playcount, 0) AS popularity,
+            COALESCE(uts.play_count, 0) AS user_play_count,
+            (ult.track_id IS NOT NULL) AS is_liked
         FROM library_tracks t
         JOIN library_albums alb ON alb.id = t.album_id
         LEFT JOIN library_artists art ON art.name = t.artist
+        LEFT JOIN user_track_stats uts
+          ON uts.user_id = :user_id
+         AND uts.stat_window = '90d'
+         AND uts.track_id = t.id
+        LEFT JOIN user_liked_tracks ult
+          ON ult.user_id = :user_id
+         AND ult.track_id = t.id
         WHERE t.album_id = ANY(:album_ids)
         ORDER BY
             COALESCE(t.lastfm_playcount, 0) DESC,
@@ -45,7 +54,7 @@ def get_track_candidates_for_album_ids(album_ids: list[int], limit: int = 240) -
             t.title ASC
         LIMIT :lim
         """,
-        {"album_ids": capped_ids, "lim": limit},
+        {"user_id": user_id, "album_ids": capped_ids, "lim": limit},
     )
 
 

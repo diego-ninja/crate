@@ -655,9 +655,11 @@ export function ArtistRepairDialog({
           <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-2">
               <div className="text-xs text-white/40">
-                {plan?.executable
-                  ? `${plan.executable} executable fix${plan.executable === 1 ? "" : "es"} ready`
-                  : "No executable fixes available right now"}
+                {loading && !plan
+                  ? "Loading repair plan..."
+                  : plan?.executable
+                    ? `${plan.executable} executable fix${plan.executable === 1 ? "" : "es"} ready`
+                    : "No executable fixes available right now"}
               </div>
               {pendingRunSummary ? (
                 <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-3 py-3 text-xs text-amber-100">

@@ -86,8 +86,10 @@ services:
       - crate
 
   crate-api:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-api:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: api
     container_name: crate-api
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -125,7 +127,7 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - crate
@@ -134,7 +136,9 @@ services:
         condition: service_healthy
       crate-redis:
         condition: service_healthy
-    mem_limit: 1g
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: "1.0"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8585/api/status', timeout=5).read()"]
       interval: 30s
@@ -151,8 +155,10 @@ services:
     command: ["api"]
 
   crate-worker:
-    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
-    build: ./app
+    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: worker
     container_name: crate-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
@@ -180,6 +186,14 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - OMP_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - OPENBLAS_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - MKL_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMEXPR_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - VECLIB_MAXIMUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - TORCH_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - NUMBA_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
+      - CRATE_FFMPEG_THREADS=${CRATE_WORKER_FFMPEG_THREADS:-1}
       - REDIS_URL=redis://crate-redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
@@ -190,7 +204,7 @@ services:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
       - ${MEDIA_DIR}/downloads/soulseek:/downloads/soulseek
-      - ${DATA_DIR}/librarian:/data
+      - ${DATA_DIR}/crate:/data
     networks:
       - crate
     depends_on:
@@ -198,8 +212,34 @@ services:
         condition: service_healthy
       crate-redis:
         condition: service_healthy
-    mem_limit: 4g
+    mem_limit: 1536m
+    mem_reservation: 512m
+    cpus: "0.75"
     command: ["worker"]
+
+  crate-media-worker:
+    image: ghcr.io/diego-ninja/crate-media-worker:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      target: media-worker
+    container_name: crate-media-worker
+    restart: unless-stopped
+    profiles:
+      - media-worker
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - DATA_DIR=/data
+      - CRATE_MEDIA_WORKER_ADDR=0.0.0.0:8687
+      - REDIS_URL=redis://crate-redis:6379/0
+    volumes:
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/crate:/data
+    networks:
+      - crate
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: "0.25"
 
   crate-ui:
     image: ghcr.io/diego-ninja/crate-ui:${CRATE_IMAGE_TAG:-latest}

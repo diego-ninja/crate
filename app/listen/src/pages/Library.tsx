@@ -21,6 +21,7 @@ import { albumCoverApiUrl } from "@/lib/library-routes";
 import { toPlayableTrack } from "@/lib/playable-track";
 import { hasTrackReference, toTrackReferencePayload } from "@/lib/track-reference";
 import { toTrackRowData } from "@/lib/track-row-data";
+import { WindowVirtualList } from "@/components/ui/WindowVirtualList";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
 
@@ -558,10 +559,12 @@ function LikedTab() {
           <option value="album">Album</option>
         </select>
       </div>
-      <div>
-        {trackRows.map((row, i) => (
+      <WindowVirtualList
+        items={trackRows}
+        estimateSize={72}
+        itemKey={(row, index) => row.id ?? row.path ?? `${row.artist}-${row.album}-${row.title}-${index}`}
+        renderItem={(row, i) => (
           <TrackRow
-            key={row.id}
             track={row}
             index={i + 1}
             showArtist
@@ -579,8 +582,8 @@ function LikedTab() {
             showCoverThumb
             queueTracks={trackRows}
           />
-        ))}
-      </div>
+        )}
+      />
     </div>
   );
 }

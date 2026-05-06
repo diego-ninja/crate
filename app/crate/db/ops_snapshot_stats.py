@@ -8,20 +8,15 @@ from crate.db.cache_store import get_cache
 from crate.db.import_queue_read_models import count_import_queue_items
 from crate.db.ops_runtime_views import get_worker_live_state
 from crate.db.queries.analytics import (
-    get_avg_tracks_per_album,
     get_bitrate_distribution,
     get_decade_distribution,
     get_format_distribution,
     get_genre_distribution,
+    get_overview_stat_summary,
     get_sizes_by_format_gb,
-    get_stats_analyzed_track_count,
-    get_stats_avg_album_duration_min,
-    get_stats_avg_bitrate,
-    get_stats_duration_hours,
     get_stats_recent_albums,
     get_stats_top_genres,
     get_top_artists_by_albums,
-    get_total_duration_hours,
 )
 from crate.db.queries.tasks import get_latest_scan, list_tasks
 from crate.db.repositories.library import get_library_stats
@@ -37,6 +32,7 @@ def build_stats_payload() -> dict[str, Any]:
     pending_imports = _get_imports_pending_count()
     worker_live = get_worker_live_state()
     pending_tasks = int(worker_live.get("pending_count") or 0) if worker_live else len(list_tasks(status="pending"))
+    summary = get_overview_stat_summary()
 
     raw_albums = get_stats_recent_albums()
     recent_albums = [
@@ -63,17 +59,18 @@ def build_stats_payload() -> dict[str, Any]:
         "last_scan": scan["scanned_at"] if scan else None,
         "pending_imports": pending_imports,
         "pending_tasks": pending_tasks,
-        "total_duration_hours": get_stats_duration_hours(),
-        "avg_bitrate": get_stats_avg_bitrate(),
+        "total_duration_hours": summary["duration_hours"],
+        "avg_bitrate": summary["avg_bitrate"],
         "top_genres": get_stats_top_genres(),
         "recent_albums": recent_albums,
-        "analyzed_tracks": get_stats_analyzed_track_count(),
-        "avg_album_duration_min": get_stats_avg_album_duration_min(),
-        "avg_tracks_per_album": round(get_avg_tracks_per_album() or 0, 1),
+        "analyzed_tracks": summary["analyzed_tracks"],
+        "avg_album_duration_min": summary["avg_album_duration_min"],
+        "avg_tracks_per_album": summary["avg_tracks_per_album"],
     }
 
 
 def build_analytics_payload() -> dict[str, Any]:
+    summary = get_overview_stat_summary()
     return {
         "computing": False,
         "genres": get_genre_distribution(),
@@ -81,9 +78,9 @@ def build_analytics_payload() -> dict[str, Any]:
         "formats": get_format_distribution(),
         "bitrates": get_bitrate_distribution(),
         "top_artists": get_top_artists_by_albums(),
-        "total_duration_hours": get_total_duration_hours(),
+        "total_duration_hours": summary["duration_hours"],
         "sizes_by_format_gb": get_sizes_by_format_gb(),
-        "avg_tracks_per_album": get_avg_tracks_per_album(),
+        "avg_tracks_per_album": summary["avg_tracks_per_album"],
     }
 
 

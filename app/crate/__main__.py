@@ -4,10 +4,6 @@ import os
 import sys
 
 from crate.config import load_config
-from crate.scanner import LibraryScanner
-from crate.fixer import LibraryFixer
-from crate.daemon import run_daemon
-from crate.report import print_report, save_report
 
 
 def _env_int(name: str, default: int) -> int:
@@ -16,6 +12,16 @@ def _env_int(name: str, default: int) -> int:
         return default
     try:
         return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return max(0.5, float(raw))
     except ValueError:
         return default
 
@@ -67,6 +73,20 @@ def main():
     worker_cmd.add_argument("--no-telegram", action="store_true", help="Disable Telegram bot loop")
     worker_cmd.add_argument("--legacy", action="store_true", help="Use legacy orchestrator (pre-Dramatiq)")
 
+    projector_cmd = sub.add_parser("projector", help="Run snapshot projector loop")
+    projector_cmd.add_argument(
+        "--interval",
+        type=float,
+        default=_env_float("CRATE_PROJECTOR_INTERVAL_SECONDS", 5.0),
+        help="Polling interval in seconds",
+    )
+    projector_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=_env_int("CRATE_PROJECTOR_BATCH_LIMIT", 200),
+        help="Maximum domain events to process per tick",
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -75,12 +95,18 @@ def main():
     config = load_config()
 
     if args.command == "scan":
+        from crate.report import print_report, save_report
+        from crate.scanner import LibraryScanner
+
         scanner = LibraryScanner(config)
         issues = scanner.scan(only=args.only)
         print_report(issues)
         save_report(issues, config)
 
     elif args.command == "fix":
+        from crate.fixer import LibraryFixer
+        from crate.scanner import LibraryScanner
+
         scanner = LibraryScanner(config)
         issues = scanner.scan(only=args.only)
         fixer = LibraryFixer(config)
@@ -88,9 +114,14 @@ def main():
         fixer.fix(issues, dry_run=dry_run)
 
     elif args.command == "daemon":
+        from crate.daemon import run_daemon
+
         run_daemon(config)
 
     elif args.command == "report":
+        from crate.report import print_report, save_report
+        from crate.scanner import LibraryScanner
+
         scanner = LibraryScanner(config)
         issues = scanner.scan()
         print_report(issues)
@@ -121,6 +152,15 @@ def main():
             config["worker_telegram"] = not args.no_telegram
             from crate.worker import run_worker
             run_worker(config)
+
+    elif args.command == "projector":
+        from crate.projector_daemon import run_projector
+
+        run_projector(
+            config,
+            interval_seconds=args.interval,
+            limit=args.limit,
+        )
 
 
 if __name__ == "__main__":

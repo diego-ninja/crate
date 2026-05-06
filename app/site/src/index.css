@@ -86,3 +86,10 @@ a {
 .fade-up-2 { animation-delay: 0.15s; }
 .fade-up-3 { animation-delay: 0.25s; }
 .fade-up-4 { animation-delay: 0.35s; }
+
+/* Alternating section backgrounds */
+.section-alt {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.012), transparent 40%, transparent 60%, rgba(255, 255, 255, 0.008));
+}

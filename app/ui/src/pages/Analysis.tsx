@@ -68,7 +68,10 @@ function normalizeStatus(status: AnalysisStatusSnapshot): AnalysisStatusSnapshot
 
 function formatPercent(done: number, total: number) {
   if (total <= 0) return 0;
-  return Math.round((done / total) * 100);
+  if (done >= total) return 100;
+  const raw = (done / total) * 100;
+  if (raw > 0 && raw < 0.1) return 0.1;
+  return Number(Math.min(raw, 99.9).toFixed(1));
 }
 
 function formatTimestamp(value?: string) {

@@ -6,6 +6,7 @@ const INFINITE_PLAYBACK_KEY = "listen-player-infinite-playback";
 const SMART_PLAYLIST_SUGGESTIONS_KEY = "listen-player-smart-playlist-suggestions";
 const SMART_PLAYLIST_SUGGESTIONS_CADENCE_KEY = "listen-player-smart-playlist-suggestions-cadence";
 const PLAYBACK_DELIVERY_POLICY_KEY = "listen-player-delivery-policy";
+const MOBILE_ENHANCED_AUDIO_KEY = "listen-player-mobile-enhanced-audio";
 
 export type PlaybackDeliveryPolicy = "original" | "balanced" | "data_saver";
 
@@ -48,6 +49,27 @@ export function setPlaybackDeliveryPolicyPreference(policy: PlaybackDeliveryPoli
     window.dispatchEvent(
       new CustomEvent(PLAYER_PLAYBACK_PREFS_EVENT, {
         detail: { playbackDeliveryPolicy: value },
+      }),
+    );
+  } catch {
+    // ignore localStorage failures in private mode or restricted environments
+  }
+}
+
+export function getMobileEnhancedAudioPreference(): boolean {
+  try {
+    return localStorage.getItem(MOBILE_ENHANCED_AUDIO_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function setMobileEnhancedAudioPreference(enabled: boolean) {
+  try {
+    localStorage.setItem(MOBILE_ENHANCED_AUDIO_KEY, enabled ? "true" : "false");
+    window.dispatchEvent(
+      new CustomEvent(PLAYER_PLAYBACK_PREFS_EVENT, {
+        detail: { mobileEnhancedAudioEnabled: enabled },
       }),
     );
   } catch {

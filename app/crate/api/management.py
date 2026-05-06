@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
@@ -11,6 +10,7 @@ from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api._deps import album_names_from_entity_uid, album_names_from_id, artist_name_from_entity_uid, artist_name_from_id
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
 from crate.api.schemas.management import (
     AdminHealthSnapshotResponse,
@@ -132,25 +132,16 @@ _MANAGEMENT_RESPONSES = merge_responses(
 )
 
 
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-
 async def _health_stream(*, check_type: str | None = None, limit: int = 500) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
-    redis = None
     pubsub = None
     try:
-        import redis.asyncio as aioredis
-
-        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(HEALTH_SURFACE_STREAM_CHANNEL)
+        pubsub = await open_pubsub(HEALTH_SURFACE_STREAM_CHANNEL)
         heartbeat_counter = 0
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if message and message.get("type") == "message":
-                yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit, fresh=True))}\n\n"
+                yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
                 heartbeat_counter = 0
                 continue
             heartbeat_counter += 1
@@ -163,9 +154,7 @@ async def _health_stream(*, check_type: str | None = None, limit: int = 500) -> 
             await asyncio.sleep(15)
     finally:
         if pubsub is not None:
-            await pubsub.unsubscribe(HEALTH_SURFACE_STREAM_CHANNEL)
-        if redis is not None:
-            await redis.aclose()
+            await close_pubsub(pubsub, HEALTH_SURFACE_STREAM_CHANNEL)
 
 
 @admin_router.get(
@@ -206,7 +195,7 @@ async def api_admin_health_stream(request: Request, check_type: str = "", limit:
 )
 def run_health_check(request: Request):
     _require_admin(request)
-    task_id = create_task("health_check")
+    task_id = create_task("health_check", {"triggered_by": "admin"})
     return {"task_id": task_id}
 
 

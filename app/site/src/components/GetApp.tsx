@@ -20,34 +20,33 @@ export function GetApp() {
           Install it
         </div>
         <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-[44px] sm:leading-[1.05]">
-          Crate is a phone app too.
+          Use it from the phone.
         </h2>
         <p className="mt-4 text-base leading-7 text-white/60 sm:text-lg">
-          Same interface you have on the web, packaged for your pocket. Point it at
-          your Crate instance on first launch — you never hand your library off to
-          someone else's cloud.
+          Crate is still a self-hosted system, but listening should not feel like
+          remote administration. Point the app at an instance and use it like a normal
+          music player.
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-10 lg:grid-cols-2">
         {/* ── Android / APK ─────────────────────────────────────── */}
-        <article className="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] p-7">
+        <article className="border-t border-white/10 pt-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-300">
+            <div className="text-cyan-300">
               <Smartphone size={19} />
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
                 Android
               </div>
-              <div className="text-lg font-semibold text-white">Install the APK</div>
+              <div className="text-lg font-semibold text-white">Install the Android build</div>
             </div>
           </div>
 
           <p className="text-[14.5px] leading-[1.65] text-white/60">
-            A signed debug APK built on every release tag. Download, tap, install.
-            Might need to enable "Install from unknown sources" for your browser
-            the first time — Android will walk you through it.
+            Each release can include an Android build. Download it, install it, and
+            connect it to your Crate server.
           </p>
 
           <ol className="mt-5 space-y-2.5 text-[14px] text-white/70">
@@ -65,28 +64,27 @@ export function GetApp() {
             <ArrowRight size={16} className="transition group-hover:translate-x-0.5" />
           </a>
           <p className="mt-3 text-[11px] text-white/35">
-            From the latest GitHub release · ~15 MB · Android 7.0+
+            From the latest GitHub release.
           </p>
         </article>
 
         {/* ── iPhone / PWA ──────────────────────────────────────── */}
-        <article className="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.03] p-7">
+        <article className="border-t border-white/10 pt-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-300">
+            <div className="text-cyan-300">
               <Apple size={19} />
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
                 iPhone
               </div>
-              <div className="text-lg font-semibold text-white">Add to Home Screen</div>
+              <div className="text-lg font-semibold text-white">Use the PWA</div>
             </div>
           </div>
 
           <p className="text-[14.5px] leading-[1.65] text-white/60">
-            Apple doesn't let you download and install an app without the App Store,
-            so we do the next best thing: a real PWA. Icon on your home screen,
-            full-screen without Safari's chrome, works offline after first visit.
+            On iPhone, Crate works as a PWA. It is not the same as a native App Store
+            app, but it gives you a home-screen icon and a standalone player.
           </p>
 
           <ol className="mt-5 space-y-3 text-[14px] text-white/70">
@@ -115,11 +113,9 @@ export function GetApp() {
             </IOSStep>
           </ol>
 
-          <p className="mt-7 rounded-xl border border-white/8 bg-white/[0.02] p-4 text-[13px] leading-[1.6] text-white/55">
-            A proper native iOS app via TestFlight is on the table if there's
-            enough interest to justify an Apple Developer account. In the meantime
-            the PWA covers ~90% of what you'd want: background audio, lock screen
-            controls, home-screen launcher, standalone mode.
+          <p className="mt-7 border-l border-cyan-400/25 pl-4 text-[13px] leading-[1.6] text-white/55">
+            A native iOS app may happen later. For now, the PWA is the honest path:
+            simple to install, easy to update, and good enough for regular listening.
           </p>
         </article>
       </div>
@@ -161,4 +157,3 @@ function ShareGlyph() {
     </span>
   );
 }
-

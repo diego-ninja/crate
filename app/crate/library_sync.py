@@ -60,18 +60,91 @@ def _ffprobe_duration_bitrate(filepath: Path) -> tuple[float, int]:
         return 0.0, 0
 
 
-def _read_audio_info(filepath: Path, fmt: str, mf: mutagen.FileType | None = None) -> tuple[float, int, int, int]:
-    """Read duration/bitrate/sample rate/bit depth, with ffprobe fallback for Tidal M4A."""
-    if mf is None:
-        try:
-            mf = mutagen.File(filepath)
-        except Exception:
-            mf = None
+def _audio_extension_arg(extensions: set[str]) -> str:
+    return ",".join(sorted(ext.lstrip(".").lower() for ext in extensions if ext))
 
-    duration = mf.info.length if mf and mf.info else 0.0
-    bitrate = getattr(mf.info, "bitrate", 0) if mf and mf.info else 0
-    sample_rate = getattr(mf.info, "sample_rate", 0) if mf and mf.info else 0
-    bit_depth = getattr(mf.info, "bits_per_sample", 0) if mf and mf.info else 0
+
+def _quality_track_info(track: dict) -> tuple[float, int, int, int] | None:
+    if not track.get("ok"):
+        return None
+    return (
+        float(track.get("duration") or 0.0),
+        int(track.get("bitrate") or 0),
+        int(track.get("sample_rate") or 0),
+        int(track.get("bit_depth") or 0),
+    )
+
+
+def _path_keys(path: Path | str) -> set[str]:
+    p = Path(path)
+    keys = {str(p)}
+    try:
+        keys.add(str(p.resolve()))
+    except OSError:
+        pass
+    return keys
+
+
+def _read_audio_info_batch_native(album_dir: Path, extensions: set[str]) -> dict[str, tuple[float, int, int, int]]:
+    try:
+        from crate.crate_cli import run_quality
+
+        payload = run_quality(directory=str(album_dir), extensions=_audio_extension_arg(extensions))
+    except Exception:
+        log.debug("crate-cli quality batch failed for %s", album_dir, exc_info=True)
+        return {}
+
+    if not payload or not payload.get("tracks"):
+        return {}
+
+    info_by_path: dict[str, tuple[float, int, int, int]] = {}
+    for track in payload.get("tracks") or []:
+        raw_path = track.get("path")
+        info = _quality_track_info(track)
+        if not raw_path or info is None:
+            continue
+        for key in _path_keys(raw_path):
+            info_by_path[key] = info
+    return info_by_path
+
+
+def _native_info_for_path(
+    native_info_by_path: dict[str, tuple[float, int, int, int]],
+    filepath: Path,
+) -> tuple[float, int, int, int] | None:
+    for key in _path_keys(filepath):
+        if key in native_info_by_path:
+            return native_info_by_path[key]
+    return None
+
+
+def _read_audio_info(
+    filepath: Path,
+    fmt: str,
+    mf: mutagen.FileType | None = None,
+    native_info: tuple[float, int, int, int] | None = None,
+) -> tuple[float, int, int, int]:
+    """Read duration/bitrate/sample rate/bit depth, with ffprobe fallback for Tidal M4A."""
+    duration, bitrate, sample_rate, bit_depth = native_info or (0.0, 0, 0, 0)
+
+    if mf is None:
+        needs_mutagen = (
+            not duration
+            or not bitrate
+            or not sample_rate
+            or (fmt in {"flac", "wav", "alac"} and not bit_depth)
+        )
+        if needs_mutagen:
+            try:
+                mf = mutagen.File(filepath)
+            except Exception:
+                mf = None
+
+    if mf and mf.info:
+        duration = duration or mf.info.length or 0.0
+        bitrate = bitrate or getattr(mf.info, "bitrate", 0) or 0
+        sample_rate = sample_rate or getattr(mf.info, "sample_rate", 0) or 0
+        bit_depth = bit_depth or getattr(mf.info, "bits_per_sample", 0) or 0
 
     if duration == 0.0 and fmt == "m4a":
         duration, bitrate = _ffprobe_duration_bitrate(filepath)
@@ -113,6 +186,7 @@ def _album_artist_root(album_dir: Path) -> Path:
 
 class LibrarySync:
     def __init__(self, config: dict):
+        self.config = config
         self.library_path = Path(config["library_path"])
         self.extensions = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
         self.exclude_dirs = set(config.get("exclude_dirs", []))
@@ -420,9 +494,11 @@ class LibrarySync:
         tag_album = None
         track_data_list = []
         album_entity_uid = canonical_entity_uid(album_dir.name)
+        native_info_by_path = _read_audio_info_batch_native(album_dir, self.extensions) if audio_files else {}
 
         for f in audio_files:
             fpath = str(f)
+            native_info = _native_info_for_path(native_info_by_path, f)
             fstat = f.stat()
             total_size += fstat.st_size
             ext = f.suffix.lower()
@@ -446,7 +522,11 @@ class LibrarySync:
                             or sample_rate in (None, 0)
                             or (fmt in {"flac", "wav", "alac"} and bit_depth in (None, 0))
                         ):
-                            scanned_duration, scanned_bitrate, scanned_sample_rate, scanned_bit_depth = _read_audio_info(f, fmt)
+                            scanned_duration, scanned_bitrate, scanned_sample_rate, scanned_bit_depth = _read_audio_info(
+                                f,
+                                fmt,
+                                native_info=native_info,
+                            )
                             duration = duration or scanned_duration
                             bitrate = bitrate or scanned_bitrate or None
                             sample_rate = sample_rate or scanned_sample_rate or None
@@ -487,13 +567,20 @@ class LibrarySync:
                 except (ValueError, OSError, TypeError):
                     pass
 
-            # New or changed file — read tags + mutagen info
-            try:
-                mf = mutagen.File(f)
-            except Exception:
-                mf = None
+            # New or changed file — read tags + technical audio info
+            mf = None
+            if native_info is None:
+                try:
+                    mf = mutagen.File(f)
+                except Exception:
+                    mf = None
 
-            duration, bitrate, sample_rate, bit_depth = _read_audio_info(f, fmt, mf)
+            duration, bitrate, sample_rate, bit_depth = _read_audio_info(
+                f,
+                fmt,
+                mf,
+                native_info=native_info,
+            )
 
             total_duration += duration
 
@@ -552,32 +639,73 @@ class LibrarySync:
 
         formats_list = sorted(formats.keys())
 
+        artist_payload = {
+            "name": artist_name,
+            "entity_uid": canonical_entity_uid(artist_root.name),
+            "folder_name": artist_root.name,
+            "album_count": 0,
+            "track_count": 0,
+            "total_size": 0,
+            "formats": [],
+            "dir_mtime": artist_root.stat().st_mtime,
+        }
+        album_payload = {
+            "name": album_name,
+            "entity_uid": album_entity_uid,
+            "path": str(album_dir),
+            "track_count": len(track_data_list),
+            "total_size": total_size,
+            "total_duration": total_duration,
+            "formats": formats_list,
+            "year": year,
+            "genre": genre,
+            "has_cover": has_cover,
+            "musicbrainz_albumid": mb_albumid,
+            "tag_album": tag_album,
+            "dir_mtime": tree_mtime,
+        }
+
+        native_payload_shadow = None
+        native_payload_used = False
+        try:
+            from crate.native_scan import (
+                adopt_native_album_projection,
+                maybe_prepare_native_album_payload,
+            )
+
+            native_payload_result = maybe_prepare_native_album_payload(
+                album_dir,
+                artist_name,
+                album_payload,
+                track_data_list,
+                self.extensions,
+                self.config,
+            )
+            if native_payload_result:
+                native_payload_shadow = native_payload_result["summary"]
+                native_payload_shadow["used_for_upsert"] = False
+                if (
+                    native_payload_result.get("prefer")
+                    and native_payload_shadow.get("ok", False)
+                    and native_payload_result.get("projection")
+                ):
+                    album_payload, track_data_list = adopt_native_album_projection(
+                        album_payload,
+                        native_payload_result["projection"],
+                    )
+                    total_size = int(album_payload.get("total_size") or 0)
+                    total_duration = float(album_payload.get("total_duration") or 0.0)
+                    formats_list = list(album_payload.get("formats") or [])
+                    native_payload_shadow["used_for_upsert"] = True
+                    native_payload_used = True
+            if native_payload_shadow and not native_payload_shadow.get("ok", False):
+                log.warning("Native album payload shadow mismatch for %s: %s", album_dir, native_payload_shadow)
+        except Exception:
+            log.debug("Failed to run native album payload shadow compare for %s", album_dir, exc_info=True)
+
         _, _, synced_paths = upsert_scanned_album(
-            artist_payload={
-                "name": artist_name,
-                "entity_uid": canonical_entity_uid(artist_root.name),
-                "folder_name": artist_root.name,
-                "album_count": 0,
-                "track_count": 0,
-                "total_size": 0,
-                "formats": [],
-                "dir_mtime": artist_root.stat().st_mtime,
-            },
-            album_payload={
-                "name": album_name,
-                "entity_uid": album_entity_uid,
-                "path": str(album_dir),
-                "track_count": len(track_data_list),
-                "total_size": total_size,
-                "total_duration": total_duration,
-                "formats": formats_list,
-                "year": year,
-                "genre": genre,
-                "has_cover": has_cover,
-                "musicbrainz_albumid": mb_albumid,
-                "tag_album": tag_album,
-                "dir_mtime": tree_mtime,
-            },
+            artist_payload=artist_payload,
+            album_payload=album_payload,
             track_payloads=track_data_list,
         )
 
@@ -589,6 +717,8 @@ class LibrarySync:
             "track_count": len(track_data_list),
             "total_size": total_size,
             "formats": formats_list,
+            "native_scan_payload_shadow": native_payload_shadow,
+            "native_scan_payload_used": native_payload_used,
         }
 
     def _canonical_artist_name(self, artist_dir: Path, fallback: str) -> str:

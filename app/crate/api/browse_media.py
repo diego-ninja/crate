@@ -32,7 +32,7 @@ from crate.api.schemas.media import (
     TrackRatingRequest,
     TrackRatingResponse,
 )
-from crate.db.cache_store import get_cache
+from crate.db.cache_store import get_cache, set_cache
 from crate.db.repositories.library import set_track_rating
 from crate.db.queries.browse_media import (
     add_favorite,
@@ -126,9 +126,15 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     if len(q_stripped) < 2:
         return {"artists": [], "albums": [], "tracks": []}
 
+    cache_key = f"listen:search:v1:{q_stripped.lower()}:{capped_limit}"
+    cached = get_cache(cache_key, max_age_seconds=30)
+    if cached is not None:
+        return cached
+
     if not has_library_data():
         result = fs_search(q_stripped)
         result["tracks"] = []
+        set_cache(cache_key, result, ttl=45)
         return result
 
     like = f"%{q_stripped}%"
@@ -182,7 +188,9 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         for row in track_rows
         for entity_uid in [str(row["entity_uid"]) if row.get("entity_uid") is not None else None]
     ]
-    return {"artists": artists, "albums": albums, "tracks": tracks}
+    payload = {"artists": artists, "albums": albums, "tracks": tracks}
+    set_cache(cache_key, payload, ttl=45)
+    return payload
 
 
 @router.get(
@@ -603,6 +611,18 @@ def _resolve_track_genre(track_id: int) -> dict | None:
     return None
 
 
+def _track_genre_payload(track_id: int) -> dict:
+    cache_key = f"listen:track_genre:v1:{track_id}"
+    cached = get_cache(cache_key, max_age_seconds=3600)
+    if cached is not None:
+        return cached
+
+    result = _resolve_track_genre(track_id)
+    payload = result or {"primary": None, "topLevel": None, "source": None, "preset": None}
+    set_cache(cache_key, payload, ttl=3600)
+    return payload
+
+
 @router.get(
     "/api/tracks/{track_id}/genre",
     response_model=TrackGenreResponse,
@@ -613,10 +633,7 @@ def api_track_genre_by_id(request: Request, track_id: int):
     _require_auth(request)
     if not get_track_exists(track_id):
         raise HTTPException(status_code=404, detail="Track not found")
-    result = _resolve_track_genre(track_id)
-    if result is None:
-        return {"primary": None, "topLevel": None, "source": None, "preset": None}
-    return result
+    return _track_genre_payload(track_id)
 
 
 @router.get(
@@ -630,10 +647,7 @@ def api_track_genre_by_entity_uid(request: Request, entity_uid: str):
     tid = get_track_id_by_entity_uid(entity_uid)
     if tid is None:
         raise HTTPException(status_code=404, detail="Track not found")
-    result = _resolve_track_genre(tid)
-    if result is None:
-        return {"primary": None, "topLevel": None, "source": None, "preset": None}
-    return result
+    return _track_genre_payload(tid)
 
 
 @router.get(
@@ -652,10 +666,7 @@ def api_track_genre_by_storage_id(request: Request, storage_id: str):
     tid = _get_track_id_via_storage_alias(storage_id)
     if tid is None:
         raise HTTPException(status_code=404, detail="Track not found")
-    result = _resolve_track_genre(tid)
-    if result is None:
-        return {"primary": None, "topLevel": None, "source": None, "preset": None}
-    return result
+    return _track_genre_payload(tid)
 
 
 @router.get(
@@ -1009,13 +1020,16 @@ def _download_track(request: Request, filepath: str):
     try:
         from crate.db.queries.portable_metadata import get_portable_track_payload_by_path
         from crate.download_cache import (
+            cached_download_artifact_path,
             download_cache_lock,
+            download_cache_enabled,
             get_cached_download,
             safe_download_filename,
             store_cached_download,
             track_cache_ttl_seconds,
             track_download_cache_key,
         )
+        from crate.media_worker import build_track_download_artifact
         from crate.portable_metadata import find_album_artwork_file, write_track_rich_tags
 
         payload = get_portable_track_payload_by_path(str(file_path))
@@ -1029,6 +1043,36 @@ def _download_track(request: Request, filepath: str):
                 with download_cache_lock("track", cache_key, timeout_seconds=120):
                     cached = get_cached_download("track", cache_key, cache_filename, ttl_seconds=track_cache_ttl_seconds())
                     if cached is None:
+                        if download_cache_enabled():
+                            worker_output_path = cached_download_artifact_path("track", cache_key, cache_filename)
+                            worker_result = build_track_download_artifact(
+                                payload,
+                                source_path=file_path,
+                                output_path=worker_output_path,
+                                filename=cache_filename,
+                                job_id=cache_key,
+                                artwork_path=artwork_path,
+                                write_rich_tags=True,
+                                cache_kind="track",
+                                cache_key=cache_key,
+                                cache_metadata={
+                                    "track_id": (payload.get("track") or {}).get("id"),
+                                    "track_entity_uid": (payload.get("track") or {}).get("entity_uid"),
+                                    "album_entity_uid": album_payload.get("entity_uid"),
+                                    "engine": "crate-media-worker",
+                                },
+                            )
+                            if worker_result and worker_result.get("ok"):
+                                cached = get_cached_download(
+                                    "track",
+                                    cache_key,
+                                    cache_filename,
+                                    ttl_seconds=track_cache_ttl_seconds(),
+                                )
+                            elif worker_result:
+                                log.debug("crate-media-worker track artifact failed: %s", worker_result)
+                        if cached is not None:
+                            return FileResponse(path=str(cached.path), filename=file_path.name, media_type="application/octet-stream")
                         tmp_dir = tempfile.mkdtemp(prefix="crate-track-download.")
                         tmp_path = Path(tmp_dir) / file_path.name
                         keep_tmp = False
@@ -1158,11 +1202,16 @@ def _mood_conditions(filters: dict) -> tuple[list[str], list]:
 def api_browse_moods(request: Request):
     """Return available mood presets with track counts."""
     _require_auth(request)
+    cached = get_cache("listen:browse_moods:v1", max_age_seconds=600)
+    if cached is not None:
+        return cached
+
     results = []
     for name, filters in MOOD_PRESETS.items():
         conditions, params = _mood_conditions(filters)
         count = count_mood_tracks(conditions, params)
         results.append({"name": name, "track_count": count, "filters": filters})
+    set_cache("listen:browse_moods:v1", results, ttl=600)
     return results
 
 

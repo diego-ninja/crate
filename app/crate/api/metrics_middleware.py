@@ -7,7 +7,7 @@ from threading import Lock
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from crate.metrics import record_counter_later, record_later
+from crate.metrics import record_counter_later, record_later, record_route_latency_later
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +180,13 @@ class MetricsMiddleware:
             return
 
         record_later(_HTTP_LATENCY_METRIC, elapsed_ms, tags)
+        record_route_latency_later(
+            method=scope.get("method", "GET"),
+            path=template,
+            status=status_code,
+            elapsed_ms=elapsed_ms,
+            target=target,
+        )
         record_counter_later(_HTTP_REQUESTS_METRIC, tags)
 
         if status_code >= 500:

@@ -9,6 +9,7 @@ from crate.api.schemas.curation import (
     CuratedPlaylistSummaryResponse,
 )
 from crate.api.schemas.common import OkResponse
+from crate.db.cache_store import delete_cache
 from crate.db.repositories.playlists import (
     follow_playlist,
     get_followed_system_playlists,
@@ -113,6 +114,7 @@ def curated_follow(request: Request, playlist_id: int):
     user = _require_auth(request)
     _require_public_system_playlist(playlist_id)
     added = follow_playlist(user["id"], playlist_id)
+    delete_cache(f"listen:explore_page:v1:{user['id']}")
     return {"ok": True, "followed": added}
 
 
@@ -128,6 +130,7 @@ def curated_unfollow(request: Request, playlist_id: int):
     removed = unfollow_playlist(user["id"], playlist_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Playlist not followed")
+    delete_cache(f"listen:explore_page:v1:{user['id']}")
     return {"ok": True}
 
 

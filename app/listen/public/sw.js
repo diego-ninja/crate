@@ -28,7 +28,11 @@ if (IS_DEV_HOST) {
       await self.registration.unregister();
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of clients) {
-        client.navigate(client.url);
+        try {
+          await client.navigate(client.url);
+        } catch {
+          // The worker can be unregistering while another dev worker takes over.
+        }
       }
     })());
   });

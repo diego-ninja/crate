@@ -1,5 +1,6 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, ArrowLeft, ArrowDownToLine, CheckCircle2, Heart, Loader2, Play, Radio, Shuffle, Share2, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +65,124 @@ interface CuratedPlaylistData {
   tracks: CuratedPlaylistTrack[];
 }
 
+const VIRTUAL_TRACK_THRESHOLD = 80;
+const TRACK_ROW_ESTIMATE_PX = 58;
+
+interface CuratedTrackListProps {
+  tracks: CuratedPlaylistTrack[];
+  playlistOptions?: { id: number; name: string }[];
+  onAddToPlaylist: (playlistId: number, track: TrackRowData) => void | Promise<void>;
+  onCreatePlaylist: (track: TrackRowData) => void | Promise<void>;
+  onActionMenuOpen: () => void;
+  onPlayTrack: (trackEntryId: number) => void;
+}
+
+function CuratedTrackRow({
+  track,
+  index,
+  playlistOptions,
+  onAddToPlaylist,
+  onCreatePlaylist,
+  onActionMenuOpen,
+  onPlayTrack,
+}: CuratedTrackListProps & { track: CuratedPlaylistTrack; index: number }) {
+  return (
+    <TrackRow
+      track={toTrackRowData({
+        ...track,
+        id: track.track_id ?? track.track_path ?? track.title,
+        library_track_id: track.track_id,
+      })}
+      index={index}
+      showArtist
+      showAlbum
+      playlistOptions={playlistOptions}
+      onAddToPlaylist={onAddToPlaylist}
+      onCreatePlaylist={onCreatePlaylist}
+      onActionMenuOpen={onActionMenuOpen}
+      onPlayOverride={() => onPlayTrack(track.id)}
+    />
+  );
+}
+
+function CuratedTrackList(props: CuratedTrackListProps) {
+  if (props.tracks.length < VIRTUAL_TRACK_THRESHOLD) {
+    return (
+      <div className="space-y-1">
+        {props.tracks.map((track, index) => (
+          <CuratedTrackRow key={track.id} {...props} track={track} index={index + 1} />
+        ))}
+      </div>
+    );
+  }
+
+  return <VirtualizedCuratedTrackList {...props} />;
+}
+
+function VirtualizedCuratedTrackList(props: CuratedTrackListProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const rowVirtualizer = useWindowVirtualizer({
+    count: props.tracks.length,
+    estimateSize: () => TRACK_ROW_ESTIMATE_PX,
+    getItemKey: (index) => props.tracks[index]?.id ?? index,
+    overscan: 12,
+    scrollMargin,
+  });
+
+  useLayoutEffect(() => {
+    const node = listRef.current;
+    if (!node) return;
+
+    const measure = () => {
+      setScrollMargin(node.getBoundingClientRect().top + window.scrollY);
+    };
+    measure();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    resizeObserver?.observe(node);
+    window.addEventListener("resize", measure, { passive: true });
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [props.tracks.length]);
+
+  return (
+    <div
+      ref={listRef}
+      className="relative"
+      style={{
+        height: `${rowVirtualizer.getTotalSize()}px`,
+        contain: "layout paint style",
+      }}
+    >
+      {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+        const track = props.tracks[virtualRow.index];
+        if (!track) return null;
+        return (
+          <div
+            key={virtualRow.key}
+            ref={rowVirtualizer.measureElement}
+            data-index={virtualRow.index}
+            className="absolute left-0 top-0 w-full pb-1"
+            style={{
+              transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+            }}
+          >
+            <CuratedTrackRow
+              {...props}
+              track={track}
+              index={virtualRow.index + 1}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 
 
@@ -417,26 +536,14 @@ export function CuratedPlaylist() {
           <p className="text-sm text-muted-foreground">No tracks match this filter</p>
         </div>
       ) : (
-        <div className="space-y-1">
-          {filteredTracks.map((track, index) => (
-            <TrackRow
-              key={track.id}
-              track={toTrackRowData({
-                ...track,
-                id: track.track_id ?? track.track_path ?? track.title,
-                library_track_id: track.track_id,
-              })}
-              index={index + 1}
-              showArtist
-              showAlbum
-              playlistOptions={playlistOptions}
-              onAddToPlaylist={handleAddTrackToPlaylist}
-              onCreatePlaylist={handleCreatePlaylistFromTrack}
-              onActionMenuOpen={ensurePlaylistOptionsLoaded}
-              onPlayOverride={() => handlePlayTrack(track.id)}
-            />
-          ))}
-        </div>
+        <CuratedTrackList
+          tracks={filteredTracks}
+          playlistOptions={playlistOptions}
+          onAddToPlaylist={handleAddTrackToPlaylist}
+          onCreatePlaylist={handleCreatePlaylistFromTrack}
+          onActionMenuOpen={ensurePlaylistOptionsLoaded}
+          onPlayTrack={handlePlayTrack}
+        />
       )}
     </div>
   );

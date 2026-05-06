@@ -1,7 +1,7 @@
 import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
-import { getApiBase, getAuthToken } from "@/lib/api";
-import { isAndroidNative } from "@/lib/capacitor-runtime";
+import { getApiBase, getAuthToken, resolveMaybeApiAssetUrl } from "@/lib/api";
 import { trackStreamApiPath } from "@/lib/library-routes";
+import { stableMobileAudioPipeline } from "@/lib/mobile-audio-mode";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 import { getPlaybackDeliveryPolicyPreference } from "@/lib/player-playback-prefs";
 
@@ -73,13 +73,17 @@ export function getStoredQueue(): StoredQueue {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.queue) && parsed.queue.length > 0) {
+        const queue = parsed.queue.map(normalizeStoredTrack);
+        const unshuffledQueue = Array.isArray(parsed.unshuffledQueue)
+          ? parsed.unshuffledQueue.map(normalizeStoredTrack)
+          : null;
         return {
-          queue: parsed.queue,
+          queue,
           currentIndex: parsed.currentIndex ?? 0,
           currentTime: parsed.currentTime ?? 0,
           wasPlaying: parsed.wasPlaying === true,
           shuffle: parsed.shuffle === true,
-          unshuffledQueue: Array.isArray(parsed.unshuffledQueue) ? parsed.unshuffledQueue : null,
+          unshuffledQueue,
         };
       }
     }
@@ -87,6 +91,13 @@ export function getStoredQueue(): StoredQueue {
     /* ignore */
   }
   return { queue: [], currentIndex: 0, currentTime: 0, wasPlaying: false, shuffle: false, unshuffledQueue: null };
+}
+
+function normalizeStoredTrack(track: Track): Track {
+  const albumCover = resolveMaybeApiAssetUrl(track.albumCover);
+  return albumCover && albumCover !== track.albumCover
+    ? { ...track, albumCover }
+    : track;
 }
 
 export interface SaveQueueOptions {
@@ -366,14 +377,16 @@ export function getEffectiveCrossfadeSeconds(
   shuffle: boolean,
   configuredSeconds: number,
   smartCrossfadeEnabled: boolean,
-  options: { androidNative?: boolean } = {},
+  options: { androidNative?: boolean; html5OnlyPlayback?: boolean; mobileEnhancedAudio?: boolean } = {},
 ): number {
   const clampedSeconds = Math.max(0, configuredSeconds || 0);
   if (clampedSeconds <= 0) return 0;
   if (!smartCrossfadeEnabled) return clampedSeconds;
   const continuousAlbumTransition = isContinuousAlbumTransition(currentTrack, nextTrack, playSource, shuffle);
   if (continuousAlbumTransition) {
-    const shouldMaskHtml5Gap = options.androidNative ?? isAndroidNative;
+    const mobileHtml5Pipeline = (options.androidNative || stableMobileAudioPipeline)
+      && !options.mobileEnhancedAudio;
+    const shouldMaskHtml5Gap = options.html5OnlyPlayback ?? mobileHtml5Pipeline;
     return shouldMaskHtml5Gap ? Math.min(clampedSeconds, ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS) : 0;
   }
   return Math.min(clampedSeconds, smartTransitionSeconds(currentTrack, nextTrack, playSource, shuffle));

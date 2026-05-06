@@ -84,7 +84,9 @@ export function Artist() {
   const [metadataAction, setMetadataAction] = useState<ArtistMetadataAction>(null);
   const [issueCountOverride, setIssueCountOverride] = useState<number | null>(null);
   const { isAdmin } = useAuth();
-  const repairPlanEndpoint = isAdmin
+  const rawIssueCount = data?.issue_count ?? 0;
+  const shouldLoadRepairPlanSummary = isAdmin && rawIssueCount > 0;
+  const repairPlanEndpoint = shouldLoadRepairPlanSummary
     ? artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "repair-plan") || null
     : null;
   const { data: repairPlanSummary } = useApi<ArtistRepairPlanSummary>(repairPlanEndpoint);
@@ -145,7 +147,7 @@ export function Artist() {
   const totalTracks = data.total_tracks ?? data.albums.reduce((s, a) => s + a.tracks, 0);
   const totalSize = data.total_size_mb ?? data.albums.reduce((s, a) => s + a.size_mb, 0);
   const letter = artistName.charAt(0).toUpperCase();
-  const issueCount = issueCountOverride ?? repairPlanSummary?.total ?? data.issue_count ?? 0;
+  const issueCount = issueCountOverride ?? repairPlanSummary?.total ?? rawIssueCount;
   const showRepairAction = issueCount > 0;
 
   const sortedAlbums = [...data.albums].sort((a, b) => {

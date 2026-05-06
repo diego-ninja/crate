@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 
 
 def _convert_mood_params(conditions: list[str], params: list) -> tuple[list[str], dict]:
@@ -22,7 +22,7 @@ def _convert_mood_params(conditions: list[str], params: list) -> tuple[list[str]
 
 def count_mood_tracks(conditions: list[str], params: list) -> int:
     named_conditions, named_params = _convert_mood_params(conditions, params)
-    with transaction_scope() as session:
+    with read_scope() as session:
         row = session.execute(
             text(f"SELECT COUNT(*) AS cnt FROM library_tracks WHERE {' AND '.join(named_conditions)}"),
             named_params,
@@ -33,7 +33,7 @@ def count_mood_tracks(conditions: list[str], params: list) -> int:
 def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dict]:
     named_conditions, named_params = _convert_mood_params(conditions, params)
     named_params["limit"] = limit
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(
                 f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,

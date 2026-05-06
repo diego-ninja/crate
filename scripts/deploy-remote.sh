@@ -14,11 +14,13 @@ ROLLBACK_TAG="rollback-${DEPLOY_ID}"
 cd "$SERVER_PATH"
 
 COMPOSE=(docker compose -f docker-compose.yaml -f docker-compose.project.yaml)
-PROJECT_SERVICES=(crate-api crate-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+PROJECT_SERVICES=(crate-api crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
 HEALTHY_SERVICES=(crate-redis crate-postgres crate-api)
-RUNNING_SERVICES=(crate-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+RUNNING_SERVICES=(crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference)
 PROJECT_IMAGES=(
-  ghcr.io/diego-ninja/crate-backend
+  ghcr.io/diego-ninja/crate-api
+  ghcr.io/diego-ninja/crate-readplane
+  ghcr.io/diego-ninja/crate-worker
   ghcr.io/diego-ninja/crate-ui
   ghcr.io/diego-ninja/crate-listen
   ghcr.io/diego-ninja/crate-site
@@ -27,9 +29,12 @@ PROJECT_IMAGES=(
 )
 
 declare -A SERVICE_IMAGE_REPOS=(
-  [crate-api]=ghcr.io/diego-ninja/crate-backend
-  [crate-worker]=ghcr.io/diego-ninja/crate-backend
-  [crate-playback-worker]=ghcr.io/diego-ninja/crate-backend
+  [crate-api]=ghcr.io/diego-ninja/crate-api
+  [crate-readplane]=ghcr.io/diego-ninja/crate-readplane
+  [crate-worker]=ghcr.io/diego-ninja/crate-worker
+  [crate-maintenance-worker]=ghcr.io/diego-ninja/crate-worker
+  [crate-analysis-worker]=ghcr.io/diego-ninja/crate-worker
+  [crate-playback-worker]=ghcr.io/diego-ninja/crate-worker
   [crate-ui]=ghcr.io/diego-ninja/crate-ui
   [crate-listen]=ghcr.io/diego-ninja/crate-listen
   [crate-site]=ghcr.io/diego-ninja/crate-site
@@ -54,6 +59,11 @@ env_value() {
   value="${value%\'}"
   value="${value#\'}"
   printf '%s' "$value"
+}
+
+compose_has_service() {
+  local service="$1"
+  dc config --services | grep -qx "$service"
 }
 
 set_env_value() {
@@ -116,6 +126,11 @@ check_public_url() {
   curl -fsSIL --max-time 10 --retry 3 --retry-delay 2 "$url" >/dev/null
 }
 
+check_public_get_url() {
+  local url="$1"
+  curl -fsSL --max-time 10 --retry 3 --retry-delay 2 "$url" >/dev/null
+}
+
 cmd_preflight() {
   local puid
   local pgid
@@ -131,6 +146,12 @@ cmd_preflight() {
   pgid="$(env_value PGID)"
   mkdir -p media/downloads/soulseek/incomplete media/downloads/tidal/incomplete
   chown -R "${puid:-1000}:${pgid:-1000}" media/downloads 2>/dev/null || true
+
+  mkdir -p data/crate/stream-cache data/crate/playlist-covers
+  chown -R "${puid:-1000}:${pgid:-1000}" \
+    data/crate/stream-cache \
+    data/crate/playlist-covers \
+    2>/dev/null || true
 
   mkdir -p "$BACKUP_ROOT"
   dc config -q
@@ -153,6 +174,9 @@ cmd_backup() {
   printf '%s\n' "$ROLLBACK_TAG" > "$BACKUP_DIR/rollback_tag"
 
   for service in "${PROJECT_SERVICES[@]}"; do
+    if ! compose_has_service "$service"; then
+      continue
+    fi
     repo="${SERVICE_IMAGE_REPOS[$service]}"
     image_id="$(docker inspect -f '{{.Image}}' "$service" 2>/dev/null || true)"
     if [[ -n "$image_id" ]]; then
@@ -211,11 +235,17 @@ cmd_verify() {
 
   log "Waiting for service health checks"
   for service in "${HEALTHY_SERVICES[@]}"; do
+    if ! compose_has_service "$service"; then
+      continue
+    fi
     wait_for_container_healthy "$service"
   done
 
   log "Waiting for web and worker containers"
   for service in "${RUNNING_SERVICES[@]}"; do
+    if ! compose_has_service "$service"; then
+      continue
+    fi
     wait_for_container_running "$service"
   done
 
@@ -228,10 +258,21 @@ with urllib.request.urlopen("http://127.0.0.1:8585/api/status", timeout=5) as re
         raise SystemExit(f"unexpected status {response.status}")
 PY
 
+  if compose_has_service crate-readplane; then
+    log "Checking readplane readiness from inside the backend container"
+    docker exec crate-api python - <<'PY'
+import urllib.request
+
+with urllib.request.urlopen("http://crate-readplane:8686/readyz", timeout=5) as response:
+    if response.status >= 400:
+        raise SystemExit(f"unexpected status {response.status}")
+PY
+  fi
+
   if [[ "$DEPLOY_PUBLIC_CHECKS" != "0" && -n "$domain" ]]; then
     command -v curl >/dev/null
     log "Checking public routes through Traefik"
-    check_public_url "https://api.${domain}/api/status"
+    check_public_get_url "https://api.${domain}/api/status"
     check_public_url "https://admin.${domain}"
     check_public_url "https://listen.${domain}"
     check_public_url "https://cratemusic.app"
@@ -242,6 +283,8 @@ PY
 
 cmd_rollback() {
   local rollback_tag
+  local rollback_services=()
+  local service
 
   if [[ ! -d "$BACKUP_DIR" ]]; then
     log "No rollback snapshot found for ${DEPLOY_ID}"
@@ -264,7 +307,12 @@ cmd_rollback() {
   dc config -q
 
   log "Restarting previous images with CRATE_IMAGE_TAG=${rollback_tag}"
-  CRATE_IMAGE_TAG="$rollback_tag" "${COMPOSE[@]}" up -d --no-build --remove-orphans "${PROJECT_SERVICES[@]}"
+  for service in "${PROJECT_SERVICES[@]}"; do
+    if compose_has_service "$service"; then
+      rollback_services+=("$service")
+    fi
+  done
+  CRATE_IMAGE_TAG="$rollback_tag" "${COMPOSE[@]}" up -d --no-build --remove-orphans "${rollback_services[@]}"
   DEPLOY_PUBLIC_CHECKS=0 cmd_verify
 }
 
@@ -289,7 +337,7 @@ cmd_ps() {
 
 cmd_diagnose() {
   dc ps || true
-  dc logs --tail=120 crate-api crate-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference || true
+  dc logs --tail=120 crate-api crate-readplane crate-worker crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-ui crate-listen crate-site crate-docs crate-reference || true
 }
 
 case "${1:-}" in

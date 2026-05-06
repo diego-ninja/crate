@@ -1,9 +1,9 @@
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 from sqlalchemy import text
 
 
 def get_runtime_taxonomy_rows() -> tuple[list[dict], list[dict], list[dict]]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         node_rows = session.execute(
             text(
                 "SELECT slug, name, description, is_top_level, eq_gains "

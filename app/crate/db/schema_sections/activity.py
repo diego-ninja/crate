@@ -187,12 +187,22 @@ def create_activity_schema(cur) -> None:
             host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
+            visibility TEXT NOT NULL DEFAULT 'private',
+            is_permanent BOOLEAN NOT NULL DEFAULT FALSE,
+            description TEXT,
+            tags JSONB NOT NULL DEFAULT '[]'::jsonb,
             current_track_payload JSONB DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL,
             ended_at TIMESTAMPTZ
         )
     """)
+    cur.execute("ALTER TABLE jam_rooms ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'private'")
+    cur.execute("ALTER TABLE jam_rooms ADD COLUMN IF NOT EXISTS is_permanent BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("ALTER TABLE jam_rooms ADD COLUMN IF NOT EXISTS description TEXT")
+    cur.execute("ALTER TABLE jam_rooms ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_rooms_host ON jam_rooms(host_user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_rooms_visibility_status ON jam_rooms(status, visibility, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_rooms_tags ON jam_rooms USING GIN (tags)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jam_room_members (

@@ -10,7 +10,7 @@ import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { getTrackQualityFallback, getTrackQualityFromInfo, mergeTrackQualityParts } from "@/lib/track-info";
 import { getTrackQualityFromPlaybackQuality } from "@/lib/track-playback";
 import { getPlaybackDeliveryPolicyPreference, PLAYER_PLAYBACK_PREFS_EVENT, type PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
-import { isAndroidNative } from "@/lib/capacitor-runtime";
+import { canUseWebAudioEffects } from "@/lib/mobile-audio-mode";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
@@ -101,7 +101,10 @@ function getTransportButtonToneClass(playSource: PlaySource | null, active: bool
 function PlayerSurfaceFallback({ fullscreen = false }: { fullscreen?: boolean }) {
   if (!fullscreen) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom,0px)+88px)] z-app-player-overlay flex justify-end px-4">
+      <div
+        className="pointer-events-none fixed inset-x-0 z-app-player-overlay flex justify-end px-4"
+        style={{ bottom: "calc(var(--listen-mobile-bottom-chrome-height) + 0.75rem)" }}
+      >
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/75 px-3 py-2 text-[11px] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <Loader2 size={14} className="animate-spin text-primary" />
           Loading player…
@@ -125,7 +128,8 @@ export function PlayerBar() {
     toggleShuffle, cycleRepeat,
   } = usePlayerActions();
   const isDesktop = useIsDesktop();
-  const showPlayerBarAnalyzer = SHOW_PLAYER_BAR_ANALYZER && isDesktop && !isAndroidNative;
+  const allowEqualizer = canUseWebAudioEffects;
+  const showPlayerBarAnalyzer = SHOW_PLAYER_BAR_ANALYZER && isDesktop && allowEqualizer;
 
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Crossfade still animates visual elements like artwork/title, but
@@ -170,6 +174,7 @@ export function PlayerBar() {
       setHasFloatingOverlayOpen(false);
       setShowQueue(false);
       setShowLyrics(false);
+      setShowEqualizer(false);
     },
     closeOnPointerDownOutside: false,
   });
@@ -257,6 +262,9 @@ export function PlayerBar() {
         ...(activeTrackQuality ?? {}),
       })
     : null;
+  const progressPct = displayedDuration > 0
+    ? Math.max(0, Math.min(100, (displayedTime / displayedDuration) * 100))
+    : 0;
   const showsDeliveryQuality = Boolean(currentTrackPlayback && currentTrackPlayback.effective_policy !== "original");
   const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
   const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
@@ -336,8 +344,13 @@ export function PlayerBar() {
       </div>
 
       <div
-        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
-        style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)", contain: "paint" }}
+        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[var(--listen-mobile-player-height)] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 md:h-[82px] ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        style={{
+          bottom: isDesktop ? 12 : "calc(var(--listen-mobile-bottom-nav-height) + var(--listen-mobile-player-gap))",
+          left: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-left))",
+          right: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-right))",
+          contain: "paint",
+        }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -348,7 +361,7 @@ export function PlayerBar() {
               role={isDesktop ? undefined : "button"}
               tabIndex={isDesktop ? undefined : 0}
               aria-label={isDesktop ? undefined : "Open fullscreen player"}
-              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[260px] md:flex-none md:cursor-default lg:w-[340px] xl:w-[min(34vw,520px)] 2xl:w-[min(38vw,680px)]"
+              className="flex min-w-0 shrink-0 flex-1 touch-manipulation cursor-pointer items-center gap-3 rounded-xl md:w-[260px] md:flex-none md:cursor-default lg:w-[340px] xl:w-[min(34vw,520px)] 2xl:w-[min(38vw,680px)]"
               onTouchStart={() => { if (!isDesktop) prepareFullscreenPlayer(); }}
               onClick={() => { if (!isDesktop) openFullscreenPlayer(); }}
               onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFullscreenPlayer(); } }}
@@ -580,12 +593,26 @@ export function PlayerBar() {
                   )}
                   <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-white/10" />
                   <div
-                    className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-primary/85 transition-[width] duration-150"
-                    style={{ width: `${displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}%` }}
+                    className="pointer-events-none absolute left-0 top-1/2 h-3 -translate-y-1/2 overflow-hidden rounded-full opacity-65 transition-[width] duration-150"
+                    style={{ width: `${progressPct}%` }}
+                  >
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(6,182,212,0)_0%,rgba(6,182,212,0.08)_44%,rgba(34,211,238,0.28)_82%,rgba(165,243,252,0.55)_100%)] blur-[3px]" />
+                    <div className="absolute inset-y-[5px] inset-x-0 rounded-full bg-[linear-gradient(90deg,rgba(6,182,212,0)_0%,rgba(6,182,212,0.18)_46%,rgba(34,211,238,0.58)_88%,rgba(207,250,254,0.78)_100%)]" />
+                  </div>
+                  <div
+                    className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,rgba(6,182,212,0.14),rgba(34,211,238,0.56),rgba(207,250,254,0.78))] transition-[width] duration-150"
+                    style={{ width: `${progressPct}%` }}
                   />
                   <div
-                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-primary/80 bg-cyan-100 opacity-0 shadow-[0_0_0_3px_rgba(34,211,238,0.14)] transition-opacity duration-150 group-hover:opacity-100"
-                    style={{ left: `calc(${displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}% - 5px)` }}
+                    className="pointer-events-none absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-100 shadow-[0_0_6px_rgba(165,243,252,0.62),0_0_12px_rgba(34,211,238,0.34)] transition-[left,opacity] duration-150"
+                    style={{
+                      left: `calc(${progressPct}% - 4px)`,
+                      opacity: progressPct > 0 ? 0.62 : 0,
+                    }}
+                  />
+                  <div
+                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-primary/80 bg-cyan-100 opacity-0 shadow-[0_0_0_3px_rgba(34,211,238,0.14)] transition-[left,opacity] duration-150 group-hover:opacity-100"
+                    style={{ left: `calc(${progressPct}% - 5px)` }}
                   />
                 </div>
                 <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
@@ -596,7 +623,7 @@ export function PlayerBar() {
           </div>
 
           {/* ── Mobile/tablet play controls (md only, no progress) ── */}
-          <div className="flex items-center gap-1 md:hidden">
+          <div className="flex items-center gap-0.5 md:hidden">
             {isShapedRadioTrack ? (
               <RadioFeedback
                 sessionId={shapedRadioSessionId!}
@@ -605,7 +632,7 @@ export function PlayerBar() {
                 size="sm"
               />
             ) : (
-              <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
+              <button onClick={prev} aria-label="Previous track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
                 <SkipBack size={18} fill="currentColor" />
               </button>
             )}
@@ -613,7 +640,7 @@ export function PlayerBar() {
               onClick={isPlaying ? pause : resume}
               aria-label={isPlaying ? "Pause" : "Play"}
               className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200",
+                "flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200 active:scale-95",
                 transportButtonClass,
               )}
             >
@@ -630,12 +657,12 @@ export function PlayerBar() {
                 onTouchStart={prepareFullscreenPlayer}
                 onClick={openFullscreenPlayer}
                 aria-label="Open fullscreen player"
-                className="w-10 h-10 flex items-center justify-center text-white/35 transition-colors hover:text-white/60"
+                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/35 transition-colors active:bg-white/5 active:text-white/60 hover:text-white/60"
               >
                 <Maximize2 size={16} />
               </button>
             ) : (
-              <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
+              <button onClick={next} aria-label="Next track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
                 <SkipForward size={18} fill="currentColor" />
               </button>
             )}
@@ -667,7 +694,7 @@ export function PlayerBar() {
               </button>
 
               {/* Equalizer (hidden when extended player is open) */}
-              {!extendedOpen && (
+              {!extendedOpen && allowEqualizer && (
                 <button
                   onClick={() => {
                     prepareEqualizerPopover();

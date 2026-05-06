@@ -141,7 +141,7 @@ def get_home_favorite_artists(user_id: int) -> list[dict]:
 
 def get_home_essentials(user_id: int) -> list[dict]:
     ctx = get_cached_home_context(user_id)
-    return _build_core_playlists(user_id, merged_artists_from_context(ctx), 6)
+    return _build_core_playlists(user_id, merged_artists_from_context(ctx), 7)
 
 
 __all__ = [

@@ -26,6 +26,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.redis_sse import close_pubsub, open_pubsub
 from crate.api.schemas.utility import CacheInvalidationRequest, CacheInvalidationResponse
 
 log = logging.getLogger(__name__)
@@ -84,10 +85,6 @@ def _get_redis():
         url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         _redis = _redis_lib.from_url(url, decode_responses=True)
     return _redis
-
-
-def _get_redis_url() -> str:
-    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 def _should_append_invalidation_domain_event(scope: str) -> bool:
@@ -221,27 +218,14 @@ def _format_heartbeat_sse() -> str:
 
 
 async def _open_live_invalidation_pubsub():
-    import redis.asyncio as aioredis
-
-    redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe(_LIVE_CHANNEL)
-    return redis, pubsub
+    return await open_pubsub(_LIVE_CHANNEL)
 
 
-async def _close_live_invalidation_pubsub(redis, pubsub) -> None:
+async def _close_live_invalidation_pubsub(pubsub) -> None:
     try:
-        await pubsub.unsubscribe(_LIVE_CHANNEL)
-    except Exception:
-        log.debug("Failed to unsubscribe cache invalidation pubsub", exc_info=True)
-    try:
-        await pubsub.aclose()
+        await close_pubsub(pubsub, _LIVE_CHANNEL)
     except Exception:
         log.debug("Failed to close cache invalidation pubsub", exc_info=True)
-    try:
-        await redis.aclose()
-    except Exception:
-        log.debug("Failed to close cache invalidation redis client", exc_info=True)
 
 
 # ── SSE stream ──────────────────────────────────────────────────────
@@ -257,11 +241,15 @@ async def _invalidation_stream(last_event_id: int) -> AsyncIterator[str]:
     Redis pub/sub channel for low-latency live delivery. Sends a
     keep-alive comment every 30 s to prevent proxy timeouts.
     """
-    redis = None
     pubsub = None
+    live_redis = None
 
     try:
-        redis, pubsub = await _open_live_invalidation_pubsub()
+        live_pubsub = await _open_live_invalidation_pubsub()
+        if isinstance(live_pubsub, tuple):
+            live_redis, pubsub = live_pubsub
+        else:
+            pubsub = live_pubsub
 
         missed = get_invalidation_events_since(last_event_id)
         for event in missed:
@@ -303,8 +291,12 @@ async def _invalidation_stream(last_event_id: int) -> AsyncIterator[str]:
                 heartbeat_counter = 0
                 yield _format_heartbeat_sse()
     finally:
-        if redis is not None and pubsub is not None:
-            await _close_live_invalidation_pubsub(redis, pubsub)
+        if pubsub is not None:
+            await _close_live_invalidation_pubsub(pubsub)
+        if live_redis is not None:
+            close = getattr(live_redis, "aclose", None)
+            if close is not None:
+                await close()
 
 
 @router.get(
@@ -383,6 +375,7 @@ _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"^/api/tags"), ["library"]),
     (re.compile(r"^/api/scan"), ["library", "home"]),
     (re.compile(r"^/api/import"), ["library", "home"]),
+    (re.compile(r"^/api/jam"), ["jam"]),
     (re.compile(r"^/api/cache/invalidate$"), []),
 ]
 
@@ -427,7 +420,7 @@ class CacheInvalidationMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
-        if method in ("POST", "PUT", "DELETE") and 200 <= status_code < 300:
+        if method in ("POST", "PUT", "PATCH", "DELETE") and 200 <= status_code < 300:
             scopes = _match_invalidation_scopes(path)
             if scopes:
                 broadcast_invalidation(*scopes)

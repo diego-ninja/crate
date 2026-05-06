@@ -5,7 +5,9 @@ from crate.db.repositories.tasks_creation import create_task_dedup as _create_ta
 from crate.db.repositories.tasks_creation import find_active_task_by_type_params as _find_active_task_by_type_params
 from crate.db.repositories.tasks_scan_results import save_scan_result as _save_scan_result
 from crate.db.repositories.tasks_shared import dispatch_task, dumps, register_tasks_surface_signal
+from crate.db.repositories.tasks_updates import fail_or_retry_task as _fail_or_retry_task
 from crate.db.repositories.tasks_updates import heartbeat_task as _heartbeat_task
+from crate.db.repositories.tasks_updates import start_task as _start_task
 from crate.db.repositories.tasks_updates import update_task as _update_task
 
 
@@ -70,6 +72,14 @@ def update_task(
     )
 
 
+def start_task(task_id: str, *, worker_id: str | None = None, session=None) -> dict | None:
+    return _start_task(task_id, worker_id=worker_id, session=session)
+
+
+def fail_or_retry_task(task_id: str, error: str, *, session=None) -> str:
+    return _fail_or_retry_task(task_id, error, session=session)
+
+
 def heartbeat_task(task_id: str, *, session=None):
     _heartbeat_task(task_id, session=session)
 
@@ -81,8 +91,10 @@ def save_scan_result(task_id: str, issues: list[dict], *, session=None):
 __all__ = [
     "create_task",
     "create_task_dedup",
+    "fail_or_retry_task",
     "find_active_task_by_type_params",
     "heartbeat_task",
     "save_scan_result",
+    "start_task",
     "update_task",
 ]

@@ -416,7 +416,7 @@ export function Album() {
   return (
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
       {/* Header */}
-      <div className="px-4 sm:px-6 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 5rem)" }}>
+      <div className="px-4 pb-4 sm:px-6" style={{ paddingTop: "var(--listen-mobile-page-top)" }}>
         <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 sm:flex-row">
           {/* Cover */}
           <div className="flex-shrink-0 w-[200px] sm:w-[240px] lg:w-[280px] mx-auto sm:mx-0">

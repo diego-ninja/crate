@@ -29,10 +29,33 @@ def list_tracks_missing_audio_fingerprints(
         filters.append("album_id = :album_id")
         params["album_id"] = int(album_id)
     if artist:
-        filters.append("lower(artist) = lower(:artist)")
+        filters.append(
+            """
+            (
+                lower(artist) = lower(:artist)
+                OR album_id IN (
+                    SELECT la.id
+                    FROM library_albums la
+                    WHERE lower(la.artist) = lower(:artist)
+                )
+            )
+            """
+        )
         params["artist"] = artist
     if album:
-        filters.append("lower(album) = lower(:album)")
+        filters.append(
+            """
+            (
+                lower(album) = lower(:album)
+                OR album_id IN (
+                    SELECT la.id
+                    FROM library_albums la
+                    WHERE lower(la.name) = lower(:album)
+                       OR lower(regexp_replace(trim(trailing '/' from COALESCE(la.path, '')), '^.*/', '')) = lower(:album)
+                )
+            )
+            """
+        )
         params["album"] = album
     where_sql = " AND ".join(filters)
     with transaction_scope() as session:

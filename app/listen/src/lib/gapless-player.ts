@@ -6,7 +6,7 @@
  */
 
 import { Gapless5 } from "@/lib/gapless5/gapless5";
-import { isAndroidNative } from "@/lib/capacitor-runtime";
+import { stableMobileAudioPipeline } from "@/lib/mobile-audio-mode";
 import { createEqChain, isFlatGains, type EqChain, type EqGains } from "@/lib/equalizer";
 import { getCrossfadeDurationPreference } from "./player-playback-prefs";
 
@@ -155,14 +155,15 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
   }
 
   currentCallbacks = callbacks;
+  const preferHtml5Audio = stableMobileAudioPipeline;
 
   instance = new Gapless5({
     useHTML5Audio: true,
-    // Android WebView struggles when we both stream through <audio> and
-    // download/decode the same track into WebAudio memory. Keep Android on
-    // the streaming HTML5 path; desktop/iOS retain WebAudio for EQ/visuals.
-    useWebAudio: !isAndroidNative,
-    analyserPrecision: isAndroidNative ? null : 2048,
+    // Android WebView and iOS WebKit are both more reliable for mobile
+    // background/lock-screen playback when the live source is <audio>.
+    // Desktop keeps WebAudio for EQ, visualizers and true RAM-backed gapless.
+    useWebAudio: !preferHtml5Audio,
+    analyserPrecision: preferHtml5Audio ? null : 2048,
     crossfade: getCrossfadeMs(),
     crossfadeShape: GAPLESS_CROSSFADE_EQUAL_POWER,
     volume: lastVolume,
@@ -171,7 +172,7 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
     // (no limit) which fires dozens of parallel XHR+HTML5 loads on
     // large playlists, saturating the browser connection pool and
     // causing noticeable latency before the current track starts.
-    loadLimit: isAndroidNative ? 1 : 2,
+    loadLimit: preferHtml5Audio ? 1 : 2,
   });
   appliedVolume = lastVolume;
 
