@@ -55,6 +55,11 @@ if (!isNative && typeof window !== "undefined" && "serviceWorker" in navigator) 
 createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
     <App />
-    <Toaster theme="dark" position="bottom-center" richColors />
+    <Toaster
+      theme="dark"
+      position="bottom-center"
+      richColors
+      mobileOffset={{ bottom: "calc(var(--listen-mobile-bottom-chrome-height) + 0.75rem)" }}
+    />
   </BrowserRouter>,
 );

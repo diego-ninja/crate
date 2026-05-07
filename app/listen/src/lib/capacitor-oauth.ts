@@ -46,12 +46,21 @@ export function persistOAuthCallbackPayload(
 export async function consumeOAuthCallbackUrl(
   url: string,
 ): Promise<{ handled: boolean; next: string }> {
-  if (!url.startsWith("cratemusic://oauth/callback")) {
-    return { handled: false, next: "/" };
-  }
-
   try {
-    const result = persistOAuthCallbackPayload(new URL(url).searchParams);
+    const parsed = new URL(url);
+    const isCustomSchemeCallback =
+      parsed.protocol === "cratemusic:"
+      && parsed.hostname === "oauth"
+      && parsed.pathname === "/callback";
+    const isUniversalLinkCallback =
+      parsed.protocol === "https:"
+      && parsed.pathname === "/auth/callback";
+
+    if (!isCustomSchemeCallback && !isUniversalLinkCallback) {
+      return { handled: false, next: "/" };
+    }
+
+    const result = persistOAuthCallbackPayload(parsed.searchParams);
     if (!result.handled) {
       return result;
     }

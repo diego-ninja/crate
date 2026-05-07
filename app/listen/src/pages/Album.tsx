@@ -416,78 +416,97 @@ export function Album() {
   return (
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
       {/* Header */}
-      <div className="px-4 pb-4 sm:px-6" style={{ paddingTop: "var(--listen-mobile-page-top)" }}>
-        <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 sm:flex-row">
-          {/* Cover */}
-          <div className="flex-shrink-0 w-[200px] sm:w-[240px] lg:w-[280px] mx-auto sm:mx-0">
-            <div className="aspect-square rounded-lg overflow-hidden bg-white/5 shadow-2xl">
-              {data.has_cover ? (
-                <img
-                  src={coverUrl}
-                  alt={displayName}
-                  className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Disc size={64} className="text-white/10" />
-                </div>
-              )}
-            </div>
-          </div>
+      <div className="relative min-h-[520px] overflow-hidden sm:h-[430px] sm:min-h-0 lg:h-[460px]">
+        {data.has_cover ? (
+          <img
+            src={coverUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full scale-[1.04] object-cover grayscale brightness-[0.42] contrast-110 opacity-35"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-black/32" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.16) 34%, rgba(8, 10, 14, 0.5) 64%, var(--surface-app) 100%)",
+          }}
+        />
 
-          {/* Info */}
-          <div className="flex flex-col justify-end text-left">
-            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{displayName}</h1>
-              <OfflineBadge state={offlineState} />
+        <div className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-6 pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pt-0">
+          <div className="flex w-full flex-col gap-6 sm:flex-row sm:items-end">
+            {/* Cover */}
+            <div className="w-[200px] flex-shrink-0 self-center sm:w-[240px] sm:self-auto lg:w-[280px]">
+              <div className="aspect-square overflow-hidden rounded-2xl bg-white/5 shadow-2xl ring-1 ring-white/10">
+                {data.has_cover ? (
+                  <img
+                    src={coverUrl}
+                    alt={displayName}
+                    className="h-full w-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Disc size={64} className="text-white/10" />
+                  </div>
+                )}
+              </div>
             </div>
-            <button
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mb-3 self-start"
-              onClick={() => navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }))}
-            >
-              <span className="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex-shrink-0">
-                <img
-                  src={artistPhotoUrl}
-                  alt={data.artist}
-                  className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              </span>
-              {data.artist}
-            </button>
 
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground justify-center sm:justify-start">
-              {year && <span>{year}</span>}
-              {!data.genre_profile?.length && genre ? <span>{genre}</span> : null}
-              {data.track_count > 0 && (
-                <span>{data.track_count} tracks</span>
-              )}
-              {data.total_length_sec > 0 && (
-                <span className="flex items-center gap-1">
-                  <Clock size={11} />
-                  {formatTotalDuration(data.total_length_sec)}
+            {/* Info */}
+            <div className="flex min-w-0 flex-col justify-end text-left">
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <h1 className="max-w-4xl text-2xl font-bold text-foreground sm:text-4xl">{displayName}</h1>
+                <OfflineBadge state={offlineState} />
+              </div>
+              <button
+                className="mb-3 inline-flex items-center gap-2 self-start text-sm text-muted-foreground transition-colors hover:text-primary"
+                onClick={() => navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }))}
+              >
+                <span className="h-6 w-6 flex-shrink-0 overflow-hidden rounded-full bg-white/5">
+                  <img
+                    src={artistPhotoUrl}
+                    alt={data.artist}
+                    className="h-full w-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
                 </span>
-              )}
-              {qualityBadges.map((badge) => (
-                <QualityBadge key={`${badge.tier}-${badge.label}`} badge={badge} />
-              ))}
-            </div>
+                {data.artist}
+              </button>
 
-            {data.genre_profile && data.genre_profile.length > 0 ? (
-              <GenrePillRow
-                items={data.genre_profile}
-                max={6}
-                className="mt-3 justify-center sm:justify-start"
-                onSelect={(item) => navigate(`/explore?genre=${encodeURIComponent(item.slug || albumGenreSlug(item.name))}`)}
-              />
-            ) : null}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {year && <span>{year}</span>}
+                {!data.genre_profile?.length && genre ? <span>{genre}</span> : null}
+                {data.track_count > 0 && (
+                  <span>{data.track_count} tracks</span>
+                )}
+                {data.total_length_sec > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Clock size={11} />
+                    {formatTotalDuration(data.total_length_sec)}
+                  </span>
+                )}
+                {qualityBadges.map((badge) => (
+                  <QualityBadge key={`${badge.tier}-${badge.label}`} badge={badge} />
+                ))}
+              </div>
+
+              {data.genre_profile && data.genre_profile.length > 0 ? (
+                <GenrePillRow
+                  items={data.genre_profile}
+                  max={6}
+                  className="mt-3"
+                  onSelect={(item) => navigate(`/explore?genre=${encodeURIComponent(item.slug || albumGenreSlug(item.name))}`)}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Action Row */}
-      <div className="px-4 sm:px-6 pb-4">
+      <div className="px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-[1480px] items-center gap-2">
           <button
             className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/gapless-player", () => ({
   fadeInAndPlay: vi.fn(() => Promise.resolve()),
   fadeOutAndPause: vi.fn(() => Promise.resolve()),
+  getPosition: vi.fn(() => 0),
+  play: vi.fn(),
   pause: vi.fn(),
   restoreVolume: vi.fn(),
   // Default: track is NOT fully buffered in RAM, so interruption paths
@@ -30,6 +32,7 @@ import type { MutableRefObject } from "react";
 import type { Track } from "./player-types";
 
 const mockFadeOutAndPause = vi.mocked(gaplessPlayer.fadeOutAndPause);
+const mockGetPosition = vi.mocked(gaplessPlayer.getPosition);
 const mockIsOnline = vi.mocked(capacitor.isOnline);
 const globalFetch = global.fetch;
 
@@ -57,6 +60,8 @@ function createRefs(overrides: {
 beforeEach(() => {
   vi.useFakeTimers();
   mockFadeOutAndPause.mockClear();
+  mockGetPosition.mockReset();
+  mockGetPosition.mockReturnValue(0);
   mockIsOnline.mockClear();
   mockIsOnline.mockResolvedValue(true);
   global.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200, body: null } as Response)) as typeof fetch;
@@ -245,5 +250,31 @@ describe("useSoftInterruption", () => {
     const before = refs.commitIsBuffering.mock.calls.length;
     act(() => { vi.advanceTimersByTime(5000); });
     expect(refs.commitIsBuffering.mock.calls.length).toBe(before);
+  });
+
+  it("retries playback after a background resume leaves playback stalled", async () => {
+    const refs = createRefs({ isPlaying: true, isBuffering: true });
+    mockGetPosition
+      .mockReturnValueOnce(10_000)
+      .mockReturnValueOnce(10_000)
+      .mockReturnValue(10_000);
+    renderHook(() => useSoftInterruption(refs));
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("crate:app-paused"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_000);
+      window.dispatchEvent(new CustomEvent("crate:app-resumed"));
+    });
+
+    expect(gaplessPlayer.play).toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_600);
+    });
+
+    expect(refs.commitIsBuffering).toHaveBeenCalledWith(true);
+    expect(mockFadeOutAndPause).toHaveBeenCalled();
   });
 });

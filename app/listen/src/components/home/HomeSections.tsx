@@ -44,19 +44,19 @@ export function SectionHeader({
   };
 }) {
   return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
+    <div className="flex items-end justify-between gap-3">
+      <div className="min-w-0">
         <h2 className="text-lg font-bold text-foreground">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {railControls ? (
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="flex items-center gap-1.5 md:gap-2">
             <button
               type="button"
               onClick={railControls.onScrollLeft}
               disabled={!railControls.canScrollLeft}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35 md:h-8 md:w-8"
               aria-label={`Scroll ${title} left`}
             >
               <ChevronLeft size={14} />
@@ -65,7 +65,7 @@ export function SectionHeader({
               type="button"
               onClick={railControls.onScrollRight}
               disabled={!railControls.canScrollRight}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35 md:h-8 md:w-8"
               aria-label={`Scroll ${title} right`}
             >
               <ChevronRight size={14} />
@@ -143,7 +143,7 @@ export function SectionRail({
     <div
       ref={railRef}
       className={cn(
-        "hide-rail-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden pb-2",
+        "hide-rail-scrollbar flex snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto overflow-y-hidden pb-2 transform-gpu will-change-scroll",
         className,
       )}
     >
@@ -295,16 +295,16 @@ export function ContinueListeningCard({
   onPlay: () => void;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-4">
+    <div className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-3 sm:p-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_55%)]" />
-      <div className="relative flex items-center gap-4">
+      <div className="relative flex items-center gap-3 sm:gap-4">
         <TrackCoverThumb
           src={track.albumCover}
           iconSize={24}
-          className="h-20 w-20 shrink-0 rounded-2xl"
+          className="h-16 w-16 shrink-0 rounded-2xl sm:h-20 sm:w-20"
         />
         <div className="min-w-0 flex-1">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <div className="mb-2 inline-flex max-w-full items-center gap-2 truncate rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             <Clock3 size={11} />
             Continue listening
           </div>
@@ -314,7 +314,7 @@ export function ContinueListeningCard({
         </div>
         <button
           onClick={onPlay}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform group-hover:scale-105"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform group-hover:scale-105 sm:h-11 sm:w-11"
         >
           <Play size={18} fill="currentColor" className="ml-0.5" />
         </button>

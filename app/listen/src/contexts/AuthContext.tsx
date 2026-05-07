@@ -13,6 +13,7 @@ import { clearAuthRuntime } from "@/contexts/auth-runtime";
 import { useAuthHeartbeat } from "@/contexts/use-auth-heartbeat";
 import { useAuthOAuthSync } from "@/contexts/use-auth-oauth-sync";
 import { useAuthSession } from "@/contexts/use-auth-session";
+import { useListenWarmup } from "@/hooks/use-listen-warmup";
 
 export function useAuth() {
   const value = useContext(AuthContext);
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useAuthOAuthSync({ navigate, refetch });
   useAuthHeartbeat(user);
+  useListenWarmup(user);
 
   const logout = useCallback(async () => {
     try {

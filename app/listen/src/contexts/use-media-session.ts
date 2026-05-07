@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { Track } from "./player-types";
 import { resolveMaybeApiAssetUrl } from "@/lib/api";
+import {
+  onNativeMediaControl,
+  stopNativeMediaSession,
+  syncNativeMediaSession,
+} from "@/lib/native-media-session";
 
 /**
  * Sync the Web MediaSession API with the current player state.
@@ -33,6 +38,49 @@ export function useMediaSession({
   useEffect(() => {
     actionsRef.current = { pause, resume, next, prev, seek, currentTime, duration };
   }, [currentTime, duration, next, pause, prev, resume, seek]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+
+    void onNativeMediaControl((event) => {
+      const actions = actionsRef.current;
+      switch (event.control) {
+        case "play":
+          actions.resume();
+          break;
+        case "pause":
+          actions.pause();
+          break;
+        case "next":
+          actions.next();
+          break;
+        case "previous":
+          actions.prev();
+          break;
+        case "seekTo":
+          if (typeof event.position === "number") {
+            actions.seek(event.position);
+          }
+          break;
+      }
+    })
+      .then((removeListener) => {
+        if (disposed) {
+          removeListener();
+        } else {
+          cleanup = removeListener;
+        }
+      })
+      .catch(() => {
+        // Native controls are optional; web media session keeps working.
+      });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
 
   // Update metadata when track changes
   useEffect(() => {
@@ -72,6 +120,36 @@ export function useMediaSession({
       // Some browsers don't support setPositionState
     }
   }, [duration, positionSeconds]);
+
+  const nativePositionSeconds = Math.floor(
+    Math.min(duration > 0 ? duration : currentTime, currentTime) / 15,
+  ) * 15;
+  useEffect(() => {
+    if (!currentTrack) {
+      void stopNativeMediaSession();
+      return;
+    }
+
+    const coverUrl = resolveMaybeApiAssetUrl(currentTrack.albumCover);
+    void syncNativeMediaSession({
+      title: currentTrack.title || "Unknown",
+      artist: currentTrack.artist || "",
+      album: currentTrack.album || "",
+      artwork: coverUrl || undefined,
+      isPlaying,
+      position: nativePositionSeconds,
+      duration: duration || 0,
+    });
+  }, [
+    currentTrack?.id,
+    currentTrack?.title,
+    currentTrack?.artist,
+    currentTrack?.album,
+    currentTrack?.albumCover,
+    duration,
+    isPlaying,
+    nativePositionSeconds,
+  ]);
 
   // Register action handlers
   useEffect(() => {

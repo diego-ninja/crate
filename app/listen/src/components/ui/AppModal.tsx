@@ -105,7 +105,7 @@ export function AppModal({
         onTouchEnd={onSwipeEnd}
       >
         {/* Drag handle — visible on mobile only */}
-        <div ref={dragHandleRef} className="flex touch-pan-y justify-center pt-2 pb-1 sm:hidden">
+        <div ref={dragHandleRef} className="flex touch-pan-y justify-center pt-4 pb-3 sm:hidden">
           <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
         {children}

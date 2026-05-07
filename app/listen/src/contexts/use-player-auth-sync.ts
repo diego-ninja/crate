@@ -4,6 +4,7 @@ import type { AuthUser } from "@/contexts/auth-context";
 import type { Track } from "@/contexts/player-types";
 import { api } from "@/lib/api";
 import { getTrackCacheKey } from "@/contexts/player-utils";
+import { getListenAppPlatform, getListenDeviceType } from "@/lib/listen-device";
 import { flushQueue as flushPlayEventQueue } from "@/lib/play-event-queue";
 import { toTrackReferencePayload } from "@/lib/track-reference";
 
@@ -73,8 +74,8 @@ export function usePlayerAuthSync({
         artist: activeTrack.artist,
         album: activeTrack.album || "",
         started_at: nowPlayingStartedAtRef.current,
-        device_type: "web",
-        app_platform: "listen-web",
+        device_type: getListenDeviceType(),
+        app_platform: getListenAppPlatform(),
       }).catch(() => {});
     };
 

@@ -323,14 +323,14 @@ export function HomeTasteHero({
         <>
           <button
             onClick={() => { go(idx - 1); pause(); }}
-            className="absolute left-3 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+            className="absolute left-3 top-5 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white sm:top-1/2 sm:h-8 sm:w-8 sm:-translate-y-1/2"
             aria-label="Previous"
           >
             <ChevronLeft size={18} />
           </button>
           <button
             onClick={() => { go(idx + 1); pause(); }}
-            className="absolute right-3 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+            className="absolute right-3 top-5 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white sm:top-1/2 sm:h-8 sm:w-8 sm:-translate-y-1/2"
             aria-label="Next"
           >
             <ChevronRight size={18} />
@@ -340,7 +340,7 @@ export function HomeTasteHero({
 
       {/* Dots */}
       {count > 1 && (
-        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
+        <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 sm:bottom-4">
           {heroes.map((_, i) => (
             <button
               key={i}
@@ -397,32 +397,31 @@ function HeroSlide({
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,7,11,0.92)_0%,rgba(5,7,11,0.75)_45%,rgba(5,7,11,0.32)_100%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.26),transparent_42%)]" />
 
-      {/* Fixed-height content area */}
-      <div className="relative z-10 flex h-[240px] flex-col justify-between px-6 py-6 sm:h-[280px] sm:px-8 sm:py-8 lg:px-10">
+      <div className="relative z-10 flex min-h-[260px] flex-col justify-between px-4 py-5 pb-12 sm:min-h-[280px] sm:px-8 sm:py-8 lg:px-10">
         <div>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
               <Sparkles size={12} />
               Recommended
             </div>
             {genres && genres.length > 0 && (
-              <div className="flex gap-1.5">
+              <div className="flex min-w-0 flex-wrap gap-1.5">
                 {genres.slice(0, 2).map((g) => (
-                  <span key={g} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 text-[10px] text-white/50">{g}</span>
+                  <span key={g} className="max-w-[42vw] truncate rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 text-[10px] text-white/50 sm:max-w-none">{g}</span>
                 ))}
               </div>
             )}
           </div>
 
-          <h1 className="mt-4 text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mt-4 truncate text-3xl font-black tracking-tight text-white min-[380px]:text-4xl sm:text-5xl lg:text-6xl">
             {hero.name}
           </h1>
 
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
+          <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[10px] uppercase tracking-[0.16em] text-muted-foreground sm:text-[11px] sm:tracking-[0.18em]">
+            <div className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
               {statValue(hero.listeners)} listeners
             </div>
-            <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
+            <div className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
               {hero.album_count} albums · {hero.track_count} tracks
             </div>
           </div>
@@ -430,7 +429,7 @@ function HeroSlide({
 
         <div className="flex flex-wrap gap-2.5">
           <button
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:min-h-0 sm:px-5 sm:py-2.5 sm:text-sm"
             onClick={(e) => { e.stopPropagation(); onPlay(); }}
           >
             <Play size={15} fill="currentColor" />
@@ -438,7 +437,7 @@ function HeroSlide({
           </button>
           <button
             className={cn(
-              "inline-flex items-center rounded-full border border-white/12 bg-white/[0.06] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.12]",
+              "inline-flex min-h-11 items-center rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-white/[0.12] sm:min-h-0 sm:px-5 sm:py-2.5 sm:text-sm",
               following ? "text-primary" : "",
             )}
             onClick={(e) => { e.stopPropagation(); onToggleFollow(); }}
@@ -446,7 +445,7 @@ function HeroSlide({
             {following ? "Following" : "Follow"}
           </button>
           <button
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white sm:min-h-0 sm:py-2.5 sm:text-sm"
             onClick={(e) => { e.stopPropagation(); onInfo(); }}
           >
             <Info size={14} />

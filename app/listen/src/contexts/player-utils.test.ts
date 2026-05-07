@@ -232,6 +232,20 @@ describe("getEffectiveCrossfadeSeconds", () => {
     ).toBe(ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS);
   });
 
+  it("keeps a minimal HTML5 mask for continuous albums even when crossfade preference is off", () => {
+    expect(
+      getEffectiveCrossfadeSeconds(
+        ALBUM_TRACK_A,
+        ALBUM_TRACK_B,
+        ALBUM_SOURCE,
+        false,
+        0,
+        true,
+        { html5OnlyPlayback: true },
+      ),
+    ).toBe(ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS);
+  });
+
   it("keeps true gapless album playback when enhanced mobile audio is enabled", () => {
     expect(
       getEffectiveCrossfadeSeconds(

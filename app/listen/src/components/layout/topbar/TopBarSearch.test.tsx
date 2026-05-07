@@ -11,9 +11,19 @@ import { api } from "@/lib/api";
 import { TopBarSearch } from "@/components/layout/topbar/TopBarSearch";
 import { renderWithListenProviders } from "@/test/render-with-listen-providers";
 
+function mockHoverPointer(matches: boolean) {
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+    matches,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })));
+}
+
 describe("TopBarSearch", () => {
   afterEach(() => {
     localStorage.clear();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -44,6 +54,7 @@ describe("TopBarSearch", () => {
   });
 
   it("opens on hover and collapses again when idle", async () => {
+    mockHoverPointer(true);
     renderWithListenProviders(<TopBarSearch />);
 
     const searchButton = screen.getByRole("button", { name: "Search" });
@@ -58,6 +69,16 @@ describe("TopBarSearch", () => {
     await waitFor(() => {
       expect(searchButton.getAttribute("aria-expanded")).toBe("false");
     });
+  });
+
+  it("ignores hover on touch-only devices", async () => {
+    mockHoverPointer(false);
+    renderWithListenProviders(<TopBarSearch />);
+
+    const searchButton = screen.getByRole("button", { name: "Search" });
+    fireEvent.mouseEnter(searchButton);
+
+    expect(searchButton.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("stays open after click even if mouseleave fires before focus settles", async () => {
