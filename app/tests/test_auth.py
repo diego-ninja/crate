@@ -50,6 +50,35 @@ class TestJWT:
         assert payload["name"] == "Test"
 
     @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
+    def test_create_jwt_supports_listen_expiry_override(self, _mock_secret):
+        import jwt as pyjwt
+
+        from crate.auth import JWT_ALGORITHM, LISTEN_ACCESS_TOKEN_EXPIRY_HOURS, create_jwt
+
+        token = create_jwt(42, "user@test.com", "user", expires_in_hours=LISTEN_ACCESS_TOKEN_EXPIRY_HOURS)
+        payload = pyjwt.decode(
+            token,
+            "test-secret-key-1234-12345678901234",
+            algorithms=[JWT_ALGORITHM],
+            options={"verify_exp": False},
+        )
+
+        assert payload["exp"] - payload["iat"] == LISTEN_ACCESS_TOKEN_EXPIRY_HOURS * 3600
+
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
+    def test_refresh_jwt_is_not_accepted_as_access_token(self, _mock_secret):
+        from crate.auth import create_refresh_jwt, verify_jwt, verify_refresh_jwt
+
+        token = create_refresh_jwt(42, "sess-123", datetime.now(timezone.utc) + timedelta(days=30))
+
+        assert verify_jwt(token) is None
+        payload = verify_refresh_jwt(token)
+        assert payload is not None
+        assert payload["typ"] == "refresh"
+        assert payload["user_id"] == 42
+        assert payload["sid"] == "sess-123"
+
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
     def test_expired_token_returns_none(self, _mock_secret):
         import jwt as pyjwt
         from crate.auth import verify_jwt, JWT_ALGORITHM
@@ -241,6 +270,40 @@ class TestOAuthStart:
 
         assert providers["google"]["login_url"] == "https://listen.lespedants.org/api/auth/google"
 
+    def test_oauth_start_infers_listen_web_from_return_to(self):
+        from crate.api.auth import oauth_start
+        from crate.api.schemas.auth import OAuthStartRequest
+
+        captured_state: dict[str, Any] = {}
+        request = self._request()
+        request.state.user = None
+
+        with patch("crate.api.auth._provider_available", return_value=True), \
+             patch("crate.api.auth._build_oauth_state", side_effect=lambda **kwargs: captured_state.update(kwargs) or "state-token"), \
+             patch("crate.api.auth._parse_oauth_state", return_value={"verifier": "verifier"}), \
+             patch("crate.api.auth._pkce_challenge", return_value="challenge"), \
+             patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "google-client"}):
+            asyncio.run(oauth_start(request, "google", OAuthStartRequest(return_to="https://listen.lespedants.org/auth/callback")))
+
+        assert captured_state["app_id"] == "listen-web"
+
+    def test_oauth_start_infers_listen_native_from_deep_link(self):
+        from crate.api.auth import oauth_start
+        from crate.api.schemas.auth import OAuthStartRequest
+
+        captured_state: dict[str, Any] = {}
+        request = self._request()
+        request.state.user = None
+
+        with patch("crate.api.auth._provider_available", return_value=True), \
+             patch("crate.api.auth._build_oauth_state", side_effect=lambda **kwargs: captured_state.update(kwargs) or "state-token"), \
+             patch("crate.api.auth._parse_oauth_state", return_value={"verifier": "verifier"}), \
+             patch("crate.api.auth._pkce_challenge", return_value="challenge"), \
+             patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "google-client"}):
+            asyncio.run(oauth_start(request, "google", OAuthStartRequest(return_to="cratemusic://oauth/callback")))
+
+        assert captured_state["app_id"] == "listen-native"
+
 
 class TestAuthUserAvatarProxy:
     @staticmethod
@@ -334,10 +397,10 @@ class TestOAuthCallback:
              patch("crate.api.auth.get_user_by_google_id", return_value=legacy_user), \
              patch("crate.api.auth.upsert_user_external_identity") as mock_upsert, \
              patch("crate.api.auth.update_user_last_login") as mock_last_login, \
-             patch("crate.api.auth._create_login_session", return_value=("jwt-token", {"id": "sess-1"})):
+             patch("crate.api.auth._create_login_session", return_value=("jwt-token", {"id": "sess-1"}, "refresh-token")):
             response = asyncio.run(oauth_callback(self._request(), "google", code="code", state="state"))
 
-        assert response.headers["location"] == "cratemusic://oauth/callback?token=jwt-token"
+        assert response.headers["location"] == "cratemusic://oauth/callback?token=jwt-token&refresh_token=refresh-token"
         mock_upsert.assert_called_once()
         mock_last_login.assert_called_once_with(legacy_user["id"])
 
@@ -385,6 +448,97 @@ class TestOAuthCallback:
         assert "already linked" in exc_info.value.detail
 
 
+class TestLoginSessionExpiry:
+    @staticmethod
+    def _request(headers: list[tuple[bytes, bytes]] | None = None) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/auth/login",
+                "query_string": b"",
+                "headers": headers or [],
+                "client": ("127.0.0.1", 12345),
+                "scheme": "https",
+                "server": ("listen.lespedants.org", 443),
+            }
+        )
+
+    def test_listen_sessions_last_at_least_30_days(self):
+        from crate.api.auth import _create_login_session
+        from crate.auth import LISTEN_ACCESS_TOKEN_EXPIRY_HOURS
+
+        user = {
+            "id": 7,
+            "email": "listener@test.com",
+            "role": "user",
+            "username": "listener",
+            "name": "Listener",
+        }
+        captured: dict[str, Any] = {}
+
+        def fake_create_session(session_id: str, user_id: int, expires_at: str, **kwargs):
+            captured["session_id"] = session_id
+            captured["user_id"] = user_id
+            captured["expires_at"] = expires_at
+            captured["kwargs"] = kwargs
+            return {"id": session_id, "expires_at": expires_at}
+
+        before = datetime.now(timezone.utc)
+        with patch("crate.api.auth.create_session", side_effect=fake_create_session), \
+             patch("crate.api.auth.create_jwt", return_value="jwt-token") as mock_create_jwt, \
+             patch("crate.api.auth.create_refresh_jwt", return_value="refresh-token") as mock_create_refresh:
+            token, session, refresh_token = _create_login_session(
+                user,
+                self._request(headers=[
+                    (b"x-crate-app", b"listen-web"),
+                    (b"x-device-fingerprint", b"device-123"),
+                ]),
+            )
+
+        expires_at = datetime.fromisoformat(captured["expires_at"])
+        assert token == "jwt-token"
+        assert refresh_token == "refresh-token"
+        assert session["id"] == captured["session_id"]
+        assert expires_at - before >= timedelta(days=30) - timedelta(seconds=2)
+        assert captured["kwargs"]["app_id"] == "listen-web"
+        assert captured["kwargs"]["device_fingerprint"] == "device-123"
+        assert mock_create_jwt.call_args.kwargs["expires_in_hours"] == LISTEN_ACCESS_TOKEN_EXPIRY_HOURS
+        assert mock_create_refresh.called
+
+    def test_admin_sessions_keep_default_one_day_expiry(self):
+        from crate.api.auth import _create_login_session
+        from crate.auth import JWT_EXPIRY_HOURS
+
+        user = {
+            "id": 1,
+            "email": "admin@test.com",
+            "role": "admin",
+            "username": "admin",
+            "name": "Admin",
+        }
+        captured: dict[str, Any] = {}
+
+        def fake_create_session(session_id: str, user_id: int, expires_at: str, **kwargs):
+            captured["expires_at"] = expires_at
+            captured["kwargs"] = kwargs
+            return {"id": session_id, "expires_at": expires_at}
+
+        before = datetime.now(timezone.utc)
+        with patch("crate.api.auth.create_session", side_effect=fake_create_session), \
+             patch("crate.api.auth.create_jwt", return_value="jwt-token") as mock_create_jwt:
+            _token, _session, refresh_token = _create_login_session(
+                user,
+                self._request(headers=[(b"host", b"admin.lespedants.org")]),
+            )
+
+        expires_at = datetime.fromisoformat(captured["expires_at"])
+        assert timedelta(hours=JWT_EXPIRY_HOURS) - timedelta(seconds=2) <= expires_at - before <= timedelta(hours=JWT_EXPIRY_HOURS, seconds=2)
+        assert captured["kwargs"]["app_id"] is None
+        assert refresh_token is None
+        assert mock_create_jwt.call_args.kwargs["expires_in_hours"] == JWT_EXPIRY_HOURS
+
+
 # ── API endpoint tests ─────────────────────────────────────────────
 
 
@@ -403,7 +557,7 @@ class TestLoginEndpoint:
              patch("crate.api.auth.get_setting", return_value=None), \
              patch("crate.api.auth.verify_password", return_value=True), \
              patch("crate.api.auth.update_user_last_login"), \
-             patch("crate.api.auth._create_login_session", return_value=("fake-jwt", fake_session)):
+             patch("crate.api.auth._create_login_session", return_value=("fake-jwt", fake_session, None)):
             resp = test_app.post("/api/auth/login", json={"email": "test@test.com", "password": "pass"})
             assert resp.status_code == 200
             data = resp.json()
@@ -430,6 +584,69 @@ class TestLoginEndpoint:
              patch("crate.api.auth.get_setting", return_value=None):
             resp = test_app.post("/api/auth/login", json={"email": "nobody@x.com", "password": "x"})
             assert resp.status_code == 401
+
+    def test_login_rate_limit_blocks_repeated_failures(self, test_app):
+        from crate.api import auth as auth_api
+
+        auth_api._login_failure_memory.clear()
+        try:
+            with patch.dict("os.environ", {
+                "CRATE_LOGIN_RATE_LIMIT_MAX_ATTEMPTS": "2",
+                "CRATE_LOGIN_RATE_LIMIT_WINDOW_SECONDS": "300",
+            }, clear=False), \
+                 patch("crate.api.auth._get_rate_limit_redis", return_value=None), \
+                 patch("crate.api.auth.get_user_by_email", return_value=None), \
+                 patch("crate.api.auth.get_setting", return_value=None):
+                first = test_app.post("/api/auth/login", json={"email": "limited@test.com", "password": "x"})
+                second = test_app.post("/api/auth/login", json={"email": "limited@test.com", "password": "x"})
+                third = test_app.post("/api/auth/login", json={"email": "limited@test.com", "password": "x"})
+
+            assert first.status_code == 401
+            assert second.status_code == 401
+            assert third.status_code == 429
+        finally:
+            auth_api._login_failure_memory.clear()
+
+
+class TestRefreshEndpoint:
+    def test_refresh_issues_new_listen_access_and_refresh_tokens(self, test_app):
+        from crate.auth import LISTEN_ACCESS_TOKEN_EXPIRY_HOURS
+
+        expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        session = {
+            "id": "sess-123",
+            "user_id": 7,
+            "expires_at": expires_at,
+            "revoked_at": None,
+            "app_id": "listen-android",
+            "device_label": "Android (Listen)",
+            "device_fingerprint": "device-123",
+        }
+        user = {
+            "id": 7,
+            "email": "listener@test.com",
+            "role": "user",
+            "username": "listener",
+            "name": "Listener",
+        }
+
+        with patch("crate.api.auth.verify_refresh_jwt", return_value={"user_id": 7, "sid": "sess-123"}), \
+             patch("crate.api.auth.get_session", return_value=session), \
+             patch("crate.api.auth.get_user_by_id", return_value=user), \
+             patch("crate.api.auth.touch_session", return_value=session), \
+             patch("crate.api.auth.create_jwt", return_value="new-access") as mock_create_jwt, \
+             patch("crate.api.auth.create_refresh_jwt", return_value="new-refresh"):
+            resp = test_app.post(
+                "/api/auth/refresh",
+                json={"refresh_token": "old-refresh"},
+                headers={"x-crate-app": "listen-android", "x-device-fingerprint": "device-123"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["token"] == "new-access"
+        assert resp.json()["refresh_token"] == "new-refresh"
+        assert resp.json()["session"]["id"] == "sess-123"
+        assert mock_create_jwt.call_args.kwargs["expires_in_hours"] == LISTEN_ACCESS_TOKEN_EXPIRY_HOURS
 
 
 class TestRegisterEndpoint:
@@ -544,6 +761,52 @@ class TestAuthMiddleware:
         assert response.status_code == 200
         assert response.json()["user"] == "admin@cratemusic.app"
 
+    @staticmethod
+    def _remote_user_request(headers: dict[str, str]) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/protected",
+                "query_string": b"",
+                "headers": [(key.lower().encode(), value.encode()) for key, value in headers.items()],
+                "client": ("172.18.0.10", 12345),
+                "scheme": "http",
+                "server": ("crate-api", 8585),
+            }
+        )
+
+    def test_auth_middleware_ignores_remote_user_without_shared_secret(self):
+        from crate.api.auth import AuthMiddleware
+
+        request = self._remote_user_request({
+            "Remote-User": "admin@cratemusic.app",
+            "Remote-Role": "admin",
+        })
+
+        with patch.dict("os.environ", {"FORWARD_AUTH_SECRET": "", "CRATE_FORWARD_AUTH_SECRET": ""}, clear=False):
+            user = asyncio.run(AuthMiddleware(lambda *_args: None).resolve_user(request))
+
+        assert user is None
+
+    def test_auth_middleware_accepts_remote_user_with_shared_secret(self):
+        from crate.api.auth import AuthMiddleware
+
+        request = self._remote_user_request({
+            "Remote-User": "admin@cratemusic.app",
+            "Remote-Role": "admin",
+            "X-Forward-Auth-Secret": "shared-secret",
+        })
+
+        with patch.dict("os.environ", {"FORWARD_AUTH_SECRET": "shared-secret"}, clear=False):
+            user = asyncio.run(AuthMiddleware(lambda *_args: None).resolve_user(request))
+
+        assert user == {
+            "id": None,
+            "email": "admin@cratemusic.app",
+            "role": "admin",
+        }
+
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
 class TestAuthIntegration:
@@ -587,6 +850,33 @@ class TestAuthIntegration:
 
         sessions = pg_db.list_sessions(admin["id"])
         assert any(session["id"] == data["session"]["id"] for session in sessions)
+
+    def test_create_session_reuses_active_listen_device_fingerprint(self, pg_db):
+        user = pg_db.create_user("session-device@test.com")
+        now = datetime.now(timezone.utc)
+
+        first = pg_db.create_session(
+            "listen-a",
+            user["id"],
+            (now + timedelta(days=30)).isoformat(),
+            app_id="listen-web",
+            device_label="Web (Listen)",
+            device_fingerprint="device-abc",
+        )
+        second = pg_db.create_session(
+            "listen-b",
+            user["id"],
+            (now + timedelta(days=30)).isoformat(),
+            app_id="listen-web",
+            device_label="Web (Listen)",
+            device_fingerprint="device-abc",
+        )
+
+        sessions = pg_db.list_sessions(user["id"], include_revoked=True)
+        assert first["id"] == "listen-a"
+        assert second["id"] == "listen-a"
+        assert [session["id"] for session in sessions].count("listen-a") == 1
+        assert "listen-b" not in {session["id"] for session in sessions}
 
     def test_create_user_reuses_shared_session_for_username_lookup(self, pg_db):
         from crate.db.auth import create_user, get_user_by_id

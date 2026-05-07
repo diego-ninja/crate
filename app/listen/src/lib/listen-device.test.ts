@@ -37,6 +37,20 @@ async function loadDeviceHelpers({
 }
 
 describe("listen device helpers", () => {
+  it("persists a stable device fingerprint", async () => {
+    localStorage.clear();
+    const { getListenDeviceFingerprint } = await loadDeviceHelpers({
+      native: false,
+      platform: "web",
+    });
+
+    const first = getListenDeviceFingerprint();
+    const second = getListenDeviceFingerprint();
+
+    expect(first).toMatch(/^listen:/);
+    expect(second).toBe(first);
+  });
+
   it("labels Android native sessions", async () => {
     const { getListenAppPlatform, getListenDeviceLabel, getListenDeviceType } = await loadDeviceHelpers({
       native: true,

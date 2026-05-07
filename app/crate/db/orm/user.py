@@ -47,6 +47,7 @@ class Session(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(Text)
     app_id: Mapped[Optional[str]] = mapped_column(Text)
     device_label: Mapped[Optional[str]] = mapped_column(Text)
+    device_fingerprint: Mapped[Optional[str]] = mapped_column(Text)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
 

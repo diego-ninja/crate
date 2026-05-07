@@ -29,11 +29,37 @@ def create_session(
     user_agent: str | None = None,
     app_id: str | None = None,
     device_label: str | None = None,
+    device_fingerprint: str | None = None,
     session=None,
 ) -> dict:
     def _impl(s) -> dict:
         label = device_label or (parse_device_label(user_agent) if user_agent else None)
+        fingerprint = (device_fingerprint or "").strip() or None
         now = datetime.now(timezone.utc)
+        if app_id and fingerprint:
+            reusable = s.execute(
+                select(AuthSession)
+                .where(
+                    AuthSession.user_id == user_id,
+                    AuthSession.app_id == app_id,
+                    AuthSession.device_fingerprint == fingerprint,
+                    AuthSession.revoked_at.is_(None),
+                    AuthSession.expires_at > now,
+                )
+                .order_by(func.coalesce(AuthSession.last_seen_at, AuthSession.created_at).desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if reusable is not None:
+                reusable.expires_at = coerce_datetime(expires_at)
+                reusable.last_seen_at = now
+                reusable.last_seen_ip = last_seen_ip
+                reusable.user_agent = user_agent
+                reusable.app_id = app_id
+                reusable.device_label = label
+                reusable.device_fingerprint = fingerprint
+                s.flush()
+                return model_to_dict(reusable)
+
         auth_session = AuthSession(
             id=session_id,
             user_id=user_id,
@@ -44,6 +70,7 @@ def create_session(
             user_agent=user_agent,
             app_id=app_id,
             device_label=label,
+            device_fingerprint=fingerprint,
         )
         s.add(auth_session)
         s.flush()
@@ -59,13 +86,16 @@ def get_session(session_id: str) -> dict | None:
         return model_to_dict(auth_session) if auth_session is not None else None
 
 
-def list_sessions(user_id: int, *, include_revoked: bool = False) -> list[dict]:
+def list_sessions(user_id: int, *, include_revoked: bool = False, limit: int | None = 50) -> list[dict]:
     now = datetime.now(timezone.utc)
     with read_scope() as session:
         stmt = select(AuthSession).where(AuthSession.user_id == user_id)
         if not include_revoked:
-            stmt = stmt.where(AuthSession.revoked_at.is_(None))
-        rows = session.execute(stmt.order_by(func.coalesce(AuthSession.last_seen_at, AuthSession.created_at).desc())).scalars().all()
+            stmt = stmt.where(AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)
+        stmt = stmt.order_by(func.coalesce(AuthSession.last_seen_at, AuthSession.created_at).desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        rows = session.execute(stmt).scalars().all()
         sessions = [enrich_auth_session(model_to_dict(row), now=now) for row in rows]
         now_playing = get_cache(f"now_playing:{user_id}", max_age_seconds=90)
         if isinstance(now_playing, dict):
@@ -80,6 +110,7 @@ def touch_session(
     user_agent: str | None = None,
     app_id: str | None = None,
     device_label: str | None = None,
+    device_fingerprint: str | None = None,
 ) -> dict | None:
     with transaction_scope() as session:
         auth_session = session.get(AuthSession, session_id)
@@ -98,6 +129,8 @@ def touch_session(
             parsed_label = parse_device_label(auth_session.user_agent)
             if parsed_label:
                 auth_session.device_label = parsed_label
+        if device_fingerprint is not None:
+            auth_session.device_fingerprint = device_fingerprint
         session.flush()
         return model_to_dict(auth_session)
 

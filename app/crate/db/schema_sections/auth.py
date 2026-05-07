@@ -39,10 +39,16 @@ def create_auth_schema(cur) -> None:
             last_seen_ip TEXT,
             user_agent TEXT,
             app_id TEXT,
-            device_label TEXT
+            device_label TEXT,
+            device_fingerprint TEXT
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_app_device
+        ON sessions(user_id, app_id, device_fingerprint)
+        WHERE revoked_at IS NULL AND device_fingerprint IS NOT NULL
+    """)
     cur.execute("""
         DO $$
         BEGIN

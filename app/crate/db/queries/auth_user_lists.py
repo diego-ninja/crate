@@ -28,6 +28,7 @@ def list_users() -> list[dict]:
                         FROM sessions s
                         WHERE s.user_id = u.id
                           AND s.revoked_at IS NULL
+                          AND s.expires_at > NOW()
                           AND COALESCE(s.last_seen_at, s.created_at) >= NOW() - INTERVAL '10 minutes'
                     ), 0)::INTEGER AS active_sessions,
                     COALESCE((
@@ -47,6 +48,7 @@ def list_users() -> list[dict]:
                         FROM sessions s
                         WHERE s.user_id = u.id
                           AND s.revoked_at IS NULL
+                          AND s.expires_at > NOW()
                     ), u.last_login) AS last_seen_at
                 FROM users u
                 ORDER BY u.id

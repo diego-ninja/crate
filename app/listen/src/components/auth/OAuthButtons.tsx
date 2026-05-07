@@ -46,6 +46,7 @@ export function OAuthButtons({ returnTo = "/", inviteToken }: OAuthButtonsProps)
     if (isNative) {
       const callbackUrl = nativeOAuthCallbackUrl(base, rt);
       target.searchParams.set("return_to", callbackUrl.toString());
+      target.searchParams.set("app_id", `listen-${platform}`);
       import("@capacitor/browser").then(({ Browser }) => {
         Browser.open({ url: target.toString() });
       });

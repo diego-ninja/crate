@@ -1,4 +1,4 @@
-import { setAuthToken } from "@/lib/api";
+import { setAuthTokens } from "@/lib/api";
 
 const OAUTH_NEXT_KEY = "crate-oauth-next";
 
@@ -22,10 +22,11 @@ export function consumePendingOAuthNext(): string | null {
 
 export function getOAuthCallbackPayload(
   search: string | URLSearchParams,
-): { token: string | null; next: string } {
+): { token: string | null; refreshToken: string | null; next: string } {
   const params = typeof search === "string" ? new URLSearchParams(search) : search;
   return {
     token: params.get("token"),
+    refreshToken: params.get("refresh_token"),
     next: params.get("next") || "/",
   };
 }
@@ -33,12 +34,12 @@ export function getOAuthCallbackPayload(
 export function persistOAuthCallbackPayload(
   search: string | URLSearchParams,
 ): { handled: boolean; next: string } {
-  const { token, next } = getOAuthCallbackPayload(search);
+  const { token, refreshToken, next } = getOAuthCallbackPayload(search);
   if (!token) {
     return { handled: false, next };
   }
 
-  setAuthToken(token);
+  setAuthTokens(token, refreshToken ?? undefined);
   storePendingOAuthNext(next);
   return { handled: true, next };
 }

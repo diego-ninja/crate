@@ -156,6 +156,7 @@ def enrich_auth_session(session: dict, *, now: datetime | None = None) -> dict:
     enriched = dict(session)
     parsed = parse_device_details(enriched.get("user_agent"))
     display_label = _clean_device_part(enriched.get("device_label")) or _device_display_from_parts(parsed)
+    stored_fingerprint = _clean_device_part(enriched.get("device_fingerprint"))
     activity_state = session_activity_state(
         created_at=enriched.get("created_at"),
         last_seen_at=enriched.get("last_seen_at"),
@@ -173,7 +174,7 @@ def enrich_auth_session(session: dict, *, now: datetime | None = None) -> dict:
             "device_model": parsed.get("device_model"),
             "device_type": parsed.get("device_type"),
             "display_label": display_label,
-            "device_fingerprint": build_device_fingerprint(
+            "device_fingerprint": stored_fingerprint or build_device_fingerprint(
                 user_agent=enriched.get("user_agent"),
                 device_label=display_label,
                 last_seen_ip=enriched.get("last_seen_ip"),

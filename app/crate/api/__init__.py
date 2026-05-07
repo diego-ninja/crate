@@ -11,6 +11,28 @@ from crate.api._deps import json_dumps
 from crate.api.openapi import custom_openapi, variant_openapi
 from crate.db.core import init_db
 
+SECURITY_RESPONSE_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOWED_HEADERS = [
+    "Accept",
+    "Authorization",
+    "Content-Type",
+    "If-Modified-Since",
+    "If-None-Match",
+    "Last-Event-ID",
+    "Range",
+    "X-Crate-App",
+    "X-Device-Fingerprint",
+    "X-Device-Label",
+    "X-Requested-With",
+]
+
 
 class DateAwareJSONResponse(JSONResponse):
     def render(self, content) -> bytes:
@@ -33,6 +55,15 @@ def create_app() -> FastAPI:
         default_response_class=DateAwareJSONResponse,
     )
     app.openapi = lambda: custom_openapi(app)
+
+    @app.middleware("http")
+    async def security_headers_middleware(request, call_next):
+        response = await call_next(request)
+        if not is_dev:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        for header, value in SECURITY_RESPONSE_HEADERS.items():
+            response.headers.setdefault(header, value)
+        return response
 
     @app.get("/openapi-crate.json", include_in_schema=False)
     async def openapi_crate_json():
@@ -132,8 +163,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=CORS_ALLOWED_METHODS,
+        allow_headers=CORS_ALLOWED_HEADERS,
     )
 
     from crate.api.auth import AuthMiddleware

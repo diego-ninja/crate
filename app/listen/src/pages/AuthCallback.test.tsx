@@ -1,10 +1,10 @@
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockNavigate, mockRefetch, mockSetAuthToken } = vi.hoisted(() => ({
+const { mockNavigate, mockRefetch, mockSetAuthTokens } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockRefetch: vi.fn<() => Promise<void>>(),
-  mockSetAuthToken: vi.fn(),
+  mockSetAuthTokens: vi.fn(),
 }));
 
 const authState = vi.hoisted(() => ({
@@ -29,7 +29,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  setAuthToken: mockSetAuthToken,
+  setAuthTokens: mockSetAuthTokens,
 }));
 
 import { AuthCallback } from "@/pages/AuthCallback";
@@ -38,7 +38,7 @@ describe("AuthCallback", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockRefetch.mockReset();
-    mockSetAuthToken.mockReset();
+    mockSetAuthTokens.mockReset();
     authState.user = null;
     authState.loading = true;
     localStorage.clear();
@@ -54,7 +54,7 @@ describe("AuthCallback", () => {
 
     const { rerender } = render(<AuthCallback />);
 
-    expect(mockSetAuthToken).toHaveBeenCalledWith("oauth-token");
+    expect(mockSetAuthTokens).toHaveBeenCalledWith("oauth-token", undefined);
     expect(localStorage.getItem("crate-oauth-next")).toBe("/stats");
     expect(mockRefetch).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -92,6 +92,6 @@ describe("AuthCallback", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true });
     });
     expect(mockRefetch).not.toHaveBeenCalled();
-    expect(mockSetAuthToken).not.toHaveBeenCalled();
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
   });
 });

@@ -166,6 +166,7 @@ export function seedNativeServer(
     label: overrides.label ?? "crate.example.test",
     url: overrides.url ?? "https://crate.example.test",
     token: overrides.token ?? null,
+    refreshToken: overrides.refreshToken ?? null,
   };
   localStorage.setItem("crate-servers", JSON.stringify([server]));
   localStorage.setItem("crate-current-server", server.id);

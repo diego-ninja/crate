@@ -28,7 +28,8 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
                     s.last_seen_ip,
                     s.user_agent,
                     s.app_id,
-                    s.device_label
+                    s.device_label,
+                    s.device_fingerprint
                 FROM sessions s
                 WHERE s.user_id = ANY(:user_ids)
                 ORDER BY s.user_id, COALESCE(s.last_seen_at, s.created_at) DESC

@@ -31,6 +31,8 @@ export interface ServerConfig {
   url: string;
   /** Bearer token for this server, or null if not logged in yet. */
   token: string | null;
+  /** Long-lived refresh token for this server, or null when unavailable. */
+  refreshToken: string | null;
 }
 
 function safeJsonParse<T>(raw: string | null, fallback: T): T {
@@ -73,7 +75,10 @@ export function deriveLabel(url: string): string {
 export function getServers(): ServerConfig[] {
   if (!isNative) return [];
   try {
-    return safeJsonParse<ServerConfig[]>(localStorage.getItem(SERVERS_KEY), []);
+    return safeJsonParse<ServerConfig[]>(localStorage.getItem(SERVERS_KEY), []).map((server) => ({
+      ...server,
+      refreshToken: server.refreshToken ?? null,
+    }));
   } catch {
     return [];
   }
@@ -117,6 +122,7 @@ export function addServer(url: string, label?: string): ServerConfig {
     label: (label || deriveLabel(normalised)).trim() || deriveLabel(normalised),
     url: normalised,
     token: null,
+    refreshToken: null,
   };
   writeServers([...getServers(), server]);
   dispatchChange();
@@ -152,6 +158,30 @@ export function setCurrentServerToken(token: string | null): void {
   dispatchChange();
 }
 
+export function setCurrentServerRefreshToken(refreshToken: string | null): void {
+  const id = getCurrentServerId();
+  if (!id) return;
+  const servers = getServers().map((s) => (s.id === id ? { ...s, refreshToken } : s));
+  writeServers(servers);
+  dispatchChange();
+}
+
+export function setCurrentServerAuthTokens(token: string | null, refreshToken?: string | null): void {
+  const id = getCurrentServerId();
+  if (!id) return;
+  const servers = getServers().map((s) => (
+    s.id === id
+      ? {
+          ...s,
+          token,
+          refreshToken: refreshToken === undefined ? s.refreshToken : refreshToken,
+        }
+      : s
+  ));
+  writeServers(servers);
+  dispatchChange();
+}
+
 export function updateServerLabel(id: string, label: string): void {
   const trimmed = label.trim();
   if (!trimmed) return;
@@ -174,7 +204,7 @@ export function migrateLegacyToken(defaultUrl: string): void {
     if (!legacyToken || !defaultUrl) return;
     const seeded = addServer(defaultUrl);
     const patched = getServers().map((s) =>
-      s.id === seeded.id ? { ...s, token: legacyToken } : s,
+      s.id === seeded.id ? { ...s, token: legacyToken, refreshToken: null } : s,
     );
     writeServers(patched);
     setCurrentServerId(seeded.id);
