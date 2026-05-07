@@ -16,6 +16,80 @@ from crate.db.home_builder_shared import (
 from crate.db.releases import get_new_releases
 from crate.genre_taxonomy import get_genre_display_name, get_related_genre_terms
 
+_COLD_START_DISCOVERY_GENRES = ["rock", "punk", "metal", "alternative", "electronic"]
+
+
+def _coerce_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _candidate_personal_score(row: dict) -> float:
+    score = 0.0
+    score -= min(_coerce_int(row.get("user_play_count")), 10) * 0.25
+    if row.get("is_liked"):
+        score -= 3.0
+    return score
+
+
+def _rank_personalized_rows(rows: list[dict]) -> list[dict]:
+    return [
+        row
+        for _index, row in sorted(
+            enumerate(rows),
+            key=lambda item: (-_candidate_personal_score(item[1]), item[0]),
+        )
+    ]
+
+
+def _audio_bucket(row: dict) -> tuple[int | None, int | None, str]:
+    bpm = _coerce_float(row.get("bpm"))
+    energy = _coerce_float(row.get("energy"))
+    bpm_bucket = int(bpm // 20) if bpm is not None and bpm > 0 else None
+    energy_bucket = int(energy * 5) if energy is not None else None
+    key_bucket = str(row.get("audio_key") or "")
+    return bpm_bucket, energy_bucket, key_bucket
+
+
+def _prefer_acoustic_variety(rows: list[dict]) -> list[dict]:
+    if len(rows) <= 2:
+        return rows
+
+    remaining = list(rows)
+    ordered: list[dict] = []
+    seen_buckets: set[tuple[int | None, int | None, str]] = set()
+
+    while remaining:
+        selected_index = next(
+            (index for index, row in enumerate(remaining) if _audio_bucket(row) not in seen_buckets),
+            0,
+        )
+        row = remaining.pop(selected_index)
+        bucket = _audio_bucket(row)
+        if bucket in seen_buckets:
+            seen_buckets.clear()
+        seen_buckets.add(bucket)
+        ordered.append(row)
+
+    return ordered
+
+
+def _prepare_mix_candidate_rows(rows: list[dict]) -> list[dict]:
+    return _prefer_acoustic_variety(_rank_personalized_rows(rows))
+
+
+def _discovery_seed_genres(top_genres_lower: list[str], *, limit: int = 3) -> list[str]:
+    return (top_genres_lower or _COLD_START_DISCOVERY_GENRES)[:limit]
+
 
 def _daily_rotate_rows(rows: list[dict], user_id: int) -> list[dict]:
     if len(rows) <= 1:
@@ -36,7 +110,7 @@ def _build_mix_rows(
     if mix_id == "daily-discovery":
         primary_rows = _query_discovery_tracks(
             user_id,
-            genres=top_genres_lower[:3],
+            genres=_discovery_seed_genres(top_genres_lower),
             excluded_artist_names=interest_artists_lower[:12] or [""],
             limit=max(limit * 5, 120),
         )
@@ -45,7 +119,7 @@ def _build_mix_rows(
         if len(primary_rows) < limit:
             fallback_rows = _query_discovery_tracks(
                 user_id,
-                genres=top_genres_lower[:3],
+                genres=_discovery_seed_genres(top_genres_lower),
                 excluded_artist_names=[],
                 limit=max(limit * 6, 160),
             )
@@ -57,7 +131,7 @@ def _build_mix_rows(
             "Daily Discovery",
             "Fresh tracks orbiting around your favorite scenes.",
             _select_diverse_tracks_with_backfill(
-                _daily_rotate_rows(rows, user_id),
+                _prepare_mix_candidate_rows(_daily_rotate_rows(rows, user_id)),
                 limit=limit,
                 max_per_artist=2,
                 max_per_album=2,
@@ -95,13 +169,18 @@ def _build_mix_rows(
         return (
             "My New Arrivals",
             "Recent material from the artists already in your orbit.",
-            _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=2, max_per_album=2),
+            _select_diverse_tracks_with_backfill(
+                _prepare_mix_candidate_rows(rows),
+                limit=limit,
+                max_per_artist=2,
+                max_per_album=2,
+            ),
         )
 
     if mix_id.startswith("genre-"):
         genre_slug = mix_id.removeprefix("genre-")
         genre_name = get_genre_display_name(genre_slug)
-        related_genres = get_related_genre_terms(genre_slug, limit=12, max_depth=1)
+        related_genres = get_related_genre_terms(genre_slug, limit=16, max_depth=2)
         if not related_genres:
             return ("", "", [])
         rows = _query_discovery_tracks(
@@ -113,7 +192,12 @@ def _build_mix_rows(
         return (
             f"{genre_name} mix",
             f"Tracks from your library matching {genre_name} and closely related scenes.",
-            _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=2, max_per_album=2),
+            _select_diverse_tracks_with_backfill(
+                _prepare_mix_candidate_rows(rows),
+                limit=limit,
+                max_per_artist=2,
+                max_per_album=2,
+            ),
         )
 
     return ("", "", [])

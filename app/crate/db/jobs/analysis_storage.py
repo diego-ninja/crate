@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 from crate.db.bliss_vectors import to_pgvector_literal
+from crate.db.jobs.artist_bliss_centroids import refresh_artist_bliss_centroids_for_track_ids
 from crate.db.jobs.analysis_shared import (
     append_pipeline_event,
     complete_processing_state,
@@ -173,6 +174,7 @@ def store_bliss_vectors(vectors_by_track_id: dict[int, list[float]]) -> None:
         )
         for row in rows:
             append_pipeline_event(session, pipeline="bliss", track_id=row["track_id"], state="done")
+        refresh_artist_bliss_centroids_for_track_ids(session, [row["track_id"] for row in rows])
         mark_ops_snapshot_dirty(session)
 
 

@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -43,7 +44,10 @@ import { usePlayerAuthSync } from "@/contexts/use-player-auth-sync";
 import { usePlayerEngineCallbacks } from "@/contexts/use-player-engine-callbacks";
 import { usePlayerQueueActions } from "@/contexts/use-player-queue-actions";
 import { usePlayerRuntimeState } from "@/contexts/use-player-runtime-state";
-import { useSoftInterruption } from "@/contexts/use-soft-interruption";
+import {
+  PLAYBACK_NEEDS_USER_GESTURE_EVENT,
+  useSoftInterruption,
+} from "@/contexts/use-soft-interruption";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
 import {
@@ -87,6 +91,7 @@ export function usePlayer(): PlayerContextValue {
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
+  const [playbackNeedsUserGesture, setPlaybackNeedsUserGesture] = useState(false);
   const {
     queue,
     currentIndex,
@@ -202,6 +207,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const {
     beginSoftInterruption,
     cancelSoftInterruption,
+    requireUserGestureToResume,
     scheduleStallProtection,
     clearStallTimer,
     isSoftInterrupted,
@@ -210,6 +216,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     isPlayingRef,
     isBufferingRef,
     bufferingIntentRef,
+    commitIsPlaying,
     commitIsBuffering,
   });
   const {
@@ -473,6 +480,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     cancelRestoreAutoplay,
     tryRestoreAutoplay,
     cancelSoftInterruption,
+    requireUserGestureToResume,
     beginSoftInterruption,
     isSoftInterrupted,
     ensureTrackerSession,
@@ -579,6 +587,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const handleNeedsUserGesture = () => {
+      setPlaybackNeedsUserGesture(true);
+    };
+    window.addEventListener(PLAYBACK_NEEDS_USER_GESTURE_EVENT, handleNeedsUserGesture);
+    return () => {
+      window.removeEventListener(PLAYBACK_NEEDS_USER_GESTURE_EVENT, handleNeedsUserGesture);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isPlaying || !currentTrack) {
+      setPlaybackNeedsUserGesture(false);
+    }
+  }, [currentTrack, isPlaying]);
+
+  useEffect(() => {
     return () => {
       gpDestroyPlayer();
     };
@@ -671,6 +695,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       <PlayerStateContext.Provider value={stateValue}>
         <PlayerProgressContext.Provider value={progressValue}>
           {children}
+          {playbackNeedsUserGesture && currentTrack ? (
+            <div className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--listen-player-bottom-offset,5.5rem)+env(safe-area-inset-bottom))] z-[1600] flex justify-center sm:bottom-28">
+              <button
+                type="button"
+                className="pointer-events-auto rounded-full border border-cyan-400/30 bg-slate-950/95 px-4 py-3 text-sm font-semibold text-white shadow-2xl shadow-cyan-950/40 backdrop-blur"
+                onClick={() => {
+                  setPlaybackNeedsUserGesture(false);
+                  resume();
+                }}
+              >
+                Tap to resume playback
+              </button>
+            </div>
+          ) : null}
         </PlayerProgressContext.Provider>
       </PlayerStateContext.Provider>
     </PlayerActionsContext.Provider>

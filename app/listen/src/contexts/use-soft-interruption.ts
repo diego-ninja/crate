@@ -20,17 +20,21 @@ const RECOVERY_RETRY_MS = 3000;
 const STREAM_PROBE_TIMEOUT_MS = 4000;
 const SOFT_PAUSE_FADE_MS = 220;
 
+export const PLAYBACK_NEEDS_USER_GESTURE_EVENT = "crate:playback-needs-user-gesture";
+
 interface UseSoftInterruptionOptions {
   currentTrackRef: MutableRefObject<Track | undefined>;
   isPlayingRef: MutableRefObject<boolean>;
   isBufferingRef: MutableRefObject<boolean>;
   bufferingIntentRef: MutableRefObject<boolean>;
+  commitIsPlaying: (value: boolean) => void;
   commitIsBuffering: (value: boolean) => void;
 }
 
 export interface SoftInterruptionController {
   beginSoftInterruption: (reason: "offline" | "stream") => void;
   cancelSoftInterruption: () => void;
+  requireUserGestureToResume: () => void;
   scheduleStallProtection: () => void;
   clearStallTimer: () => void;
   /** True if the player is currently in a soft-interrupted state. */
@@ -56,6 +60,7 @@ export function useSoftInterruption({
   isPlayingRef,
   isBufferingRef,
   bufferingIntentRef,
+  commitIsPlaying,
   commitIsBuffering,
 }: UseSoftInterruptionOptions): SoftInterruptionController {
   const softInterruptionReasonRef = useRef<"offline" | "stream" | null>(null);
@@ -168,6 +173,26 @@ export function useSoftInterruption({
     clearStallTimer();
     clearRecoveryTimer();
   }, [clearRecoveryTimer, clearStallTimer]);
+
+  const requireUserGestureToResume = useCallback(() => {
+    if (!currentTrackRef.current) return;
+    softInterruptionReasonRef.current = "stream";
+    shouldAutoResumeAfterInterruptionRef.current = false;
+    recoveryProbeInFlightRef.current = false;
+    bufferingIntentRef.current = false;
+    clearStallTimer();
+    clearRecoveryTimer();
+    commitIsPlaying(false);
+    commitIsBuffering(false);
+    window.dispatchEvent(new CustomEvent(PLAYBACK_NEEDS_USER_GESTURE_EVENT));
+  }, [
+    bufferingIntentRef,
+    clearRecoveryTimer,
+    clearStallTimer,
+    commitIsBuffering,
+    commitIsPlaying,
+    currentTrackRef,
+  ]);
 
   const scheduleStallProtection = useCallback(() => {
     clearStallTimer();
@@ -327,6 +352,7 @@ export function useSoftInterruption({
   return {
     beginSoftInterruption,
     cancelSoftInterruption,
+    requireUserGestureToResume,
     scheduleStallProtection,
     clearStallTimer,
     isSoftInterrupted,

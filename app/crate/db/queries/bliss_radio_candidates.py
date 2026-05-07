@@ -37,7 +37,7 @@ def get_similar_artist_tracks_for_radio(
                         LOWER(a.artist) AS similar_name_key,
                         ROW_NUMBER() OVER (
                             PARTITION BY LOWER(a.artist)
-                            ORDER BY RANDOM()
+                            ORDER BY COALESCE(t.lastfm_playcount, 0) DESC, t.id
                         ) AS artist_pick
                     FROM library_tracks t
                     JOIN library_albums a ON t.album_id = a.id

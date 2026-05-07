@@ -187,6 +187,18 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_lastfm_playcount ON library_tracks(lastfm_playcount DESC NULLS LAST)")
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS artist_bliss_centroids (
+            artist_id BIGINT PRIMARY KEY REFERENCES library_artists(id) ON DELETE CASCADE,
+            artist_name TEXT NOT NULL,
+            track_count INTEGER NOT NULL DEFAULT 0,
+            bliss_vector DOUBLE PRECISION[] NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artist_bliss_centroids_name ON artist_bliss_centroids(LOWER(artist_name))")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artist_bliss_centroids_updated ON artist_bliss_centroids(updated_at DESC)")
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS track_lyrics (
             id SERIAL PRIMARY KEY,
             provider TEXT NOT NULL DEFAULT 'lrclib',

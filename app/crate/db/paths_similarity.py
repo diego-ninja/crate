@@ -9,6 +9,7 @@ from crate.db.queries.paths import (
     load_artist_similarity_graph,
     load_shared_members_graph,
 )
+from crate.genre_taxonomy import get_genre_ancestor_slugs, get_related_genre_terms, resolve_genre_slug, slugify_genre
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +26,26 @@ def _load_shared_members_graph() -> dict[str, set[str]]:
 
 def _load_artist_genres() -> dict[str, dict[str, float]]:
     return load_artist_genres()
+
+
+def _expand_genre_weights(genres: dict[str, float]) -> dict[str, float]:
+    expanded: dict[str, float] = {}
+    for raw_genre, raw_weight in (genres or {}).items():
+        weight = float(raw_weight or 0.0)
+        if weight <= 0:
+            continue
+        canonical_slug = resolve_genre_slug(raw_genre) or slugify_genre(raw_genre)
+        if not canonical_slug:
+            continue
+        ancestors = get_genre_ancestor_slugs(canonical_slug, include_self=True) or [canonical_slug]
+        for index, slug in enumerate(ancestors):
+            weighted = weight if index == 0 else weight * 0.65
+            expanded[slug] = max(expanded.get(slug, 0.0), weighted)
+        for related_term in get_related_genre_terms(canonical_slug, limit=12, max_depth=1):
+            related_slug = resolve_genre_slug(related_term) or slugify_genre(related_term)
+            if related_slug and related_slug not in expanded:
+                expanded[related_slug] = weight * 0.35
+    return expanded
 
 
 def _artist_affinity(
@@ -67,13 +88,13 @@ def _genre_overlap(
     genre_map: dict[str, dict[str, float]],
 ) -> float:
     """Weighted Jaccard-like genre overlap between candidate and target artists."""
-    candidate_genres = genre_map.get(candidate_artist.lower(), {})
+    candidate_genres = _expand_genre_weights(genre_map.get(candidate_artist.lower(), {}))
     if not candidate_genres or not target_artists:
         return 0.0
 
     best = 0.0
     for target_artist in target_artists:
-        target_genres = genre_map.get(target_artist.lower(), {})
+        target_genres = _expand_genre_weights(genre_map.get(target_artist.lower(), {}))
         if not target_genres:
             continue
         shared_keys = set(candidate_genres.keys()) & set(target_genres.keys())

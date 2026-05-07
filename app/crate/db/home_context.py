@@ -237,6 +237,24 @@ def get_cached_home_context(
     )
 
 
+_NEW_RELEASES_CACHE_TTL_SECONDS = 600
+
+
+def _cached_new_releases(limit: int = 250) -> list[dict]:
+    cache_key = f"home:new-releases:v1:{limit}"
+    try:
+        from crate.db.cache_store import get_cache, set_cache
+
+        cached = get_cache(cache_key, max_age_seconds=_NEW_RELEASES_CACHE_TTL_SECONDS)
+        if isinstance(cached, list):
+            return cached
+        rows = get_new_releases(limit=limit)
+        set_cache(cache_key, rows, ttl=_NEW_RELEASES_CACHE_TTL_SECONDS)
+        return rows
+    except Exception:
+        return get_new_releases(limit=limit)
+
+
 def merged_artists_from_context(context: dict) -> list[dict]:
     top_artists = context["top_artists"]
     followed = context["followed"]
@@ -262,7 +280,7 @@ def recent_releases_from_context(context: dict, *, days: int = 240) -> list[dict
     from crate.db.home_builders import _filter_interesting_releases
 
     return _filter_interesting_releases(
-        get_new_releases(limit=250),
+        _cached_new_releases(limit=250),
         interest_artists_lower=set(context["interest_artists_lower"]),
         saved_album_ids=set(context["saved_album_ids"]),
         days=days,

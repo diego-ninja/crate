@@ -10,6 +10,9 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -19,6 +22,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -50,8 +54,12 @@ public class CratePlaybackService extends Service {
 
     private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final AudioManager.OnAudioFocusChangeListener audioFocusChangeListener =
+        focusChange -> mainHandler.post(() -> handleAudioFocusChange(focusChange));
 
     private MediaSession mediaSession;
+    private AudioManager audioManager;
+    private Object audioFocusRequest;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private Bitmap artworkBitmap;
@@ -61,6 +69,7 @@ public class CratePlaybackService extends Service {
     private String album = "";
     private String artwork = "";
     private boolean isPlaying = false;
+    private boolean hasAudioFocus = false;
     private long positionMs = 0L;
     private long durationMs = 0L;
 
@@ -68,16 +77,17 @@ public class CratePlaybackService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         mediaSession = new MediaSession(this, "CratePlayback");
         mediaSession.setCallback(new MediaSession.Callback() {
             @Override
             public void onPlay() {
-                dispatchControl("play");
+                handlePlayControl();
             }
 
             @Override
             public void onPause() {
-                dispatchControl("pause");
+                handlePauseControl();
             }
 
             @Override
@@ -97,8 +107,7 @@ public class CratePlaybackService extends Service {
 
             @Override
             public void onStop() {
-                dispatchControl("pause");
-                stopPlaybackService();
+                handlePauseControl();
             }
         });
         mediaSession.setActive(true);
@@ -114,11 +123,11 @@ public class CratePlaybackService extends Service {
         }
 
         if (ACTION_PLAY.equals(action)) {
-            dispatchControl("play");
+            handlePlayControl();
             return START_STICKY;
         }
         if (ACTION_PAUSE.equals(action)) {
-            dispatchControl("pause");
+            handlePauseControl();
             return START_STICKY;
         }
         if (ACTION_NEXT.equals(action)) {
@@ -131,6 +140,12 @@ public class CratePlaybackService extends Service {
         }
 
         readPlaybackState(intent);
+        if (isPlaying && !requestAudioFocus()) {
+            isPlaying = false;
+            dispatchControl("pause");
+        } else if (!isPlaying) {
+            abandonAudioFocus();
+        }
         publishMediaSessionState();
         startForegroundNotification();
         updateWakeLocks();
@@ -144,6 +159,7 @@ public class CratePlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        abandonAudioFocus();
         releaseWakeLocks();
         artworkExecutor.shutdownNow();
         if (mediaSession != null) {
@@ -206,7 +222,7 @@ public class CratePlaybackService extends Service {
         int state = isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
         PlaybackState playbackState = new PlaybackState.Builder()
             .setActions(actions)
-            .setState(state, positionMs, isPlaying ? 1.0f : 0.0f, System.currentTimeMillis())
+            .setState(state, positionMs, isPlaying ? 1.0f : 0.0f, SystemClock.elapsedRealtime())
             .build();
         mediaSession.setPlaybackState(playbackState);
     }
@@ -242,7 +258,7 @@ public class CratePlaybackService extends Service {
             .setColor(0xFF00C7E6)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(isPlaying)
+            .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setDeleteIntent(serviceIntent(ACTION_STOP_SERVICE, 5))
             .addAction(android.R.drawable.ic_media_previous, "Previous", serviceIntent(ACTION_PREVIOUS, 1))
@@ -309,6 +325,110 @@ public class CratePlaybackService extends Service {
         sendBroadcast(intent);
     }
 
+    private void handlePlayControl() {
+        if (!requestAudioFocus()) {
+            return;
+        }
+        dispatchControl("play");
+    }
+
+    private void handlePauseControl() {
+        dispatchControl("pause");
+        isPlaying = false;
+        abandonAudioFocus();
+        publishMediaSessionState();
+        startForegroundNotification();
+        updateWakeLocks();
+    }
+
+    private void handleAudioFocusChange(int focusChange) {
+        if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+            hasAudioFocus = true;
+            return;
+        }
+
+        if (
+            focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+            focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+            focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+        ) {
+            hasAudioFocus = false;
+            if (isPlaying) {
+                dispatchControl("pause");
+                isPlaying = false;
+                publishMediaSessionState();
+                startForegroundNotification();
+                updateWakeLocks();
+            }
+        }
+    }
+
+    private boolean requestAudioFocus() {
+        if (audioManager == null || hasAudioFocus) {
+            return true;
+        }
+
+        int result;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            result = Api26AudioFocus.request(audioManager, getAudioFocusRequest());
+        } else {
+            result = audioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            );
+        }
+        hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return hasAudioFocus;
+    }
+
+    private Object getAudioFocusRequest() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return null;
+        }
+        if (audioFocusRequest == null) {
+            audioFocusRequest = Api26AudioFocus.build(audioFocusChangeListener, mainHandler);
+        }
+        return audioFocusRequest;
+    }
+
+    private void abandonAudioFocus() {
+        if (audioManager == null || !hasAudioFocus) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+            Api26AudioFocus.abandon(audioManager, audioFocusRequest);
+        } else {
+            audioManager.abandonAudioFocus(audioFocusChangeListener);
+        }
+        hasAudioFocus = false;
+    }
+
+    private static final class Api26AudioFocus {
+        private static Object build(
+            AudioManager.OnAudioFocusChangeListener listener,
+            Handler handler
+        ) {
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+            return new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(audioAttributes)
+                .setOnAudioFocusChangeListener(listener, handler)
+                .setWillPauseWhenDucked(true)
+                .build();
+        }
+
+        private static int request(AudioManager manager, Object request) {
+            return manager.requestAudioFocus((AudioFocusRequest) request);
+        }
+
+        private static void abandon(AudioManager manager, Object request) {
+            manager.abandonAudioFocusRequest((AudioFocusRequest) request);
+        }
+    }
+
     private void updateWakeLocks() {
         if (isPlaying) {
             acquireWakeLocks();
@@ -352,6 +472,7 @@ public class CratePlaybackService extends Service {
 
     private void stopPlaybackService() {
         isPlaying = false;
+        abandonAudioFocus();
         publishMediaSessionState();
         releaseWakeLocks();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

@@ -5,6 +5,7 @@ import { getStreamUrl } from "@/contexts/player-utils";
 import {
   getCurrentTrackDuration as gpGetCurrentTrackDuration,
   isCurrentTrackFullyBuffered,
+  isPlaybackGestureRequiredError,
   seekTo as gpSeekTo,
   type GaplessPlayerCallbacks,
 } from "@/lib/gapless-player";
@@ -34,6 +35,7 @@ interface UsePlayerEngineCallbacksParams {
   cancelRestoreAutoplay: () => void;
   tryRestoreAutoplay: () => void;
   cancelSoftInterruption: () => void;
+  requireUserGestureToResume: () => void;
   beginSoftInterruption: (reason: "offline" | "stream") => void;
   isSoftInterrupted: () => boolean;
   ensureTrackerSession: (track: Track | undefined, source: PlaySource | null) => void;
@@ -80,6 +82,7 @@ export function usePlayerEngineCallbacks({
   cancelRestoreAutoplay,
   tryRestoreAutoplay,
   cancelSoftInterruption,
+  requireUserGestureToResume,
   beginSoftInterruption,
   isSoftInterrupted,
   ensureTrackerSession,
@@ -215,6 +218,12 @@ export function usePlayerEngineCallbacks({
       const currentPath = currentTrack ? getStreamUrl(currentTrack) : null;
       if (currentPath && path && path !== currentPath) {
         console.warn("[gapless] preload error ignored (non-current track):", path, err);
+        return;
+      }
+      if (isPlaybackGestureRequiredError(err)) {
+        console.warn("[gapless] playback requires a user gesture:", err);
+        cancelRestoreAutoplay();
+        requireUserGestureToResume();
         return;
       }
       if (isCurrentTrackFullyBuffered()) {
