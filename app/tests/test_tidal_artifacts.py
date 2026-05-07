@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from crate import tidal
 from crate.m4a_fix import repair_tidal_artifacts
@@ -94,6 +96,61 @@ def test_get_album_tracks_preserves_tidal_version_metadata(monkeypatch):
             "quality": ["LOSSLESS", "HIRES_LOSSLESS"],
         }
     ]
+
+
+def test_refresh_token_falls_back_to_raw_client_when_tiddl_cli_model_fails(tmp_path, monkeypatch):
+    auth_dir = tmp_path / ".tiddl"
+    auth_dir.mkdir()
+    auth_file = auth_dir / "auth.json"
+    auth_file.write_text(json.dumps({
+        "token": "expired-token",
+        "refresh_token": "refresh-token",
+        "expires_at": 1,
+        "user_id": "old-user",
+        "country_code": "US",
+    }))
+
+    monkeypatch.setattr(tidal, "TIDDL_CONFIG_DIR", str(auth_dir))
+    monkeypatch.setattr(
+        tidal.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="ValidationError: user.facebookUid"),
+    )
+    monkeypatch.setattr(
+        tidal,
+        "_raw_tidal_refresh",
+        lambda refresh: {
+            "access_token": "fresh-token",
+            "expires_in": 3600,
+            "user_id": 9,
+            "user": {"userId": 9, "countryCode": "ES"},
+        },
+    )
+
+    assert tidal.refresh_token() is True
+
+    refreshed = json.loads(auth_file.read_text())
+    assert refreshed["token"] == "fresh-token"
+    assert refreshed["refresh_token"] == "refresh-token"
+    assert refreshed["user_id"] == "9"
+    assert refreshed["country_code"] == "ES"
+    assert refreshed["expires_at"] > 1
+
+
+def test_refresh_token_keeps_tiddl_cli_success_path(tmp_path, monkeypatch):
+    auth_dir = tmp_path / ".tiddl"
+    auth_dir.mkdir()
+    (auth_dir / "auth.json").write_text(json.dumps({"token": "token", "refresh_token": "refresh"}))
+
+    monkeypatch.setattr(tidal, "TIDDL_CONFIG_DIR", str(auth_dir))
+    monkeypatch.setattr(tidal.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(
+        tidal,
+        "_raw_tidal_refresh",
+        lambda _refresh: (_ for _ in ()).throw(AssertionError("fallback should not run")),
+    )
+
+    assert tidal.refresh_token() is True
 
 
 def test_repair_tidal_artifacts_recovers_raw_flac_and_deletes_temp(tmp_path):

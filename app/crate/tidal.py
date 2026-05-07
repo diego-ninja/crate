@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import shutil
+import time
 import uuid
 from pathlib import Path
 
@@ -33,17 +34,33 @@ TIDDL_OUTPUT_TEMPLATE = (
 
 # ── Auth ─────────────────────────────────────────────────────────
 
-def get_auth_token() -> str | None:
-    """Read Tidal auth token from tiddl's auth.json."""
-    auth_file = Path(TIDDL_CONFIG_DIR) / "auth.json"
+def _auth_file() -> Path:
+    return Path(TIDDL_CONFIG_DIR) / "auth.json"
+
+
+def _load_auth_data() -> dict:
+    auth_file = _auth_file()
     if not auth_file.exists():
-        return None
+        return {}
     try:
         data = json.loads(auth_file.read_text())
-        return data.get("token")
-    except (json.JSONDecodeError, OSError) as e:
-        log.debug("Failed to read tiddl auth: %s", e)
-        return None
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        log.debug("Failed to read tiddl auth data: %s", exc)
+        return {}
+
+
+def _save_auth_data(data: dict) -> None:
+    auth_file = _auth_file()
+    auth_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = auth_file.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    tmp_file.write_text(json.dumps(data, separators=(",", ":")))
+    tmp_file.replace(auth_file)
+
+
+def get_auth_token() -> str | None:
+    """Read Tidal auth token from tiddl's auth.json."""
+    return _load_auth_data().get("token")
 
 
 def is_authenticated() -> bool:
@@ -77,10 +94,59 @@ def refresh_token() -> bool:
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "HOME": TIDDL_HOME},
         )
-        return result.returncode == 0
+        if result.returncode == 0:
+            return True
+        log.warning(
+            "tiddl auth refresh failed, trying raw refresh fallback: %s",
+            (result.stderr or result.stdout or "").strip()[-500:],
+        )
     except (subprocess.SubprocessError, OSError) as e:
         log.warning("Failed to refresh Tidal token: %s", e)
+    return _refresh_token_with_raw_client()
+
+
+def _refresh_token_with_raw_client() -> bool:
+    """Refresh auth without tiddl's strict Pydantic response model.
+
+    tiddl 3.4.1 currently requires user.facebookUid in the refresh response,
+    but Tidal no longer sends that field for some accounts. The low-level
+    client returns the raw JSON before validation, so we can keep auth.json
+    compatible with tiddl while avoiding the broken model.
+    """
+    data = _load_auth_data()
+    refresh = data.get("refresh_token")
+    if not refresh:
         return False
+    try:
+        payload = _raw_tidal_refresh(refresh)
+    except Exception as exc:
+        log.warning("Raw Tidal token refresh failed: %s", exc)
+        return False
+
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not access_token:
+        log.warning("Raw Tidal token refresh returned no access token")
+        return False
+
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    data["token"] = access_token
+    data["refresh_token"] = payload.get("refresh_token") or refresh
+    data["expires_at"] = int(time.time()) + int(payload.get("expires_in") or 0)
+    data["user_id"] = str(payload.get("user_id") or user.get("userId") or data.get("user_id") or "")
+    data["country_code"] = user.get("countryCode") or user.get("country_code") or data.get("country_code")
+    try:
+        _save_auth_data(data)
+    except OSError as exc:
+        log.warning("Failed to persist refreshed Tidal auth data: %s", exc)
+        return False
+    return True
+
+
+def _raw_tidal_refresh(refresh_token: str) -> dict:
+    from tiddl.core.auth.client import AuthClient
+
+    payload = AuthClient().refresh_token(refresh_token)
+    return payload if isinstance(payload, dict) else {}
 
 
 def login_flow():
