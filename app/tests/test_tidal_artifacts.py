@@ -35,6 +35,7 @@ def test_tidal_download_uses_collision_safe_output_template(tmp_path, monkeypatc
 
     monkeypatch.setattr(tidal, "PROCESSING_DIR", str(tmp_path))
     monkeypatch.setattr(tidal.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(tidal, "_sync_tiddl_country_code", lambda: None)
 
     result = tidal.download(
         "https://tidal.com/album/413046494",
@@ -126,6 +127,7 @@ def test_refresh_token_falls_back_to_raw_client_when_tiddl_cli_model_fails(tmp_p
             "user": {"userId": 9, "countryCode": "ES"},
         },
     )
+    monkeypatch.setattr(tidal, "get_setting", lambda _key, default=None: "ES")
 
     assert tidal.refresh_token() is True
 
@@ -135,6 +137,38 @@ def test_refresh_token_falls_back_to_raw_client_when_tiddl_cli_model_fails(tmp_p
     assert refreshed["user_id"] == "9"
     assert refreshed["country_code"] == "ES"
     assert refreshed["expires_at"] > 1
+
+
+def test_download_syncs_tiddl_country_before_cli(tmp_path, monkeypatch):
+    auth_dir = tmp_path / ".tiddl"
+    auth_dir.mkdir()
+    auth_file = auth_dir / "auth.json"
+    auth_file.write_text(json.dumps({
+        "token": "token",
+        "refresh_token": "refresh",
+        "country_code": "ES",
+    }))
+
+    class FakeProc:
+        def __init__(self, _cmd, **_kwargs):
+            self.stdout = iter([])
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(tidal, "TIDDL_CONFIG_DIR", str(auth_dir))
+    monkeypatch.setattr(tidal, "PROCESSING_DIR", str(tmp_path / "processing"))
+    monkeypatch.setattr(tidal, "get_setting", lambda _key, default=None: "ES")
+    monkeypatch.setattr(tidal.subprocess, "Popen", FakeProc)
+
+    result = tidal.download("https://tidal.com/album/51384997", task_id="task-country")
+
+    assert result["success"] is True
+    assert json.loads(auth_file.read_text())["country_code"] == "ES"
 
 
 def test_refresh_token_keeps_tiddl_cli_success_path(tmp_path, monkeypatch):

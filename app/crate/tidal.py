@@ -58,6 +58,30 @@ def _save_auth_data(data: dict) -> None:
     tmp_file.replace(auth_file)
 
 
+def _configured_country_code() -> str:
+    try:
+        value = get_setting("tidal_country", "US")
+    except Exception:
+        value = "US"
+    country = str(value or "US").strip().upper()
+    return country or "US"
+
+
+def _sync_tiddl_country_code() -> None:
+    """Keep tiddl downloads aligned with Crate's configured Tidal country."""
+    data = _load_auth_data()
+    if not data.get("token"):
+        return
+    country = _configured_country_code()
+    if str(data.get("country_code") or "").strip().upper() == country:
+        return
+    data["country_code"] = country
+    try:
+        _save_auth_data(data)
+    except OSError as exc:
+        log.warning("Failed to persist Tidal country code for tiddl: %s", exc)
+
+
 def get_auth_token() -> str | None:
     """Read Tidal auth token from tiddl's auth.json."""
     return _load_auth_data().get("token")
@@ -76,7 +100,7 @@ def ensure_auth() -> bool:
         resp = requests.get(
             "https://api.tidal.com/v2/search",
             headers={"Authorization": f"Bearer {token}"},
-            params={"query": "test", "type": "ARTISTS", "limit": 1, "countryCode": "US"},
+            params={"query": "test", "type": "ARTISTS", "limit": 1, "countryCode": _configured_country_code()},
             timeout=5,
         )
         if resp.status_code == 401:
@@ -133,7 +157,7 @@ def _refresh_token_with_raw_client() -> bool:
     data["refresh_token"] = payload.get("refresh_token") or refresh
     data["expires_at"] = int(time.time()) + int(payload.get("expires_in") or 0)
     data["user_id"] = str(payload.get("user_id") or user.get("userId") or data.get("user_id") or "")
-    data["country_code"] = user.get("countryCode") or user.get("country_code") or data.get("country_code")
+    data["country_code"] = _configured_country_code()
     try:
         _save_auth_data(data)
     except OSError as exc:
@@ -555,6 +579,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
     log.info("Tidal download: %s (quality=%s)", url, q)
 
     try:
+        _sync_tiddl_country_code()
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
