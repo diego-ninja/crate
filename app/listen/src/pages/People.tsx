@@ -4,6 +4,7 @@ import { Loader2, Search, UserRoundPlus, Users } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useApi } from "@/hooks/use-api";
+import { useUserAvatarUrl } from "@/hooks/use-user-avatar-url";
 import { api } from "@/lib/api";
 
 interface SocialSummary {
@@ -31,14 +32,17 @@ interface UserSearchResult {
 function UserAvatar({
   name,
   avatar,
+  userId,
   className = "h-11 w-11",
 }: {
   name: string;
   avatar?: string | null;
+  userId?: number | null;
   className?: string;
 }) {
-  if (avatar) {
-    return <img src={avatar} alt={name} className={`${className} rounded-full object-cover`} />;
+  const { avatarUrl, handleAvatarError } = useUserAvatarUrl(avatar, userId);
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={name} onError={handleAvatarError} className={`${className} rounded-full object-cover`} />;
   }
   const initial = name.trim().charAt(0).toUpperCase() || "U";
   return (
@@ -174,7 +178,7 @@ export function People() {
                 to={item.username ? `/users/${item.username}` : "/people"}
                 className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 hover:bg-white/[0.05] transition-colors"
               >
-                <UserAvatar name={label} avatar={item.avatar} />
+                <UserAvatar name={label} avatar={item.avatar} userId={item.id} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">{label}</div>
                   <div className="truncate text-xs text-muted-foreground">

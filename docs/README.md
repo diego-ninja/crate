@@ -22,7 +22,7 @@ system works today.
 8. [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen) — React app structure, context boundaries, and shared UI strategy.
 9. [Playback, Realtime, and Subsonic](/technical/playback-realtime-and-subsonic) — player engine, telemetry, realtime feeds, and `/rest`.
 10. [Development, Deployment, and Operations](/technical/development-deployment-and-operations) — dev stack, deploy model, observability, and operator workflows.
-11. [Documentation Platform and Hosted Site](/technical/documentation-platform-and-hosted-site) — how the docs/reference surfaces themselves are built.
+11. [Documentation Platform and Hosted Site](/technical/documentation-platform-and-hosted-site) — how the hosted docs surface is built.
 
 ## Practical deployment guides
 
@@ -45,13 +45,13 @@ technical set or generated API docs.
 They are useful for understanding why the system changed, but they are not the
 source of truth for current runtime behavior.
 
-## Live API reference
+## API contract
 
-The exhaustive HTTP contract lives in the generated OpenAPI schema and the
-Scalar reference app under `app/reference/`. Use those for exact request and
-response shapes.
+The exhaustive HTTP contract lives in the generated OpenAPI schema exposed by
+the API at `/openapi.json`. Use that schema for exact request and response
+shapes.
 
 ## Source code
 
-The repository lives at [github.com/diego-ninja/crate](https://github.com/diego-ninja/crate).
+The repository lives at [github.com/thecrateapp/crate](https://github.com/thecrateapp/crate).
 Code references in the technical set link to files on `main`.

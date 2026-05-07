@@ -11,7 +11,7 @@ The sync layer keeps those worlds aligned, while the import/storage layer contro
 
 ## Configured library root
 
-[app/config.yaml](https://github.com/diego-ninja/crate/blob/main/app/config.yaml) declares:
+[app/config.yaml](https://github.com/thecrateapp/crate/blob/main/app/config.yaml) declares:
 
 - `library_path: /music`
 - supported audio extensions
@@ -45,7 +45,7 @@ These are easy to inspect manually but fragile:
 
 ### Storage V2
 
-Crate is migrating toward UUID-backed storage paths via [app/crate/storage_layout.py](https://github.com/diego-ninja/crate/blob/main/app/crate/storage_layout.py).
+Crate is migrating toward UUID-backed storage paths via [app/crate/storage_layout.py](https://github.com/thecrateapp/crate/blob/main/app/crate/storage_layout.py).
 
 The new shape is conceptually:
 
@@ -66,7 +66,7 @@ Helpers like `resolve_artist_dir()` and `resolve_album_dir()` exist precisely be
 
 ## Sync architecture
 
-[app/crate/library_sync.py](https://github.com/diego-ninja/crate/blob/main/app/crate/library_sync.py) is the core filesystem indexing layer.
+[app/crate/library_sync.py](https://github.com/thecrateapp/crate/blob/main/app/crate/library_sync.py) is the core filesystem indexing layer.
 
 ### Responsibilities
 
@@ -110,7 +110,7 @@ When mutagen cannot parse enough info, the sync layer can fall back to `ffprobe`
 
 ## Watcher-driven incremental sync
 
-[app/crate/library_watcher.py](https://github.com/diego-ninja/crate/blob/main/app/crate/library_watcher.py) complements full sync with event-driven updates.
+[app/crate/library_watcher.py](https://github.com/thecrateapp/crate/blob/main/app/crate/library_watcher.py) complements full sync with event-driven updates.
 
 Key behaviors:
 
@@ -126,9 +126,10 @@ The watcher is intentionally conservative because enrichment and repair themselv
 
 Imports are separate from the canonical library.
 
-[app/config.yaml](https://github.com/diego-ninja/crate/blob/main/app/config.yaml) defines import roots for:
+[app/config.yaml](https://github.com/thecrateapp/crate/blob/main/app/config.yaml) defines import roots for:
 
 - Tidal
+- `tidalrr` (`/music/.imports/tidalrr`)
 - Soulseek
 - related staging areas
 
@@ -145,7 +146,7 @@ The normal ingestion path is:
 5. sync indexes them
 6. post-ingest enrichment and analysis are queued
 
-The worker acquisition handler in [app/crate/worker_handlers/acquisition.py](https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers/acquisition.py) owns a lot of this handoff logic.
+The worker acquisition handler in [app/crate/worker_handlers/acquisition.py](https://github.com/thecrateapp/crate/blob/main/app/crate/worker_handlers/acquisition.py) owns a lot of this handoff logic.
 
 ## Name sanitation and directory resolution
 
@@ -169,9 +170,9 @@ Beyond sync, Crate contains maintenance tooling for library shape:
 - mergeable partials
 - auto-repair and fix application
 
-The scanner/fixer stack is configured in [app/config.yaml](https://github.com/diego-ninja/crate/blob/main/app/config.yaml) and implemented across:
+The scanner/fixer stack is configured in [app/config.yaml](https://github.com/thecrateapp/crate/blob/main/app/config.yaml) and implemented across:
 
-- `https://github.com/diego-ninja/crate/blob/main/app/crate/scanners`
+- `https://github.com/thecrateapp/crate/blob/main/app/crate/scanners`
 - organizer and repair modules
 - related worker handlers
 

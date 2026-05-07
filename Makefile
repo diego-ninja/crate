@@ -34,12 +34,11 @@ DEV_CONTAINERS := crate-dev-api crate-dev-readplane crate-dev-worker crate-dev-m
 .PHONY: dev
 dev: ## Start backend (Postgres + Redis + API + Worker + Readplane + Caddy) and frontend dev servers
 	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
-	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
-	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
@@ -50,18 +49,15 @@ dev: ## Start backend (Postgres + Redis + API + Worker + Readplane + Caddy) and 
 	@npm install --silent 2>/dev/null
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
 	@cd app/site && npm install --silent 2>/dev/null; cd ../..
-	@cd app/reference && npm install --silent 2>/dev/null; cd ../..
 	@(npm run --workspace=app/ui dev -- --port 5173 --strictPort --host > /dev/null 2>&1 &)
 	@(npm run --workspace=app/listen dev -- --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
-	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
 	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
 	@echo "  $(GREEN)Docs:$(NC)   https://docs.dev.cratemusic.app"
-	@echo "  $(GREEN)API Ref:$(NC) https://reference.dev.cratemusic.app"
 	@echo "  $(GREEN)Site:$(NC)   https://www.dev.cratemusic.app"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  $(GREEN)Readplane:$(NC) http://localhost:8686"
@@ -92,20 +88,15 @@ dev-docs: ## Start only the docs dev server (:5175)
 dev-site: ## Start only the site dev server (:5176)
 	@cd app/site && npx vite --port 5176 --host
 
-.PHONY: dev-reference
-dev-reference: ## Start only the Scalar reference dev server (:5177)
-	@cd app/reference && npx vite --port 5177 --host
-
 .PHONY: dev-down
 dev-down: ## Stop everything (backend + frontends)
 	@$(DC_DEV) down
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
-	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
-	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@echo "$(GREEN)Everything stopped$(NC)"
 
 .PHONY: dev-logs
@@ -122,7 +113,6 @@ dev-rebuild: ## Rebuild and restart everything
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
-	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
@@ -130,7 +120,6 @@ dev-rebuild: ## Rebuild and restart everything
 	@(npm run --workspace=app/listen dev -- --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
-	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo "$(GREEN)Everything rebuilt$(NC)"
 
@@ -274,7 +263,6 @@ ps: ## Show dev service status
 	@-pgrep -af "vite.*5174" > /dev/null 2>&1 && echo "  Listen: http://localhost:5174 (running)" || echo "  Listen: not running"
 	@-pgrep -af "vite.*5175" > /dev/null 2>&1 && echo "  Docs:   http://localhost:5175 (running)" || echo "  Docs:   not running"
 	@-pgrep -af "vite.*5176" > /dev/null 2>&1 && echo "  Site:   http://localhost:5176 (running)" || echo "  Site:   not running"
-	@-pgrep -af "vite.*5177" > /dev/null 2>&1 && echo "  APIRef: http://localhost:5177 (running)" || echo "  APIRef: not running"
 
 .PHONY: pull
 pull: ## Pull images for the local stack
@@ -340,10 +328,10 @@ _create-dirs:
 # ===========================================================================
 
 # Defaults to the short SHA tag published by GitHub Actions for origin/main.
-# Overrides: DEPLOY_IMAGE_TAG=<tag>, DEPLOY_REF=<git-ref>, DEPLOY_PUBLIC_CHECKS=0.
+# Overrides: DEPLOY_IMAGE_TAG=<tag>, DEPLOY_REF=<git-ref>, DEPLOY_IMAGE_OWNER=<owner>, DEPLOY_PUBLIC_CHECKS=0.
 .PHONY: deploy
 deploy: ## Deploy origin/main GHCR images by SHA, verify health, rollback on failure
-	@SERVER_USER="$(SERVER_USER)" SERVER_HOST="$(SERVER_HOST)" SERVER_PATH="$(SERVER_PATH)" scripts/deploy.sh
+	@SERVER_USER="$(SERVER_USER)" SERVER_HOST="$(SERVER_HOST)" SERVER_PATH="$(SERVER_PATH)" DEPLOY_IMAGE_OWNER="$(DEPLOY_IMAGE_OWNER)" DEPLOY_IMAGE_REGISTRY="$(DEPLOY_IMAGE_REGISTRY)" scripts/deploy.sh
 
 .PHONY: deploy-build
 deploy-build: ## Deploy by building on the server (GHCR fallback)

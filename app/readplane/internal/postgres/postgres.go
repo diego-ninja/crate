@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/config"
+	"github.com/thecrateapp/crate/app/readplane/internal/config"
 )
 
 func Connect(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {

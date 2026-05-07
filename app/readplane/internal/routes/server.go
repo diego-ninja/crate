@@ -13,13 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/auth"
-	"github.com/diego-ninja/crate/app/readplane/internal/catalog"
-	"github.com/diego-ninja/crate/app/readplane/internal/config"
-	"github.com/diego-ninja/crate/app/readplane/internal/httpx"
-	"github.com/diego-ninja/crate/app/readplane/internal/postgres"
-	"github.com/diego-ninja/crate/app/readplane/internal/redisx"
-	"github.com/diego-ninja/crate/app/readplane/internal/snapshots"
+	"github.com/thecrateapp/crate/app/readplane/internal/auth"
+	"github.com/thecrateapp/crate/app/readplane/internal/catalog"
+	"github.com/thecrateapp/crate/app/readplane/internal/config"
+	"github.com/thecrateapp/crate/app/readplane/internal/httpx"
+	"github.com/thecrateapp/crate/app/readplane/internal/postgres"
+	"github.com/thecrateapp/crate/app/readplane/internal/redisx"
+	"github.com/thecrateapp/crate/app/readplane/internal/snapshots"
 )
 
 type Server struct {

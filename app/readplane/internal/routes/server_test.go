@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/config"
+	"github.com/thecrateapp/crate/app/readplane/internal/config"
 )
 
 func TestHealthz(t *testing.T) {

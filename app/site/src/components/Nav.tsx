@@ -59,7 +59,7 @@ export function Nav() {
             Docs
           </a>
           <a
-            href="https://github.com/diego-ninja/crate"
+            href="https://github.com/thecrateapp/crate"
             target="_blank"
             rel="noreferrer"
             className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/75 transition hover:border-white/20 hover:text-white"
@@ -108,7 +108,7 @@ export function Nav() {
             Docs
           </a>
           <a
-            href="https://github.com/diego-ninja/crate"
+            href="https://github.com/thecrateapp/crate"
             target="_blank"
             rel="noreferrer"
             onClick={() => setMobileOpen(false)}

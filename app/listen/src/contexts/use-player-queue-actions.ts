@@ -37,6 +37,10 @@ import { preparePlaybackDelivery } from "@/lib/playback-delivery";
 const SOFT_PAUSE_FADE_MS = 220;
 const PREV_DOUBLE_TAP_WINDOW_MS = 1500;
 
+function shouldUseImmediateTransportAction(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 interface UsePlayerQueueActionsParams {
   queueRef: MutableRefObject<Track[]>;
   currentIndexRef: MutableRefObject<number>;
@@ -202,6 +206,10 @@ export function usePlayerQueueActions({
     cancelSoftInterruption();
     bufferingIntentRef.current = false;
     commitIsBuffering(false);
+    if (shouldUseImmediateTransportAction()) {
+      gpPause();
+      return;
+    }
     void gpFadeOutAndPause(SOFT_PAUSE_FADE_MS).catch(() => {
       gpPause();
     });
@@ -212,6 +220,11 @@ export function usePlayerQueueActions({
     cancelSoftInterruption();
     bufferingIntentRef.current = true;
     commitIsBuffering(true);
+    if (shouldUseImmediateTransportAction()) {
+      gpRestoreVolume();
+      gpPlay();
+      return;
+    }
     void gpFadeInAndPlay(SOFT_PAUSE_FADE_MS).catch(() => {
       gpRestoreVolume();
       gpPlay();

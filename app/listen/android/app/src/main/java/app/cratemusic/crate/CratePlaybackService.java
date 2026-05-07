@@ -8,13 +8,23 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class CratePlaybackService extends Service {
     public static final String ACTION_START = "app.cratemusic.crate.playback.START";
@@ -38,9 +48,13 @@ public class CratePlaybackService extends Service {
     private static final String CHANNEL_ID = "crate_playback";
     private static final int NOTIFICATION_ID = 4201;
 
+    private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     private MediaSession mediaSession;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
+    private Bitmap artworkBitmap;
 
     private String title = "Crate";
     private String artist = "";
@@ -131,6 +145,7 @@ public class CratePlaybackService extends Service {
     @Override
     public void onDestroy() {
         releaseWakeLocks();
+        artworkExecutor.shutdownNow();
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();
@@ -146,7 +161,12 @@ public class CratePlaybackService extends Service {
         title = valueOrDefault(intent.getStringExtra(EXTRA_TITLE), title);
         artist = valueOrDefault(intent.getStringExtra(EXTRA_ARTIST), artist);
         album = valueOrDefault(intent.getStringExtra(EXTRA_ALBUM), album);
-        artwork = valueOrDefault(intent.getStringExtra(EXTRA_ARTWORK), artwork);
+        String nextArtwork = valueOrDefault(intent.getStringExtra(EXTRA_ARTWORK), artwork);
+        if (!nextArtwork.equals(artwork)) {
+            artwork = nextArtwork;
+            artworkBitmap = null;
+            loadArtworkAsync(nextArtwork);
+        }
         isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, isPlaying);
         positionMs = secondsToMs(intent.getDoubleExtra(EXTRA_POSITION, positionMs / 1000.0));
         durationMs = secondsToMs(intent.getDoubleExtra(EXTRA_DURATION, durationMs / 1000.0));
@@ -166,7 +186,13 @@ public class CratePlaybackService extends Service {
         }
         if (!artwork.isEmpty()) {
             metadata.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, artwork);
+            metadata.putString(MediaMetadata.METADATA_KEY_ART_URI, artwork);
             metadata.putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, artwork);
+        }
+        if (artworkBitmap != null) {
+            metadata.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artworkBitmap);
+            metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, artworkBitmap);
+            metadata.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, artworkBitmap);
         }
         mediaSession.setMetadata(metadata.build());
 
@@ -212,6 +238,8 @@ public class CratePlaybackService extends Service {
             .setSmallIcon(R.drawable.ic_stat_crate)
             .setContentTitle(title)
             .setContentText(subtitle)
+            .setLargeIcon(artworkBitmap)
+            .setColor(0xFF00C7E6)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
@@ -225,6 +253,10 @@ public class CratePlaybackService extends Service {
             )
             .addAction(android.R.drawable.ic_media_next, "Next", serviceIntent(ACTION_NEXT, 3))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", serviceIntent(ACTION_STOP_SERVICE, 4));
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setColorized(isPlaying);
+        }
 
         if (mediaSession != null) {
             builder.setStyle(
@@ -328,6 +360,47 @@ public class CratePlaybackService extends Service {
             stopForeground(true);
         }
         stopSelf();
+    }
+
+    private void loadArtworkAsync(String url) {
+        if (url == null || url.trim().isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) {
+            return;
+        }
+        final String requestedUrl = url;
+        artworkExecutor.execute(() -> {
+            Bitmap bitmap = fetchBitmap(requestedUrl);
+            if (bitmap == null || !requestedUrl.equals(artwork)) {
+                return;
+            }
+            artworkBitmap = bitmap;
+            mainHandler.post(() -> {
+                if (mediaSession == null) {
+                    return;
+                }
+                publishMediaSessionState();
+                startForegroundNotification();
+            });
+        });
+    }
+
+    private Bitmap fetchBitmap(String source) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(source);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(8000);
+            connection.setRequestProperty("User-Agent", "Crate/1.0 (+https://cratemusic.app)");
+            try (InputStream input = connection.getInputStream()) {
+                return BitmapFactory.decodeStream(input);
+            }
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private static String valueOrDefault(String value, String fallback) {

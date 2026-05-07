@@ -2,6 +2,49 @@
 
 Get Crate running on your server in under 5 minutes.
 
+## One-line installer
+
+For a home server or small self-hosted install, use the installer first. It
+downloads the home Docker Compose stack, creates `.env` and `config.yaml`,
+pulls pre-built GHCR images, and starts Crate.
+
+```bash
+curl -fsSL https://cratemusic.app/install.sh | bash
+```
+
+It asks only for:
+
+- install directory
+- music library path
+- optional public domain
+- optional Cloudflare DNS token for HTTPS
+- initial admin password
+
+If you skip the domain, Crate still starts on local ports:
+
+| URL | App |
+|-----|-----|
+| `http://localhost:8580` | Admin dashboard |
+| `http://localhost:8581` | Listening app |
+| `http://localhost:8585/api/status` | API health |
+
+For unattended installs:
+
+```bash
+curl -fsSL https://cratemusic.app/install.sh \
+  | CRATE_ASSUME_YES=1 \
+    CRATE_INSTALL_DIR=/opt/crate \
+    CRATE_MUSIC_DIR=/srv/music \
+    CRATE_DOMAIN=example.com \
+    CF_DNS_API_TOKEN=cloudflare-token \
+    DEFAULT_ADMIN_PASSWORD=change-me \
+    bash
+```
+
+Use `CRATE_SKIP_START=1` to generate files without starting Docker.
+
+The rest of this page documents the manual production install path.
+
 ## Prerequisites
 
 - A Linux server (VPS, home server, NAS — anything that runs Docker)
@@ -12,7 +55,7 @@ Get Crate running on your server in under 5 minutes.
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/diego-ninja/crate.git
+git clone https://github.com/thecrateapp/crate.git
 cd crate
 cp .env.example .env
 ```
@@ -21,7 +64,7 @@ Edit `.env` with your settings:
 
 ```bash
 # Required
-MUSIC_DIR=/path/to/your/music          # Absolute path to your music library
+MEDIA_DIR=/path/to/your/media          # Must contain music/ with your library
 DOMAIN=your-domain.com                 # Domain for HTTPS certificates
 TZ=Europe/Madrid                       # Your timezone
 CF_DNS_API_TOKEN=your-cloudflare-token # Cloudflare API token (for Let's Encrypt DNS challenge)
@@ -44,7 +87,13 @@ This starts the core stack:
 |---------|------|
 | **traefik** | Reverse proxy — automatic HTTPS via Let's Encrypt |
 | **crate-api** | FastAPI backend — library indexing, API, streaming |
-| **crate-worker** | Background jobs — enrichment, analysis, downloads |
+| **crate-readplane** | Go read plane — fast snapshot-backed reads and SSE relay |
+| **crate-worker** | Fast/default background jobs plus service loop |
+| **crate-projector** | Domain events → warmed snapshots/read models |
+| **crate-maintenance-worker** | Repair, sync, enrichment, and maintenance jobs |
+| **crate-analysis-worker** | Audio analysis, fingerprints, and bliss jobs |
+| **crate-playback-worker** | Playback prepare/transcode jobs |
+| **crate-media-worker** | Download package generation, ZIP64, progress/cancel |
 | **crate-ui** | Admin web app — manage, curate, analyze your library |
 | **crate-listen** | Listening app — playback, radio, discovery, social |
 | **crate-postgres** | PostgreSQL 15 with pgvector — all persistent data |
@@ -57,7 +106,7 @@ These can be started later from the admin dashboard or manually:
 | Service | Role | How to enable |
 |---------|------|---------------|
 | **slskd** | Soulseek client — peer-to-peer music search and download | Included in compose, starts automatically. Configure `SLSKD_SLSK_USERNAME` and `SLSKD_SLSK_PASSWORD` in `.env` |
-| **proton-vpn** | VPN proxy for the worker — routes Soulseek traffic through ProtonVPN | Set `PROTON_USERNAME` and `PROTON_PASSWORD` in `.env`. Worker uses it as `SCRAPE_PROXY_URL` |
+| **proton-vpn** | VPN proxy for the worker — routes Soulseek traffic through ProtonVPN | Set `PROTONVPN_USER` and `PROTONVPN_PASS` in `.env`. Worker uses it as `SCRAPE_PROXY_URL` |
 | **ollama** | Local LLM inference — generates EQ presets, genre descriptions | Add to your compose or point `OLLAMA_URL` to an existing instance. Set `LLM_PROVIDER=ollama` in `.env` |
 
 If you prefer cloud LLMs instead of Ollama, set `LLM_PROVIDER` to `gemini/gemini-2.5-flash` (or any litellm-compatible provider) and provide the corresponding API key (`GEMINI_API_KEY`, `OPENAI_API_KEY`, etc.).
@@ -102,7 +151,7 @@ The admin dashboard shows scan progress and library stats. Once indexing finishe
 
 Open `https://listen.your-domain.com` and sign in. This is the listening app — browse your library, play music, use radio, discover with Music Paths, follow artists.
 
-**Android:** Download the APK from [GitHub Releases](https://github.com/diego-ninja/crate/releases/latest/download/crate.apk).
+**Android:** Download the APK from [GitHub Releases](https://github.com/thecrateapp/crate/releases/latest/download/crate.apk).
 
 **iPhone:** Open the listen URL in Safari → Share → Add to Home Screen.
 

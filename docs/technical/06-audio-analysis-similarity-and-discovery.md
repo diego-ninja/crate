@@ -20,14 +20,14 @@ pipeline, output, and consumer:
 1. **Per-track audio features** — BPM, key, loudness, dynamic range,
    spectral complexity, energy, danceability, valence, acousticness,
    instrumentalness, mood descriptors. Produced by
-   [app/crate/audio_analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/audio_analysis.py).
+   [app/crate/audio_analysis.py](https://github.com/thecrateapp/crate/blob/main/app/crate/audio_analysis.py).
    Consumed by the UI analytics, radio curation, the adaptive equalizer,
    and anywhere else that needs a single-track signature.
 2. **Bliss song-DNA vectors** — a 20-float vector per track used as the
    backbone for nearest-neighbour similarity. Produced by the Rust CLI at
-   [tools/crate-cli](https://github.com/diego-ninja/crate/blob/main/tools/crate-cli),
+   [tools/crate-cli](https://github.com/thecrateapp/crate/blob/main/tools/crate-cli),
    integrated via
-   [app/crate/bliss.py](https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py).
+   [app/crate/bliss.py](https://github.com/thecrateapp/crate/blob/main/app/crate/bliss.py).
    Consumed by radio continuation, transition scoring, and smart playlists.
 
 Both run from the worker's dedicated daemons so the main task queue never
@@ -82,22 +82,9 @@ These are exposed to the Listen frontend through
 `/api/tracks/{id}/eq-features` so the adaptive equalizer can shape gains
 per track.
 
-## PANNs integration
-
-Crate supports PANNs CNN14 for AudioSet-style label inference.
-
-The code:
-
-- lazily checks availability
-- rewires label metadata from local model assets
-- loads the model only when needed
-- uses grouped weighted label families to derive product-oriented traits
-
-This is important because Crate does not expose raw AudioSet classes directly as the final product language. It translates them into more useful listening concepts.
-
 ## Bliss and similarity
 
-Similarity logic lives in [app/crate/bliss.py](https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py).
+Similarity logic lives in [app/crate/bliss.py](https://github.com/thecrateapp/crate/blob/main/app/crate/bliss.py).
 
 This subsystem combines:
 

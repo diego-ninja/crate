@@ -5,13 +5,30 @@
 Local development centers on `docker-compose.dev.yaml` and the helper targets in
 `Makefile`.
 
+Other compose files are intentionally scoped:
+
+- `docker-compose.yaml`: production/service definition used with project
+  overlays.
+- `docker-compose.project.yaml`: production domain/Traefik overlay for the
+  hosted Crate instance.
+- `docker-compose.home.yaml`: smaller self-hosted install used by the
+  one-line installer.
+- `docker-compose.local-stack.yaml`: local override for the production-style
+  stack on `*.crate.local`.
+- `docker-compose.readplane.dev.yaml`: local readplane service/proxy overlay.
+
 ### Core dev services
 
 - PostgreSQL
 - Redis
 - `slskd`
 - `crate-dev-api`
+- `crate-dev-readplane`
 - `crate-dev-worker`
+- `crate-dev-maintenance-worker`
+- `crate-dev-analysis-worker`
+- `crate-dev-playback-worker`
+- `crate-dev-media-worker`
 - Caddy
 - Ollama when LLM work is enabled locally
 
@@ -19,7 +36,8 @@ The frontends usually run as Vite dev servers outside Docker:
 
 - admin on `5173`
 - listen on `5174`
-- docs/reference surfaces on their own Vite ports when needed
+- marketing site on `5175`
+- docs on `5176`
 
 ## Local dev domains
 
@@ -40,7 +58,10 @@ host, `docker-compose.project.yaml`.
 
 Core Crate services:
 
-- `crate-api`, `crate-worker`
+- `crate-api`, `crate-readplane`
+- `crate-worker`, `crate-projector`, `crate-maintenance-worker`,
+  `crate-analysis-worker`, `crate-playback-worker`
+- `crate-media-worker`
 - `crate-ui`, `crate-listen`
 - `crate-postgres`, `crate-redis`
 - `slskd`
@@ -96,17 +117,23 @@ all code. New runtime work should prefer the session-based path.
 
 ## Worker operational behavior
 
-On startup the worker:
+The worker layer is split by concern:
 
-- marks orphaned tasks as failed
-- clears stale locks/semaphores
-- starts the service loop
-- starts analysis/bliss daemons
-- starts the projector thread
-- launches Dramatiq
+- `crate-worker` runs fast/default queues plus the service loop.
+- `crate-maintenance-worker` runs maintenance queue work.
+- `crate-analysis-worker` runs heavy analysis/fingerprint/bliss work.
+- `crate-playback-worker` runs playback prepare/transcode work.
+- `crate-projector` runs the domain-event projector command.
+- `crate-media-worker` runs Rust package/download artifact generation.
 
-The service loop then maintains watcher/scheduler/import queue/runtime state and
-periodic cleanup.
+The service-loop runtime marks orphaned/zombie tasks, clears stale locks and
+semaphores, maintains watcher/scheduler/import queue/runtime state, and
+performs periodic cleanup.
+
+Expensive background work is guarded by `app/crate/resource_governor.py`. The
+`CRATE_RESOURCE_*` thresholds and `CRATE_MAINTENANCE_WINDOW_*` settings decide
+when governed tasks should run immediately or be deferred to protect playback
+and interactive usage.
 
 ## Realtime and observability
 
@@ -144,12 +171,15 @@ Redis now carries several distinct concerns:
 - cache invalidation replay feed
 - minute-bucket metrics
 - domain-event stream for the projector
+- media-worker job/progress/cancel/slot state
 
 That makes Redis operationally central even though PostgreSQL remains the
 durable source of truth.
 
 ## Deployment caveat
 
-`make deploy` syncs only the `app/` subtree to the server before rebuilding.
-Do not `rsync --delete` the whole repo root to production; the host keeps data
-outside the local tree.
+`make deploy` is image-first: it expects the release images built by GitHub
+Actions/GHCR, checks that required manifests are pullable, syncs only the
+deployment files needed by the server, and restarts the compose stack from
+those images. Do not `rsync --delete` the whole repo root to production; the
+host keeps media/data outside the local tree.

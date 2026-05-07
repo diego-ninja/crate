@@ -1,6 +1,61 @@
-import { ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, Check, Copy } from "lucide-react";
 import { AlbumGrid } from "./AlbumGrid";
 import { GithubIcon } from "./GithubIcon";
+
+const INSTALL_COMMAND = "curl -fsSL https://cratemusic.app/install.sh | bash";
+
+function InstallCommand() {
+  const [copied, setCopied] = useState(false);
+
+  async function copyInstallCommand() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(INSTALL_COMMAND);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = INSTALL_COMMAND;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto mt-9 w-full max-w-3xl overflow-hidden rounded-lg border border-white/10 bg-[#050608] text-left shadow-[0_22px_70px_-50px_rgba(6,182,212,0.65)]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/8 bg-[#0b0d10] px-3 py-2.5 sm:px-4">
+        <div className="flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+        </div>
+        <button
+          type="button"
+          onClick={copyInstallCommand}
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-[12px] font-medium text-white/55 transition hover:border-white/18 hover:bg-white/[0.07] hover:text-white/85"
+          aria-label={copied ? "Copied installer command" : "Copy installer command"}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          <span className="hidden sm:inline">{copied ? "copied" : "copy"}</span>
+        </button>
+      </div>
+      <pre className="overflow-x-auto px-4 py-4 font-mono text-[12px] leading-6 text-[#d6f7ff] sm:px-5 sm:text-sm">
+        <code>
+          <span className="select-none text-[#5eead4]/70">$ </span>
+          {INSTALL_COMMAND}
+        </code>
+      </pre>
+    </div>
+  );
+}
 
 export function Hero() {
   return (
@@ -60,6 +115,8 @@ export function Hero() {
             you care about, invite whoever you trust, and keep the music close.
           </p>
 
+          <InstallCommand />
+
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <a
               href="https://docs.cratemusic.app/technical/system-overview"
@@ -68,7 +125,7 @@ export function Hero() {
               Read the docs
             </a>
             <a
-              href="https://github.com/diego-ninja/crate"
+              href="https://github.com/thecrateapp/crate"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/85 transition hover:border-white/25 hover:bg-white/[0.08]"

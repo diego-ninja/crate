@@ -4,45 +4,46 @@ set -Eeuo pipefail
 SERVER_PATH="${SERVER_PATH:?SERVER_PATH is required}"
 DEPLOY_ID="${DEPLOY_ID:?DEPLOY_ID is required}"
 DEPLOY_IMAGE_TAG="${DEPLOY_IMAGE_TAG:?DEPLOY_IMAGE_TAG is required}"
+DEPLOY_IMAGE_OWNER="${DEPLOY_IMAGE_OWNER:-thecrateapp}"
+DEPLOY_IMAGE_REGISTRY="${DEPLOY_IMAGE_REGISTRY:-ghcr.io}"
 DEPLOY_PUBLIC_CHECKS="${DEPLOY_PUBLIC_CHECKS:-1}"
 DEPLOY_IMAGE_WAIT_SECONDS="${DEPLOY_IMAGE_WAIT_SECONDS:-900}"
 DEPLOY_IMAGE_WAIT_INTERVAL="${DEPLOY_IMAGE_WAIT_INTERVAL:-20}"
 BACKUP_ROOT="${SERVER_PATH}/.deploy-backups"
 BACKUP_DIR="${BACKUP_ROOT}/${DEPLOY_ID}"
 ROLLBACK_TAG="rollback-${DEPLOY_ID}"
+IMAGE_PREFIX="${DEPLOY_IMAGE_REGISTRY}/${DEPLOY_IMAGE_OWNER}"
 
 cd "$SERVER_PATH"
 
 COMPOSE=(docker compose -f docker-compose.yaml -f docker-compose.project.yaml)
-PROJECT_SERVICES=(crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+PROJECT_SERVICES=(crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs)
 HEALTHY_SERVICES=(crate-redis crate-postgres crate-api)
-RUNNING_SERVICES=(crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference)
+RUNNING_SERVICES=(crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs)
 PROJECT_IMAGES=(
-  ghcr.io/diego-ninja/crate-api
-  ghcr.io/diego-ninja/crate-readplane
-  ghcr.io/diego-ninja/crate-worker
-  ghcr.io/diego-ninja/crate-media-worker
-  ghcr.io/diego-ninja/crate-ui
-  ghcr.io/diego-ninja/crate-listen
-  ghcr.io/diego-ninja/crate-site
-  ghcr.io/diego-ninja/crate-docs
-  ghcr.io/diego-ninja/crate-reference
+  "${IMAGE_PREFIX}/crate-api"
+  "${IMAGE_PREFIX}/crate-readplane"
+  "${IMAGE_PREFIX}/crate-worker"
+  "${IMAGE_PREFIX}/crate-media-worker"
+  "${IMAGE_PREFIX}/crate-ui"
+  "${IMAGE_PREFIX}/crate-listen"
+  "${IMAGE_PREFIX}/crate-site"
+  "${IMAGE_PREFIX}/crate-docs"
 )
 
 declare -A SERVICE_IMAGE_REPOS=(
-  [crate-api]=ghcr.io/diego-ninja/crate-api
-  [crate-readplane]=ghcr.io/diego-ninja/crate-readplane
-  [crate-worker]=ghcr.io/diego-ninja/crate-worker
-  [crate-projector]=ghcr.io/diego-ninja/crate-worker
-  [crate-maintenance-worker]=ghcr.io/diego-ninja/crate-worker
-  [crate-analysis-worker]=ghcr.io/diego-ninja/crate-worker
-  [crate-playback-worker]=ghcr.io/diego-ninja/crate-worker
-  [crate-media-worker]=ghcr.io/diego-ninja/crate-media-worker
-  [crate-ui]=ghcr.io/diego-ninja/crate-ui
-  [crate-listen]=ghcr.io/diego-ninja/crate-listen
-  [crate-site]=ghcr.io/diego-ninja/crate-site
-  [crate-docs]=ghcr.io/diego-ninja/crate-docs
-  [crate-reference]=ghcr.io/diego-ninja/crate-reference
+  [crate-api]="${IMAGE_PREFIX}/crate-api"
+  [crate-readplane]="${IMAGE_PREFIX}/crate-readplane"
+  [crate-worker]="${IMAGE_PREFIX}/crate-worker"
+  [crate-projector]="${IMAGE_PREFIX}/crate-worker"
+  [crate-maintenance-worker]="${IMAGE_PREFIX}/crate-worker"
+  [crate-analysis-worker]="${IMAGE_PREFIX}/crate-worker"
+  [crate-playback-worker]="${IMAGE_PREFIX}/crate-worker"
+  [crate-media-worker]="${IMAGE_PREFIX}/crate-media-worker"
+  [crate-ui]="${IMAGE_PREFIX}/crate-ui"
+  [crate-listen]="${IMAGE_PREFIX}/crate-listen"
+  [crate-site]="${IMAGE_PREFIX}/crate-site"
+  [crate-docs]="${IMAGE_PREFIX}/crate-docs"
 )
 
 log() {
@@ -189,8 +190,10 @@ cmd_backup() {
 }
 
 cmd_config() {
-  log "Validating compose configuration for CRATE_IMAGE_TAG=${DEPLOY_IMAGE_TAG}"
+  log "Validating compose configuration for ${IMAGE_PREFIX}/*:${DEPLOY_IMAGE_TAG}"
   set_env_value CRATE_IMAGE_TAG "$DEPLOY_IMAGE_TAG"
+  set_env_value CRATE_IMAGE_OWNER "$DEPLOY_IMAGE_OWNER"
+  set_env_value CRATE_IMAGE_REGISTRY "$DEPLOY_IMAGE_REGISTRY"
   dc config -q
 }
 
@@ -199,7 +202,7 @@ cmd_pull() {
   local failures
   local image
 
-  log "Pulling GHCR images for tag ${DEPLOY_IMAGE_TAG}"
+  log "Pulling ${IMAGE_PREFIX} images for tag ${DEPLOY_IMAGE_TAG}"
   start="$SECONDS"
 
   while true; do
@@ -280,7 +283,6 @@ PY
     check_public_url "https://listen.${domain}"
     check_public_url "https://cratemusic.app"
     check_public_url "https://docs.cratemusic.app"
-    check_public_url "https://reference.cratemusic.app"
   fi
 }
 
@@ -340,7 +342,7 @@ cmd_ps() {
 
 cmd_diagnose() {
   dc ps || true
-  dc logs --tail=120 crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs crate-reference || true
+  dc logs --tail=120 crate-api crate-readplane crate-worker crate-projector crate-maintenance-worker crate-analysis-worker crate-playback-worker crate-media-worker crate-ui crate-listen crate-site crate-docs || true
 }
 
 case "${1:-}" in

@@ -35,7 +35,7 @@ const PATHS: Path[] = [
     kicker: "Contributors",
     title: "Look around the code.",
     body: "The repo mixes Python, TypeScript, Go, and Rust. There is plenty to improve, and the project is more useful when more people can understand it.",
-    cta: { label: "Browse the source", href: "https://github.com/diego-ninja/crate" },
+    cta: { label: "Browse the source", href: "https://github.com/thecrateapp/crate" },
   },
   {
     icon: MessageCircle,
@@ -44,7 +44,7 @@ const PATHS: Path[] = [
     body: "Weird libraries, failed imports, confusing UI, bad assumptions. That feedback matters more than generic praise.",
     cta: {
       label: "Open an issue",
-      href: "https://github.com/diego-ninja/crate/issues/new",
+      href: "https://github.com/thecrateapp/crate/issues/new",
     },
   },
 ];

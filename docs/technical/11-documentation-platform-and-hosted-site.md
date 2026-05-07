@@ -4,7 +4,7 @@
 
 Crate now has two parallel documentation surfaces:
 
-- repository markdown under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs)
+- repository markdown under [`docs/`](https://github.com/thecrateapp/crate/blob/main/docs)
 - a hosted static documentation site rendered from those markdown files
 
 The markdown in the repository remains the source of truth. The hosted site exists to make the same content easier to browse, search, and consume across environments.
@@ -37,7 +37,7 @@ This mirrors the same split used by other Crate surfaces:
 
 ## Stack
 
-The documentation site lives in [`app/docs`](https://github.com/diego-ninja/crate/blob/main/app/docs).
+The documentation site lives in [`app/docs`](https://github.com/thecrateapp/crate/blob/main/app/docs).
 
 It is built with:
 
@@ -71,8 +71,8 @@ The hosted site exposes two content groups:
 
 These correspond directly to the repo layout that the docs app actually imports:
 
-- [`docs/technical/`](https://github.com/diego-ninja/crate/blob/main/docs/technical) for the technical set.
-- top-level files under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs) (excluding the technical subfolder) for reference.
+- [`docs/technical/`](https://github.com/thecrateapp/crate/blob/main/docs/technical) for the technical set.
+- top-level files under [`docs/`](https://github.com/thecrateapp/crate/blob/main/docs) (excluding the technical subfolder) for reference.
 
 The grouping is intentionally simple — a navigation model over the
 repository structure, not a CMS taxonomy.
@@ -122,8 +122,8 @@ In development:
 
 That wiring lives in:
 
-- [`Makefile`](https://github.com/diego-ninja/crate/blob/main/Makefile)
-- [`data/caddy/Caddyfile.dev`](https://github.com/diego-ninja/crate/blob/main/data/caddy/Caddyfile.dev)
+- [`Makefile`](https://github.com/thecrateapp/crate/blob/main/Makefile)
+- [`data/caddy/Caddyfile.dev`](https://github.com/thecrateapp/crate/blob/main/data/caddy/Caddyfile.dev)
 
 This is deliberately consistent with how admin and listen are developed locally.
 
@@ -132,12 +132,12 @@ This is deliberately consistent with how admin and listen are developed locally.
 In production the docs site is packaged as its own container:
 
 - service: `crate-docs`
-- image: `ghcr.io/diego-ninja/crate-docs`
+- image: `ghcr.io/thecrateapp/crate-docs`
 - router host: hard-coded to `docs.cratemusic.app` (not `docs.${DOMAIN}` — the docs surface is a project resource, not a per-operator one)
 
-The service definition lives in the compose overlay [`docker-compose.project.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.project.yaml), separate from the main `docker-compose.yaml` that self-hosters use. The canonical project server activates the overlay by setting `COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml` in its `.env`; everyone else never sees the service in their topology.
+The service definition lives in the compose overlay [`docker-compose.project.yaml`](https://github.com/thecrateapp/crate/blob/main/docker-compose.project.yaml), separate from the main `docker-compose.yaml` that self-hosters use. The canonical project server activates the overlay by setting `COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml` in its `.env`; everyone else never sees the service in their topology.
 
-Images are built and pushed to GHCR by the `build-docs` job in [build-images.yml](https://github.com/diego-ninja/crate/blob/main/.github/workflows/build-images.yml) whenever `app/docs/**` or `docs/**` change on `main`.
+Images are built and pushed to GHCR by the `build-docs` job in [build-images.yml](https://github.com/thecrateapp/crate/blob/main/.github/workflows/build-images.yml) whenever `app/docs/**` or `docs/**` change on `main`.
 
 This makes the docs surface operationally independent from `crate-ui`, `crate-listen`, and `crate-api` while still being deployed as part of the same stack.
 

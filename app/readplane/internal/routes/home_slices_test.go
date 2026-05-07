@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/snapshots"
+	"github.com/thecrateapp/crate/app/readplane/internal/snapshots"
 )
 
 func TestHomeSlicePayloadWrapsListItems(t *testing.T) {

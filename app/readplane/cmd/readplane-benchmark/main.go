@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/contract"
+	"github.com/thecrateapp/crate/app/readplane/internal/contract"
 )
 
 type benchConfig struct {

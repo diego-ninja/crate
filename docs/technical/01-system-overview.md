@@ -63,11 +63,13 @@ The runtime no longer relies only on “run a query every time the UI asks”.
 
 Important current pieces:
 
+- `crate-readplane`, a Go service for hot read routes and SSE relay with
+  FastAPI fallback
 - `ui_snapshots` for persisted snapshot payloads
 - `ops_runtime_state` for fast operational surfaces
 - `import_queue_items` for import queue read models
 - Redis Streams domain events
-- a worker-side projector that warms affected surfaces
+- a dedicated projector container that warms affected surfaces
 - snapshot SSE endpoints that notify clients when warmed data changes
 
 ### 5. Listening telemetry is richer than the old history model
@@ -87,8 +89,17 @@ The canonical telemetry path is now `user_play_events`, not the old
 
 - `crate-api`: FastAPI app serving REST, SSE, streaming endpoints, artwork,
   lyrics, auth, and the Open Subsonic-compatible API.
-- `crate-worker`: worker process hosting Dramatiq consumers, analysis/bliss
-  daemons, the service loop, and the snapshot projector thread.
+- `crate-readplane`: Go service serving selected Listen/Admin read routes,
+  snapshot responses, and SSE relay with FastAPI fallback.
+- `crate-worker`: fast/default Dramatiq consumers plus the service loop,
+  scheduler, watcher, imports, cleanup, and write-capable filesystem work.
+- `crate-projector`: domain-event consumer that warms snapshots/read models.
+- `crate-maintenance-worker`: maintenance/repair/sync/enrichment queue worker.
+- `crate-analysis-worker`: heavy queue worker for audio analysis, fingerprints,
+  and bliss-oriented background work.
+- `crate-playback-worker`: playback queue worker for prepare/transcode jobs.
+- `crate-media-worker`: Rust service for album/track download packages,
+  ZIP64 output, Redis progress/cancel, and active slot gating.
 - `crate-postgres`: PostgreSQL 15, the primary store.
 - `crate-redis`: Redis 7, used for cache, broker, cache invalidation replay,
   metrics buckets, and the Redis Streams domain-event bus.
@@ -125,6 +136,9 @@ The canonical telemetry path is now `user_play_events`, not the old
    PostgreSQL                  Redis DB 0                   /music (ro)
        |                    cache + SSE + metrics               |
        |                           |
+       |                    crate-readplane
+       |                    hot reads + SSE
+       |                           |
        |                       Redis Streams
        |                     domain-event bus
        |                           |
@@ -133,12 +147,16 @@ The canonical telemetry path is now `user_play_events`, not the old
        |                           |
        +---------------------------+
                                    |
-                               crate-worker
+           +------------+----------+----------+-------------+
+           |            |          |          |             |
+      crate-worker  maintenance analysis  playback   crate-projector
                                    |
        +---------------+-----------+------------+----------------+
        |               |                        |                |
-   Dramatiq actors  projector            analysis/bliss     /music (rw)
-                     thread                  daemons
+   Dramatiq actors  service loop       analysis/bliss     /music (rw)
+                                        workers
+
+      crate-media-worker reads /music and writes generated artifacts/progress
 ```
 
 ## Main code areas
@@ -154,6 +172,10 @@ The canonical telemetry path is now `user_play_events`, not the old
 - `app/crate/audio_analysis.py`: feature extraction
 - `app/crate/bliss.py`: similarity and transition logic
 - `app/crate/projector.py`: domain event consumption and snapshot warming
+- `app/crate/resource_governor.py`: host/playback-aware backpressure and
+  maintenance-window decisions
+- `app/readplane`: Go read plane
+- `app/media-worker`: Rust media worker
 
 ### Frontend
 

@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/auth"
-	"github.com/diego-ninja/crate/app/readplane/internal/catalog"
-	"github.com/diego-ninja/crate/app/readplane/internal/httpx"
+	"github.com/thecrateapp/crate/app/readplane/internal/auth"
+	"github.com/thecrateapp/crate/app/readplane/internal/catalog"
+	"github.com/thecrateapp/crate/app/readplane/internal/httpx"
 )
 
 var routeUUIDRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

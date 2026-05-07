@@ -56,7 +56,7 @@ export function GetApp() {
           </ol>
 
           <a
-            href="https://github.com/diego-ninja/crate/releases/latest/download/crate.apk"
+            href="https://github.com/thecrateapp/crate/releases/latest/download/crate.apk"
             className="group mt-7 inline-flex items-center gap-2 rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-[#05161c] shadow-[0_0_24px_-6px_rgba(6,182,212,0.6)] transition hover:bg-cyan-300"
           >
             <Download size={16} />

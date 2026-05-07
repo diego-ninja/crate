@@ -261,7 +261,7 @@ docker compose version
 sudo mkdir -p /opt
 sudo chown "$USER":"$USER" /opt
 cd /opt
-git clone https://github.com/diego-ninja/crate.git
+git clone https://github.com/thecrateapp/crate.git
 cd /opt/crate
 cp .env.example .env
 ```
@@ -284,12 +284,15 @@ DOMAIN=example.com
 LANGUAGE=es
 
 DATA_DIR=/srv/crate-data
-MEDIA_DIR=/srv/crate-media
+MUSIC_DIR=/srv/crate-media/music
+DOWNLOADS_DIR=/srv/crate-media/downloads/soulseek
+CRATE_CONFIG_FILE=./app/config.yaml
 
 TRAEFIK_HTTP_PORT=80
 TRAEFIK_HTTPS_PORT=443
 CRATE_API_PORT=8585
-CRATE_UI_PORT=8580
+CRATE_ADMIN_PORT=8580
+CRATE_LISTEN_PORT=8581
 
 CF_DNS_API_TOKEN=replace-with-your-traefik-cloudflare-token
 
@@ -338,7 +341,8 @@ Notes:
 
 - `DATA_DIR` stays on the internal disk for PostgreSQL, Redis, Traefik, and
   Crate state.
-- `MEDIA_DIR` points at the external SSD.
+- `MUSIC_DIR` points at the music library on the external SSD.
+- `DOWNLOADS_DIR` points at the import/download scratch space.
 - this guide starts from `docker-compose.home.yaml`, not the larger production
   compose
 - if you are not configuring OAuth, Tidal, Soulseek, Discogs, Spotify, or
@@ -352,7 +356,10 @@ sudo mkdir -p /srv/crate-data/traefik/logs
 sudo mkdir -p /srv/crate-data/crate
 sudo mkdir -p /srv/crate-data/postgres
 sudo mkdir -p /srv/crate-data/redis
+sudo mkdir -p /srv/crate-media/music
+sudo mkdir -p /srv/crate-media/downloads/soulseek
 sudo chown -R "$USER":"$USER" /srv/crate-data
+sudo chown -R "$USER":"$USER" /srv/crate-media
 ```
 
 ## 7. Use the Home Compose File
@@ -369,7 +376,13 @@ It deliberately keeps only the core stack:
 - `crate-postgres`
 - `crate-redis`
 - `crate-api`
+- `crate-readplane`
 - `crate-worker`
+- `crate-projector`
+- `crate-maintenance-worker`
+- `crate-analysis-worker`
+- `crate-playback-worker`
+- `crate-media-worker`
 - `crate-ui`
 - `crate-listen`
 
@@ -378,6 +391,7 @@ What it changes compared to the main production compose:
 - no `proton-vpn` dependency for the worker
 - no `tidarr`, `slskd`, or extra public services on day one
 - PostgreSQL and Redis persist into bind mounts under `DATA_DIR`
+- admin/listen/api are also exposed on local ports for first validation
 - the Docker network is created automatically by Compose
 
 That makes the first install much less fragile on a home machine.
@@ -676,18 +690,19 @@ From the repo root:
 
 ```bash
 cd /opt/crate
-docker compose -f docker-compose.home.yaml up -d --build
+docker compose -f docker-compose.home.yaml pull
+docker compose -f docker-compose.home.yaml up -d
 ```
 
 Watch startup:
 
 ```bash
 docker compose -f docker-compose.home.yaml ps
-docker compose -f docker-compose.home.yaml logs -f traefik crate-api crate-worker
+docker compose -f docker-compose.home.yaml logs -f traefik crate-api crate-worker crate-readplane
 ```
 
-The first startup can take a while because images are built and Python
-dependencies are installed.
+The first startup can take a while because images are pulled and PostgreSQL is
+initialized.
 
 ## 13. First Validation
 

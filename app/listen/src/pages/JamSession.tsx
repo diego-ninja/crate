@@ -38,6 +38,7 @@ import { QrCodeImage } from "@crate/ui/primitives/QrCodeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { type Track, usePlayerActions, usePlayerProgress, usePlayerState } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
+import { useUserAvatarUrl } from "@/hooks/use-user-avatar-url";
 import { api, apiWsUrl } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { toPlayableTrack } from "@/lib/playable-track";
@@ -251,6 +252,7 @@ function resolveJamActor(
   return {
     name: displayName(actor),
     avatar: actor.avatar,
+    user_id: actor.user_id,
   };
 }
 
@@ -259,13 +261,15 @@ function initials(value: string) {
   return (parts[0]?.[0] || "?").toUpperCase() + (parts[1]?.[0] || "").toUpperCase();
 }
 
-function AvatarBubble({ name, avatar, size = "md" }: { name: string; avatar?: string | null; size?: "sm" | "md" }) {
+function AvatarBubble({ name, avatar, userId, size = "md" }: { name: string; avatar?: string | null; userId?: number | null; size?: "sm" | "md" }) {
   const sizeClass = size === "sm" ? "h-9 w-9 text-[11px]" : "h-11 w-11 text-xs";
-  if (avatar) {
+  const { avatarUrl, handleAvatarError } = useUserAvatarUrl(avatar, userId);
+  if (avatarUrl) {
     return (
       <img
-        src={avatar}
+        src={avatarUrl}
         alt=""
+        onError={handleAvatarError}
         className={`${sizeClass} shrink-0 rounded-full border border-white/10 object-cover`}
       />
     );
@@ -1043,6 +1047,7 @@ export function JamSession() {
                   key={`${listedRoom.id}-${member.user_id}`}
                   name={name}
                   avatar={member.avatar}
+                  userId={member.user_id}
                   size="sm"
                 />
               );
@@ -1494,7 +1499,7 @@ export function JamSession() {
                 className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 hover:bg-white/[0.05] transition-colors"
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <AvatarBubble name={displayName(member)} avatar={member.avatar} size="sm" />
+                  <AvatarBubble name={displayName(member)} avatar={member.avatar} userId={member.user_id} size="sm" />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-foreground">
                       {displayName(member)}
@@ -1650,7 +1655,7 @@ export function JamSession() {
                   className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3"
                 >
                   <div className="flex items-start gap-3">
-                    <AvatarBubble name={actor.name} avatar={actor.avatar} size="sm" />
+                    <AvatarBubble name={actor.name} avatar={actor.avatar} userId={actor.user_id} size="sm" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
                         <div className="truncate text-sm font-medium text-foreground">{eventActivityText(event, actor.name)}</div>
