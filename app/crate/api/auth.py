@@ -4,6 +4,7 @@ import hashlib
 import base64
 import secrets
 from datetime import datetime, timedelta, timezone
+from threading import RLock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import jwt
@@ -14,7 +15,15 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.responses import Response, RedirectResponse, JSONResponse
 
 from crate.auth import (
-    hash_password, verify_password, create_jwt, verify_jwt, JWT_EXPIRY_HOURS,
+    create_jwt,
+    create_refresh_jwt,
+    hash_password,
+    verify_jwt,
+    verify_password,
+    verify_refresh_jwt,
+    JWT_EXPIRY_HOURS,
+    LISTEN_ACCESS_TOKEN_EXPIRY_HOURS,
+    LISTEN_REFRESH_TOKEN_EXPIRY_DAYS,
 )
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.auth import (
@@ -29,6 +38,7 @@ from crate.api.schemas.auth import (
     AuthLoginResponse,
     AuthMeResponse,
     AuthProviderResponse,
+    AuthRefreshResponse,
     AuthProvidersResponse,
     AuthSessionResponse,
     AuthUserPublicResponse,
@@ -39,6 +49,7 @@ from crate.api.schemas.auth import (
     OAuthStartRequest,
     OAuthStartResponse,
     ProviderToggleRequest,
+    RefreshTokenRequest,
     RegisterRequest,
     RevokeSessionsResponse,
     SubsonicTokenResponse,
@@ -80,18 +91,237 @@ admin_router = APIRouter(prefix="/api/admin/auth", tags=["admin-auth"])
 
 COOKIE_NAME = "crate_session"
 COOKIE_NAME_LISTEN = "crate_session_listen"
+COOKIE_NAME_LISTEN_REFRESH = "crate_refresh_listen"
+FORWARD_AUTH_SECRET_HEADER = "X-Forward-Auth-Secret"
+_LOGIN_FAILURE_PREFIX = "crate:auth:login_failures"
+_login_failure_memory: dict[str, tuple[int, datetime]] = {}
+_login_failure_lock = RLock()
+
+
+def _login_rate_limit_enabled() -> bool:
+    return os.environ.get("CRATE_LOGIN_RATE_LIMIT_ENABLED", "1").lower() not in {"0", "false", "no"}
+
+
+def _login_rate_limit_max_attempts() -> int:
+    try:
+        return max(1, int(os.environ.get("CRATE_LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5")))
+    except ValueError:
+        return 5
+
+
+def _login_rate_limit_window_seconds() -> int:
+    try:
+        return max(60, int(os.environ.get("CRATE_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "900")))
+    except ValueError:
+        return 900
+
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",", 1)[0].strip()
+    if forwarded_for:
+        return forwarded_for
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limit_key(kind: str, value: str) -> str:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"{_LOGIN_FAILURE_PREFIX}:{kind}:{digest}"
+
+
+def _login_rate_limit_keys(email: str, request: Request) -> list[str]:
+    normalized_email = (email or "").strip().lower() or "unknown"
+    keys = [_rate_limit_key("email", normalized_email)]
+    ip = _client_ip(request)
+    if ip and ip != "unknown":
+        keys.append(_rate_limit_key("ip", ip))
+    return keys
+
+
+def _get_rate_limit_redis():
+    if not os.environ.get("REDIS_URL"):
+        return None
+    try:
+        from crate.db.cache_runtime import _get_redis
+
+        return _get_redis()
+    except Exception as exc:
+        log.warning("Login rate limiter could not use Redis: %s", exc)
+        return None
+
+
+def _memory_failure_count(key: str, now: datetime, window_seconds: int) -> int:
+    count, expires_at = _login_failure_memory.get(key, (0, now))
+    if expires_at <= now:
+        _login_failure_memory.pop(key, None)
+        return 0
+    return count
+
+
+def _enforce_login_rate_limit(email: str, request: Request) -> None:
+    if not _login_rate_limit_enabled():
+        return
+    max_attempts = _login_rate_limit_max_attempts()
+    window_seconds = _login_rate_limit_window_seconds()
+    keys = _login_rate_limit_keys(email, request)
+    redis_client = _get_rate_limit_redis()
+    if redis_client is not None:
+        for key in keys:
+            try:
+                if int(redis_client.get(key) or 0) >= max_attempts:
+                    raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+            except HTTPException:
+                raise
+            except Exception as exc:
+                log.warning("Login rate limiter Redis read failed: %s", exc)
+                break
+        else:
+            return
+
+    now = datetime.now(timezone.utc)
+    with _login_failure_lock:
+        for key in keys:
+            if _memory_failure_count(key, now, window_seconds) >= max_attempts:
+                raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+
+def _record_failed_login(email: str, request: Request) -> None:
+    if not _login_rate_limit_enabled():
+        return
+    max_attempts = _login_rate_limit_max_attempts()
+    window_seconds = _login_rate_limit_window_seconds()
+    keys = _login_rate_limit_keys(email, request)
+    redis_client = _get_rate_limit_redis()
+    if redis_client is not None:
+        locked = False
+        try:
+            for key in keys:
+                count = int(redis_client.incr(key))
+                if count == 1:
+                    redis_client.expire(key, window_seconds)
+                locked = locked or count > max_attempts
+            if locked:
+                raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+            return
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.warning("Login rate limiter Redis write failed: %s", exc)
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=window_seconds)
+    locked = False
+    with _login_failure_lock:
+        for key in keys:
+            count = _memory_failure_count(key, now, window_seconds) + 1
+            _login_failure_memory[key] = (count, expires_at)
+            locked = locked or count > max_attempts
+    if locked:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+
+def _clear_failed_login(email: str, request: Request) -> None:
+    if not _login_rate_limit_enabled():
+        return
+    keys = _login_rate_limit_keys(email, request)
+    redis_client = _get_rate_limit_redis()
+    if redis_client is not None:
+        try:
+            redis_client.delete(*keys)
+            return
+        except Exception as exc:
+            log.warning("Login rate limiter Redis cleanup failed: %s", exc)
+    with _login_failure_lock:
+        for key in keys:
+            _login_failure_memory.pop(key, None)
+
+
+def _reject_invalid_login(email: str, request: Request) -> None:
+    _record_failed_login(email, request)
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+def _forward_auth_secret() -> str | None:
+    return os.environ.get("FORWARD_AUTH_SECRET") or os.environ.get("CRATE_FORWARD_AUTH_SECRET")
+
+
+def _has_valid_forward_auth_secret(request: Request) -> bool:
+    expected = _forward_auth_secret()
+    provided = request.headers.get(FORWARD_AUTH_SECRET_HEADER)
+    return bool(expected and provided and secrets.compare_digest(provided, expected))
+
+
+def _is_listen_app_id(app_id: str | None) -> bool:
+    return (app_id or "").strip().lower().startswith("listen")
+
+
+def _is_native_listen_app_id(app_id: str | None) -> bool:
+    normalized = (app_id or "").strip().lower()
+    return normalized in {"listen-android", "listen-ios", "listen-native"}
+
+
+def _is_listen_return_to(return_to: str | None) -> bool:
+    value = (return_to or "").strip()
+    if value.startswith("cratemusic://"):
+        return True
+    if not value.startswith(("http://", "https://")):
+        return False
+    try:
+        host = (urlparse(value).hostname or "").lower()
+    except Exception:
+        return False
+    return host == "listen" or host.startswith("listen.")
+
+
+def _request_host(request: Request) -> str:
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or "")
+    return host.split(",", 1)[0].split(":", 1)[0].strip().lower()
+
+
+def _is_listen_request(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> bool:
+    if _is_listen_app_id(app_id) or _is_listen_app_id(request.headers.get("x-crate-app")):
+        return True
+    if _is_listen_return_to(return_to):
+        return True
+    if _request_host(request).startswith("listen."):
+        return True
+    origin = request.headers.get("origin", "") or request.headers.get("referer", "")
+    return "listen." in origin
+
+
+def _access_expiry_hours(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> int:
+    return LISTEN_ACCESS_TOKEN_EXPIRY_HOURS if _is_listen_request(request, app_id=app_id, return_to=return_to) else JWT_EXPIRY_HOURS
+
+
+def _session_expiry_hours(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> int:
+    return 24 * LISTEN_REFRESH_TOKEN_EXPIRY_DAYS if _is_listen_request(request, app_id=app_id, return_to=return_to) else JWT_EXPIRY_HOURS
+
+
+def _session_max_age_seconds(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> int:
+    return _session_expiry_hours(request, app_id=app_id, return_to=return_to) * 3600
+
+
+def _access_max_age_seconds(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> int:
+    return _access_expiry_hours(request, app_id=app_id, return_to=return_to) * 3600
+
+
+def _infer_oauth_app_id(request: Request, return_to: str | None) -> str | None:
+    app_id = request.headers.get("x-crate-app") or request.query_params.get("app_id")
+    if app_id:
+        return app_id
+    if _is_listen_return_to(return_to):
+        return "listen-native" if (return_to or "").startswith("cratemusic://") else "listen-web"
+    return None
 
 
 def _cookie_name_for_request(request) -> str:
     """Return the appropriate cookie name based on the app making the request."""
-    app_header = (request.headers.get("x-crate-app") or "").lower()
-    if app_header in ("listen", "listen-web", "listen-mobile"):
-        return COOKIE_NAME_LISTEN
-    # Check referer/origin for listen subdomain
-    origin = request.headers.get("origin", "") or request.headers.get("referer", "")
-    if "listen." in origin:
+    if _is_listen_request(request):
         return COOKIE_NAME_LISTEN
     return COOKIE_NAME
+
+
+def _cookie_name_for_context(request: Request, *, app_id: str | None = None, return_to: str | None = None) -> str:
+    return COOKIE_NAME_LISTEN if _is_listen_request(request, app_id=app_id, return_to=return_to) else COOKIE_NAME
 
 
 def _auth_cookie_candidates(request) -> tuple[str, ...]:
@@ -123,7 +353,7 @@ def _is_secure() -> bool:
     return domain != "localhost"
 
 
-def _set_auth_cookie(response: Response, token: str, cookie_name: str = COOKIE_NAME):
+def _set_auth_cookie(response: Response, token: str, cookie_name: str = COOKIE_NAME, *, max_age: int | None = None):
     response.set_cookie(
         key=cookie_name,
         value=token,
@@ -131,8 +361,21 @@ def _set_auth_cookie(response: Response, token: str, cookie_name: str = COOKIE_N
         secure=True,
         samesite="none",
         domain=_cookie_domain(),
-        max_age=JWT_EXPIRY_HOURS * 3600,
+        max_age=max_age or JWT_EXPIRY_HOURS * 3600,
         path="/",
+    )
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str, *, max_age: int):
+    response.set_cookie(
+        key=COOKIE_NAME_LISTEN_REFRESH,
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        domain=_cookie_domain(),
+        max_age=max_age,
+        path="/api/auth",
     )
 
 
@@ -145,6 +388,44 @@ def _clear_auth_cookie(response: Response, cookie_name: str = COOKIE_NAME):
         domain=_cookie_domain(),
         path="/",
     )
+
+
+def _clear_refresh_cookie(response: Response):
+    response.delete_cookie(
+        key=COOKIE_NAME_LISTEN_REFRESH,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        domain=_cookie_domain(),
+        path="/api/auth",
+    )
+
+
+def _clean_header_value(value: str | None, *, max_length: int = 160) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    return normalized[:max_length]
+
+
+def _request_device_fingerprint(request: Request, *, app_id: str | None = None) -> str | None:
+    explicit = _clean_header_value(request.headers.get("x-device-fingerprint"), max_length=128)
+    if explicit:
+        return explicit
+    if not _is_listen_request(request, app_id=app_id):
+        return None
+    source = "|".join(
+        part
+        for part in (
+            app_id or request.headers.get("x-crate-app") or "listen",
+            request.headers.get("x-device-label") or "",
+            request.headers.get("user-agent") or "",
+        )
+        if part
+    )
+    if not source:
+        return None
+    return f"ua:{hashlib.sha256(source.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _user_public(user: dict) -> dict:
@@ -410,8 +691,12 @@ def _build_apple_client_secret() -> str:
     )
 
 
-def _create_login_session(user: dict, request: Request, *, app_id: str | None = None) -> tuple[str, dict]:
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS)).isoformat()
+def _create_login_session(user: dict, request: Request, *, app_id: str | None = None) -> tuple[str, dict, str | None]:
+    app = app_id or request.headers.get("x-crate-app")
+    session_expiry_hours = _session_expiry_hours(request, app_id=app)
+    access_expiry_hours = _access_expiry_hours(request, app_id=app)
+    expires_at_dt = datetime.now(timezone.utc) + timedelta(hours=session_expiry_hours)
+    expires_at = expires_at_dt.isoformat()
     session_id = secrets.token_urlsafe(24)
     session = create_session(
         session_id,
@@ -419,9 +704,11 @@ def _create_login_session(user: dict, request: Request, *, app_id: str | None = 
         expires_at,
         last_seen_ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
-        app_id=app_id or request.headers.get("x-crate-app"),
+        app_id=app,
         device_label=request.headers.get("x-device-label"),
+        device_fingerprint=_request_device_fingerprint(request, app_id=app),
     )
+    session_id = session["id"]
     token = create_jwt(
         user["id"],
         user["email"],
@@ -429,8 +716,10 @@ def _create_login_session(user: dict, request: Request, *, app_id: str | None = 
         username=user.get("username"),
         name=user.get("name"),
         session_id=session_id,
+        expires_in_hours=access_expiry_hours,
     )
-    return token, session
+    refresh_token = create_refresh_jwt(user["id"], session_id, expires_at_dt) if _is_listen_request(request, app_id=app) else None
+    return token, session, refresh_token
 
 
 def _resolve_provider_subject(provider: str, payload: dict) -> tuple[str, str, str | None, str | None]:
@@ -443,6 +732,44 @@ def _resolve_provider_subject(provider: str, payload: dict) -> tuple[str, str, s
 
 def _iso_datetime(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _coerce_aware_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _auth_login_payload(user: dict, token: str, session: dict, refresh_token: str | None = None) -> dict:
+    payload = {**_user_public(user), "token": token, "refresh_token": refresh_token}
+    payload["session"] = {"id": session["id"], "expires_at": _iso_datetime(session.get("expires_at"))}
+    return payload
+
+
+def _set_login_cookies(
+    response: Response,
+    request: Request,
+    token: str,
+    refresh_token: str | None = None,
+    *,
+    app_id: str | None = None,
+    return_to: str | None = None,
+) -> None:
+    _set_auth_cookie(
+        response,
+        token,
+        _cookie_name_for_context(request, app_id=app_id, return_to=return_to),
+        max_age=_access_max_age_seconds(request, app_id=app_id, return_to=return_to),
+    )
+    if refresh_token:
+        _set_refresh_cookie(
+            response,
+            refresh_token,
+            max_age=_session_max_age_seconds(request, app_id=app_id, return_to=return_to),
+        )
 
 
 _AUTH_PUBLIC_RESPONSES = merge_responses(
@@ -533,18 +860,20 @@ class AuthMiddleware:
                     user = None
 
         if not user:
-            # Only trust Remote-User from reverse proxy (Traefik).
-            # Validate the request comes from a Docker network peer, not external.
+            # Only trust Remote-User from a trusted reverse proxy that knows
+            # the shared secret. Docker network source alone is not enough:
+            # any compromised container on the network could forge headers.
             client_ip = request.client.host if request.client else ""
             is_trusted_proxy = client_ip.startswith("172.") or client_ip.startswith("10.") or client_ip == "127.0.0.1"
-            remote_user = request.headers.get("Remote-User") if is_trusted_proxy else None
+            remote_user = request.headers.get("Remote-User") if is_trusted_proxy and _has_valid_forward_auth_secret(request) else None
             if remote_user:
                 groups_raw = request.headers.get("Remote-Groups", "")
                 groups = [g.strip() for g in groups_raw.split(",") if g.strip()]
+                role = (request.headers.get("Remote-Role") or "").strip().lower()
                 user = {
                     "id": None,
                     "email": remote_user,
-                    "role": "admin" if "admins" in groups else "user",
+                    "role": "admin" if role == "admin" or "admins" in groups else "user",
                 }
 
         return user
@@ -585,17 +914,17 @@ def _require_admin(request: Request) -> dict:
 async def login(request: Request, body: LoginRequest):
     if not _password_enabled():
         raise HTTPException(status_code=403, detail="Password login is disabled")
+    _enforce_login_rate_limit(body.email, request)
     user = get_user_by_email(body.email)
     if not user or not user.get("password_hash"):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        _reject_invalid_login(body.email, request)
     if not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        _reject_invalid_login(body.email, request)
+    _clear_failed_login(body.email, request)
     update_user_last_login(user["id"])
-    token, session = _create_login_session(user, request)
-    body = {**_user_public(user), "token": token}
-    body["session"] = {"id": session["id"], "expires_at": _iso_datetime(session["expires_at"])}
-    response = JSONResponse(content=body)
-    _set_auth_cookie(response, token, _cookie_name_for_request(request))
+    token, session, refresh_token = _create_login_session(user, request)
+    response = JSONResponse(content=_auth_login_payload(user, token, session, refresh_token))
+    _set_login_cookies(response, request, token, refresh_token)
     return response
 
 
@@ -631,9 +960,78 @@ async def register(request: Request, body: RegisterRequest):
         role="user",
     )
     update_user_last_login(user["id"])
-    token, _ = _create_login_session(user, request)
-    response = JSONResponse(content={**_user_public(user), "token": token}, status_code=201)
-    _set_auth_cookie(response, token, _cookie_name_for_request(request))
+    token, session, refresh_token = _create_login_session(user, request)
+    response = JSONResponse(content=_auth_login_payload(user, token, session, refresh_token), status_code=201)
+    _set_login_cookies(response, request, token, refresh_token)
+    return response
+
+
+@router.post(
+    "/refresh",
+    response_model=AuthRefreshResponse,
+    responses=_AUTH_PUBLIC_RESPONSES,
+    summary="Refresh a Listen access token",
+)
+async def refresh_auth(request: Request, body: RefreshTokenRequest | None = None):
+    refresh_token = (body.refresh_token if body else None) or request.cookies.get(COOKIE_NAME_LISTEN_REFRESH)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token required")
+
+    payload = verify_refresh_jwt(refresh_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    session_id = payload.get("sid")
+    user_id = payload.get("user_id")
+    session = get_session(session_id) if session_id else None
+    if not session or session.get("revoked_at") is not None:
+        raise HTTPException(status_code=401, detail="Refresh session is no longer valid")
+    if int(session.get("user_id") or 0) != int(user_id or 0):
+        raise HTTPException(status_code=401, detail="Refresh token session mismatch")
+
+    expires_at = _coerce_aware_datetime(session.get("expires_at"))
+    now = datetime.now(timezone.utc)
+    if expires_at is None or expires_at <= now:
+        raise HTTPException(status_code=401, detail="Refresh session expired")
+
+    user = get_user_by_id(int(user_id))
+    if not user:
+        raise HTTPException(status_code=401, detail="Refresh user no longer exists")
+
+    session_app_id = session.get("app_id")
+    refreshed = touch_session(
+        session["id"],
+        last_seen_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        app_id=session_app_id or request.headers.get("x-crate-app"),
+        device_label=request.headers.get("x-device-label") or session.get("device_label"),
+        device_fingerprint=_request_device_fingerprint(request, app_id=session_app_id) or session.get("device_fingerprint"),
+    ) or session
+    access_token = create_jwt(
+        user["id"],
+        user["email"],
+        user["role"],
+        username=user.get("username"),
+        name=user.get("name"),
+        session_id=refreshed["id"],
+        expires_in_hours=_access_expiry_hours(request, app_id=session_app_id),
+    )
+    next_refresh_token = create_refresh_jwt(user["id"], refreshed["id"], expires_at)
+    response = JSONResponse(
+        content={
+            "token": access_token,
+            "refresh_token": next_refresh_token,
+            "session": {"id": refreshed["id"], "expires_at": _iso_datetime(refreshed.get("expires_at"))},
+        }
+    )
+    _set_auth_cookie(
+        response,
+        access_token,
+        _cookie_name_for_context(request, app_id=session_app_id),
+        max_age=_access_max_age_seconds(request, app_id=session_app_id),
+    )
+    if _is_listen_request(request, app_id=session_app_id):
+        _set_refresh_cookie(response, next_refresh_token, max_age=max(1, int((expires_at - now).total_seconds())))
     return response
 
 
@@ -651,6 +1049,7 @@ async def logout(request: Request):
         invalidate_session(user["session_id"])
     response = JSONResponse(content={"ok": True})
     _clear_auth_cookie(response, _cookie_name_for_request(request))
+    _clear_refresh_cookie(response)
     return response
 
 
@@ -807,6 +1206,7 @@ async def auth_heartbeat(request: Request, body: HeartbeatRequest):
                 user_agent=request.headers.get("user-agent"),
                 app_id=body.app_id or request.headers.get("x-crate-app"),
                 device_label=body.device_label or request.headers.get("x-device-label"),
+                device_fingerprint=_request_device_fingerprint(request, app_id=body.app_id or request.headers.get("x-crate-app")),
             )
     return {"ok": True}
 
@@ -826,6 +1226,7 @@ async def auth_revoke_session(request: Request, session_id: str):
     response = JSONResponse({"ok": True})
     if user.get("session_id") == session_id:
         _clear_auth_cookie(response, _cookie_name_for_request(request))
+        _clear_refresh_cookie(response)
     return response
 
 
@@ -869,11 +1270,19 @@ async def update_profile(request: Request, body: UpdateProfileRequest):
         raise
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
-    # Re-issue JWT with updated name
-    token = create_jwt(updated["id"], updated["email"], updated["role"],
-                       username=updated.get("username"), name=updated.get("name"), session_id=user.get("session_id"))
+    # Re-issue the short-lived access token with updated display fields.
+    expiry_hours = _access_expiry_hours(request)
+    token = create_jwt(
+        updated["id"],
+        updated["email"],
+        updated["role"],
+        username=updated.get("username"),
+        name=updated.get("name"),
+        session_id=user.get("session_id"),
+        expires_in_hours=expiry_hours,
+    )
     response = JSONResponse(content=_user_public(updated))
-    _set_auth_cookie(response, token, _cookie_name_for_request(request))
+    _set_auth_cookie(response, token, _cookie_name_for_request(request), max_age=expiry_hours * 3600)
     return response
 
 
@@ -962,7 +1371,7 @@ async def _oauth_start_response(
     if not _provider_available(provider):
         raise HTTPException(status_code=403, detail=f"{provider.title()} login is unavailable")
 
-    app_id = request.headers.get("x-crate-app") or request.query_params.get("app_id")
+    app_id = _infer_oauth_app_id(request, body.return_to)
     state = _build_oauth_state(
         provider=provider,
         return_to=body.return_to,
@@ -1167,23 +1576,27 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
 
     update_user_last_login(user["id"])
     app_id = parsed_state.get("app_id")
-    token, _ = _create_login_session(user, request, app_id=app_id)
+    token, _session, refresh_token = _create_login_session(user, request, app_id=app_id)
 
     return_to = parsed_state.get("return_to") or "/"
     safe_return = _validate_return_to(return_to)
 
     if safe_return.startswith("cratemusic://"):
-        separator = "&" if "?" in safe_return else "?"
-        redirect_url = f"{safe_return}{separator}token={token}"
+        redirect_url = _append_query_param(safe_return, "token", token)
+        if refresh_token:
+            redirect_url = _append_query_param(redirect_url, "refresh_token", refresh_token)
         return RedirectResponse(url=redirect_url)
 
     if safe_return.startswith("http"):
-        response = RedirectResponse(url=_post_auth_redirect_url(safe_return, token))
-        _set_auth_cookie(response, token, _cookie_name_for_request(request))
+        redirect_url = _post_auth_redirect_url(safe_return, token)
+        if refresh_token and _is_native_listen_app_id(app_id):
+            redirect_url = _append_query_param(redirect_url, "refresh_token", refresh_token)
+        response = RedirectResponse(url=redirect_url)
+        _set_login_cookies(response, request, token, refresh_token, app_id=app_id, return_to=safe_return)
         return response
 
     response = RedirectResponse(url=_post_auth_redirect_url(safe_return, token))
-    _set_auth_cookie(response, token, _cookie_name_for_request(request))
+    _set_login_cookies(response, request, token, refresh_token, app_id=app_id, return_to=safe_return)
     return response
 
 

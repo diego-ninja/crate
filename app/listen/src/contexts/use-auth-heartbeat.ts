@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import type { AuthUser } from "@/contexts/auth-context";
 import { api } from "@/lib/api";
+import { getListenAppPlatform } from "@/lib/listen-device";
 
 export function useAuthHeartbeat(user: AuthUser | null) {
   const lastHeartbeatAtRef = useRef(0);
@@ -14,7 +15,7 @@ export function useAuthHeartbeat(user: AuthUser | null) {
       const now = Date.now();
       if (!force && now - lastHeartbeatAtRef.current < 55_000) return;
       lastHeartbeatAtRef.current = now;
-      await api("/api/auth/heartbeat", "POST", { app_id: "listen-web" }).catch(() => {});
+      await api("/api/auth/heartbeat", "POST", { app_id: getListenAppPlatform() }).catch(() => {});
     }
 
     const timer = window.setInterval(() => {

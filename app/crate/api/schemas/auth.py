@@ -45,6 +45,10 @@ class HeartbeatRequest(BaseModel):
     device_label: str | None = None
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str | None = None
+
+
 class AuthInviteRequest(BaseModel):
     email: str | None = None
     expires_in_hours: int = 168
@@ -138,6 +142,13 @@ class AuthCurrentSessionResponse(BaseModel):
 
 class AuthLoginResponse(AuthUserPublicResponse):
     token: str
+    refresh_token: str | None = None
+    session: AuthCurrentSessionResponse | None = None
+
+
+class AuthRefreshResponse(BaseModel):
+    token: str
+    refresh_token: str | None = None
     session: AuthCurrentSessionResponse | None = None
 
 

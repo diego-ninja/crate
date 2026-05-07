@@ -41,6 +41,7 @@ class SessionRow(BaseModel):
     user_agent: str | None = None
     app_id: str | None = None
     device_label: str | None = None
+    device_fingerprint: str | None = None
 
 
 class AuthInviteRow(BaseModel):

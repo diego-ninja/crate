@@ -3,6 +3,8 @@ import { isAndroidNative, isIosNative, isNative, platform } from "@/lib/capacito
 export type ListenDeviceType = "android" | "ipad" | "iphone" | "web";
 export type ListenAppPlatform = "listen-android" | "listen-ios" | "listen-web";
 
+const DEVICE_FINGERPRINT_KEY = "listen-device-fingerprint";
+
 export function isIpadRuntime(): boolean {
   if (platform !== "ios") return false;
   if (typeof navigator === "undefined") return false;
@@ -34,5 +36,24 @@ export function getListenDeviceLabel(): string {
       return "iPhone (Listen)";
     default:
       return "Web (Listen)";
+  }
+}
+
+function generateDeviceFingerprint(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `listen:${crypto.randomUUID()}`;
+  }
+  return `listen:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function getListenDeviceFingerprint(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_FINGERPRINT_KEY);
+    if (existing) return existing;
+    const next = generateDeviceFingerprint();
+    localStorage.setItem(DEVICE_FINGERPRINT_KEY, next);
+    return next;
+  } catch {
+    return `${getListenAppPlatform()}:${getListenDeviceLabel()}`;
   }
 }

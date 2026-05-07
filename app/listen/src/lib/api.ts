@@ -1,14 +1,16 @@
-export { ApiError } from "../../../shared/web/api";
+import { ApiError, createApiClient } from "../../../shared/web/api";
 
-import { createApiClient } from "../../../shared/web/api";
+export { ApiError };
 import { redirectToLoginOnUnauthorized, shouldRedirectToLoginOnUnauthorized } from "@/lib/auth-route-policy";
 import { isNative, platform } from "@/lib/capacitor";
 import {
   getCurrentServer,
   migrateLegacyToken,
+  setCurrentServerAuthTokens,
+  setCurrentServerRefreshToken,
   setCurrentServerToken,
 } from "@/lib/server-store";
-import { getListenDeviceLabel } from "@/lib/listen-device";
+import { getListenDeviceFingerprint, getListenDeviceLabel } from "@/lib/listen-device";
 
 /**
  * Default URL used when no server has been configured yet in a native
@@ -143,11 +145,36 @@ export function getAuthToken(): string | null {
   try { return localStorage.getItem("listen-auth-token"); } catch { return null; }
 }
 
+export function getRefreshToken(): string | null {
+  if (isNative) return getCurrentServer()?.refreshToken ?? null;
+  return null;
+}
+
 export function setAuthToken(token: string | null) {
-  if (isNative) { setCurrentServerToken(token); return; }
+  setAuthTokens(token, token ? undefined : null);
+}
+
+export function setRefreshToken(refreshToken: string | null) {
+  if (isNative) { setCurrentServerRefreshToken(refreshToken); return; }
+  try {
+    localStorage.removeItem("listen-auth-refresh-token");
+  } catch {
+    // ignore persistence failures
+  }
+}
+
+export function setAuthTokens(token: string | null, refreshToken?: string | null) {
+  if (isNative) {
+    if (refreshToken === undefined) setCurrentServerToken(token);
+    else setCurrentServerAuthTokens(token, refreshToken);
+    return;
+  }
   try {
     if (token) localStorage.setItem("listen-auth-token", token);
     else localStorage.removeItem("listen-auth-token");
+    if (refreshToken !== undefined && refreshToken === null) {
+      localStorage.removeItem("listen-auth-refresh-token");
+    }
   } catch {
     // ignore persistence failures
   }
@@ -158,9 +185,8 @@ export function getApiAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   headers["X-Crate-App"] = isNative ? `listen-${platform}` : "listen-web";
-  if (isNative) {
-    headers["X-Device-Label"] = getListenDeviceLabel();
-  }
+  headers["X-Device-Label"] = getListenDeviceLabel();
+  headers["X-Device-Fingerprint"] = getListenDeviceFingerprint();
   return headers;
 }
 export { shouldRedirectToLoginOnUnauthorized };
@@ -177,22 +203,84 @@ if (typeof window !== "undefined") {
 const innerApi = createApiClient({
   credentials: "include",
   defaultHeaders: getApiAuthHeaders,
-  onUnauthorized: () => {
-    redirectToLoginOnUnauthorized(window.location.pathname, (path) => {
-      window.location.href = path;
-    });
-  },
 });
 
+let refreshPromise: Promise<boolean> | null = null;
+
+function shouldAttemptRefresh(path: string): boolean {
+  return !path.includes("/api/auth/login")
+    && !path.includes("/api/auth/register")
+    && !path.includes("/api/auth/refresh")
+    && !path.includes("/api/auth/logout");
+}
+
+function redirectAfterUnauthorized(): void {
+  redirectToLoginOnUnauthorized(window.location.pathname, (path) => {
+    window.location.href = path;
+  });
+}
+
+export async function refreshAuthToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
+    const headers = getApiAuthHeaders();
+    headers["Content-Type"] = "application/json";
+    const response = await fetch(`${getApiBase()}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
+    }).catch(() => null);
+    if (!response?.ok) {
+      setAuthToken(null);
+      return false;
+    }
+    const data = await response.json().catch(() => null) as { token?: string; refresh_token?: string | null } | null;
+    if (!data?.token) {
+      setAuthToken(null);
+      return false;
+    }
+    setAuthTokens(data.token, data.refresh_token ?? undefined);
+    return true;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
 export function api<T = unknown>(path: string, method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown, options?: { signal?: AbortSignal }): Promise<T> {
-  return innerApi<T>(`${getApiBase()}${path}`, method, body, options);
+  return innerApi<T>(`${getApiBase()}${path}`, method, body, options).catch(async (error) => {
+    if (error instanceof ApiError && error.status === 401 && shouldAttemptRefresh(path) && await refreshAuthToken()) {
+      return innerApi<T>(`${getApiBase()}${path}`, method, body, options);
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      redirectAfterUnauthorized();
+    }
+    throw error;
+  });
 }
 
 /** fetch() wrapper that adds API base URL and auth headers. Fire-and-forget friendly. */
-export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> || {}),
     ...getApiAuthHeaders(),
   };
-  return fetch(`${getApiBase()}${path}`, { ...init, credentials: "include", headers });
+  const request = () => fetch(`${getApiBase()}${path}`, { ...init, credentials: "include", headers });
+  let response = await request();
+  if (response.status === 401 && shouldAttemptRefresh(path) && await refreshAuthToken()) {
+    response = await fetch(`${getApiBase()}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: {
+        ...(init?.headers as Record<string, string> || {}),
+        ...getApiAuthHeaders(),
+      },
+    });
+  }
+  if (response.status === 401) {
+    redirectAfterUnauthorized();
+  }
+  return response;
 }

@@ -37,11 +37,11 @@ vi.mock("@capacitor/browser", () => ({
   },
 }));
 
-const { setAuthToken } = vi.hoisted(() => ({
-  setAuthToken: vi.fn(),
+const { setAuthTokens } = vi.hoisted(() => ({
+  setAuthTokens: vi.fn(),
 }));
 vi.mock("@/lib/api", () => ({
-  setAuthToken,
+  setAuthTokens,
 }));
 
 import { consumeOAuthCallbackUrl, consumePendingOAuthNext, getOAuthCallbackPayload } from "@/lib/capacitor";
@@ -49,14 +49,14 @@ import { consumeOAuthCallbackUrl, consumePendingOAuthNext, getOAuthCallbackPaylo
 describe("capacitor OAuth callback helpers", () => {
   beforeEach(() => {
     localStorage.clear();
-    setAuthToken.mockReset();
+    setAuthTokens.mockReset();
   });
 
   it("stores token and pending next for native OAuth callbacks", async () => {
     const result = await consumeOAuthCallbackUrl("cratemusic://oauth/callback?token=abc123&next=%2Fmixes");
 
     expect(result).toEqual({ handled: true, next: "/mixes" });
-    expect(setAuthToken).toHaveBeenCalledWith("abc123");
+    expect(setAuthTokens).toHaveBeenCalledWith("abc123", undefined);
     expect(consumePendingOAuthNext()).toBe("/mixes");
     expect(consumePendingOAuthNext()).toBeNull();
   });
@@ -65,21 +65,29 @@ describe("capacitor OAuth callback helpers", () => {
     const result = await consumeOAuthCallbackUrl("https://listen.lespedants.org/auth/callback?token=abc123&next=%2Fmixes");
 
     expect(result).toEqual({ handled: true, next: "/mixes" });
-    expect(setAuthToken).toHaveBeenCalledWith("abc123");
+    expect(setAuthTokens).toHaveBeenCalledWith("abc123", undefined);
     expect(consumePendingOAuthNext()).toBe("/mixes");
+  });
+
+  it("stores refresh token when the native callback includes one", async () => {
+    const result = await consumeOAuthCallbackUrl("cratemusic://oauth/callback?token=abc123&refresh_token=refresh456&next=%2Fmixes");
+
+    expect(result).toEqual({ handled: true, next: "/mixes" });
+    expect(setAuthTokens).toHaveBeenCalledWith("abc123", "refresh456");
   });
 
   it("ignores unrelated URLs", async () => {
     const result = await consumeOAuthCallbackUrl("https://example.com/login");
 
     expect(result).toEqual({ handled: false, next: "/" });
-    expect(setAuthToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
     expect(consumePendingOAuthNext()).toBeNull();
   });
 
   it("parses token and next from plain search params too", () => {
     expect(getOAuthCallbackPayload("?token=abc123&next=%2Fstats")).toEqual({
       token: "abc123",
+      refreshToken: null,
       next: "/stats",
     });
   });

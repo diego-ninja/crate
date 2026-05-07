@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
-import { api, ApiError, setAuthToken } from "@/lib/api";
+import { api, ApiError, setAuthTokens } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function Login() {
@@ -39,8 +39,8 @@ export function Login() {
     setSubmitting(true);
 
     try {
-      const res = await api<{ token?: string }>("/api/auth/login", "POST", { email, password });
-      if (res?.token) setAuthToken(res.token);
+      const res = await api<{ token?: string; refresh_token?: string | null }>("/api/auth/login", "POST", { email, password });
+      if (res?.token) setAuthTokens(res.token, res.refresh_token ?? undefined);
       await refetch();
       navigate(returnTo, { replace: true });
     } catch (err) {
