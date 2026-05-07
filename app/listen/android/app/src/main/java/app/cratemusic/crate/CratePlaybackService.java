@@ -10,8 +10,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
@@ -53,17 +51,11 @@ public class CratePlaybackService extends Service {
 
     private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            dispatchControl("pause");
-        }
-    };
 
     private MediaSession mediaSession;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private AudioManager audioManager;
-    private AudioFocusRequest audioFocusRequest;
     private Bitmap artworkBitmap;
 
     private String title = "Crate";
@@ -157,7 +149,6 @@ public class CratePlaybackService extends Service {
     @Override
     public void onDestroy() {
         releaseWakeLocks();
-        abandonAudioFocus();
         artworkExecutor.shutdownNow();
         if (mediaSession != null) {
             mediaSession.setActive(false);
@@ -324,10 +315,9 @@ public class CratePlaybackService extends Service {
 
     private void updateWakeLocks() {
         if (isPlaying) {
-            requestAudioFocusInternal();
+            resetMediaAudioRoute();
             acquireWakeLocks();
         } else {
-            abandonAudioFocus();
             releaseWakeLocks();
         }
     }
@@ -368,7 +358,6 @@ public class CratePlaybackService extends Service {
     private void stopPlaybackService() {
         isPlaying = false;
         publishMediaSessionState();
-        abandonAudioFocus();
         releaseWakeLocks();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
@@ -376,43 +365,6 @@ public class CratePlaybackService extends Service {
             stopForeground(true);
         }
         stopSelf();
-    }
-
-    private void requestAudioFocusInternal() {
-        if (audioManager == null) {
-            return;
-        }
-        resetMediaAudioRoute();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (audioFocusRequest == null) {
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build();
-                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(attrs)
-                    .setOnAudioFocusChangeListener(focusChangeListener)
-                    .build();
-            }
-            audioManager.requestAudioFocus(audioFocusRequest);
-        } else {
-            audioManager.requestAudioFocus(
-                focusChangeListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            );
-        }
-    }
-
-    private void abandonAudioFocus() {
-        if (audioManager == null) {
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
-            audioManager.abandonAudioFocusRequest(audioFocusRequest);
-        } else {
-            audioManager.abandonAudioFocus(focusChangeListener);
-        }
     }
 
     private void resetMediaAudioRoute() {
