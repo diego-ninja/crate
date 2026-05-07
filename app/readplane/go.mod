@@ -1,4 +1,4 @@
-module github.com/diego-ninja/crate/app/readplane
+module github.com/thecrateapp/crate/app/readplane
 
 go 1.22
 

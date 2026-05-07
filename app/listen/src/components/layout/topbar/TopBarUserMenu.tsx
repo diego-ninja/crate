@@ -6,6 +6,7 @@ import { useNavigate } from "react-router";
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate/ui/primitives/AppPopover";
 import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserAvatarUrl } from "@/hooks/use-user-avatar-url";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 
@@ -26,6 +27,7 @@ export function TopBarUserMenu() {
   const userName = user?.name || user?.email || null;
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
   const profilePath = user?.username ? `/users/${user.username}` : "/settings";
+  const { avatarUrl, handleAvatarError } = useUserAvatarUrl(user?.avatar, user?.id);
 
   function go(path: string) {
     setShowUserMenu(false);
@@ -36,8 +38,8 @@ export function TopBarUserMenu() {
     <>
       <div className="px-3 pb-2 pt-2">
         <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2">
-          {user?.avatar ? (
-            <img src={user.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" onError={handleAvatarError} className="h-8 w-8 shrink-0 rounded-full object-cover" />
           ) : (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-medium text-white/60">
               {userInitial || <User size={14} />}
@@ -86,8 +88,8 @@ export function TopBarUserMenu() {
           aria-label="User menu"
           className="flex h-11 w-11 md:h-12 md:w-12 items-center justify-center rounded-full border border-white/10 bg-black/30 backdrop-blur-sm text-sm font-medium text-white/70 transition-colors hover:bg-black/50 hover:text-white overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.18)]"
         >
-          {user?.avatar ? (
-            <img src={user.avatar} alt="" className="h-full w-full object-cover" />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" onError={handleAvatarError} className="h-full w-full object-cover" />
           ) : userInitial || <User size={18} />}
         </button>
 

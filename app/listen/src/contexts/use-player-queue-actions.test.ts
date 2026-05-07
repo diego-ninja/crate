@@ -1,5 +1,5 @@
 import { renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { usePlayerQueueActions } from "@/contexts/use-player-queue-actions";
 import type { Track } from "@/contexts/player-types";
@@ -79,6 +79,14 @@ function createParams() {
 }
 
 describe("usePlayerQueueActions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+  });
+
   it("forces a restart when playAll is invoked for the same queue/index", () => {
     const params = createParams();
     params.queueRef.current = [TRACK];
@@ -94,5 +102,36 @@ describe("usePlayerQueueActions", () => {
     );
     expect(params.commitIsBuffering).toHaveBeenCalledWith(false);
     expect(gaplessPlayer.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("pauses immediately when the app is hidden", () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    const params = createParams();
+    params.queueRef.current = [TRACK];
+    const { result } = renderHook(() => usePlayerQueueActions(params));
+
+    result.current.pause();
+
+    expect(gaplessPlayer.pause).toHaveBeenCalledTimes(1);
+    expect(gaplessPlayer.fadeOutAndPause).not.toHaveBeenCalled();
+  });
+
+  it("resumes immediately when the app is hidden", () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    const params = createParams();
+    params.queueRef.current = [TRACK];
+    const { result } = renderHook(() => usePlayerQueueActions(params));
+
+    result.current.resume();
+
+    expect(gaplessPlayer.restoreVolume).toHaveBeenCalledTimes(1);
+    expect(gaplessPlayer.play).toHaveBeenCalledTimes(1);
+    expect(gaplessPlayer.fadeInAndPlay).not.toHaveBeenCalled();
   });
 });

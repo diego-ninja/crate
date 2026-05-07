@@ -209,6 +209,54 @@ class TestOAuthStart:
         assert providers["google"]["login_url"] == "https://listen.lespedants.org/api/auth/google"
 
 
+class TestAuthUserAvatarProxy:
+    @staticmethod
+    def _request() -> Request:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/auth/users/7/avatar",
+                "query_string": b"",
+                "headers": [],
+                "client": ("127.0.0.1", 12345),
+                "scheme": "http",
+                "server": ("listen.lespedants.org", 80),
+            }
+        )
+        request.state.user = {"id": 1, "email": "user@test.com", "role": "user"}
+        return request
+
+    def test_auth_user_avatar_proxies_google_image(self):
+        from crate.api.auth import auth_user_avatar
+
+        upstream = MagicMock(
+            status_code=200,
+            headers={"content-type": "image/jpeg"},
+            content=b"avatar-bytes",
+        )
+
+        with patch("crate.api.auth.get_user_by_id", return_value={"avatar": "https://lh3.googleusercontent.com/a/avatar"}), \
+             patch("crate.api.auth.requests.get", return_value=upstream) as get:
+            response = asyncio.run(auth_user_avatar(self._request(), 7))
+
+        assert response.body == b"avatar-bytes"
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.headers["cache-control"] == "private, max-age=86400"
+        get.assert_called_once()
+
+    def test_auth_user_avatar_rejects_untrusted_hosts(self):
+        from fastapi import HTTPException
+
+        from crate.api.auth import auth_user_avatar
+
+        with patch("crate.api.auth.get_user_by_id", return_value={"avatar": "https://example.test/avatar.jpg"}):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(auth_user_avatar(self._request(), 7))
+
+        assert exc_info.value.status_code == 404
+
+
 class TestOAuthCallback:
     @staticmethod
     def _request(path: str = "/api/auth/oauth/google/callback") -> Request:

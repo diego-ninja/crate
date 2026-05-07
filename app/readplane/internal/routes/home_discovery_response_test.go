@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/snapshots"
+	"github.com/thecrateapp/crate/app/readplane/internal/snapshots"
 )
 
 func TestHomeDiscoveryHTTPPayloadMatchesFastAPIResponseModelDefaults(t *testing.T) {

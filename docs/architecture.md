@@ -8,7 +8,9 @@ A short orientation. For the current detailed picture, read the
 Crate is a self-hosted music platform with:
 
 - one FastAPI backend
-- one worker runtime with Dramatiq, daemons, and filesystem write access
+- one Go read plane for low-latency snapshot-backed reads and SSE relay
+- split worker runtimes for fast/default tasks, maintenance, analysis,
+  playback/transcode, projection, and media package generation
 - two separate frontend products:
   - `app/ui` for administration and operations
   - `app/listen` for playback, discovery, social, and mobile/PWA use
@@ -24,9 +26,15 @@ The most important system boundary is still:
 The modern runtime is not just “API + jobs” anymore. It now also includes:
 
 - a **read plane** of snapshot-backed and runtime-backed UI surfaces
+- a dedicated **Go readplane service** for hot Listen/Admin routes with
+  FastAPI fallback
 - a **Redis Streams domain-event bus** used to warm those surfaces
-- a **projector thread** in the worker that consumes domain events and refreshes
+- a dedicated **projector container** that consumes domain events and refreshes
   affected snapshots
+- a **Rust media worker** for download package generation with Redis-backed
+  progress/cancel state
+- a **resource governor** and maintenance window that defer expensive
+  background work when playback or the host are under pressure
 - **pipeline shadow tables** such as `track_processing_state`,
   `track_analysis_features`, and `track_bliss_embeddings`
 - **canonical listening telemetry** in `user_play_events`

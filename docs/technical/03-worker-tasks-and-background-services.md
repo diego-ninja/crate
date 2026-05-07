@@ -2,8 +2,9 @@
 
 ## Why the worker exists
 
-Crate's worker is not just “background jobs”. It is the write-capable side of
-the system and the host for several long-lived background runtimes.
+Crate's worker layer is not just “background jobs”. It is the write-capable
+side of the system and is split into several production containers so heavy
+work cannot starve playback or interactive admin/listen traffic.
 
 Anything that can mutate the library or perform long-running work belongs here:
 
@@ -21,21 +22,28 @@ The worker mounts `/music` read-write, unlike the API.
 
 ## Execution model
 
-The worker entrypoint is `app/crate/worker.py`.
+The Python worker entrypoint is `app/crate/worker.py`, but production does not
+run every concern inside a single container anymore.
 
-At startup it:
+Current production split:
 
-1. initializes DB and MusicBrainz client
-2. cleans orphaned/running task state
-3. clears stale locks and download semaphores
-4. starts the background service loop
-5. starts the analysis and bliss daemons
-6. starts the projector thread for domain events
-7. starts the Telegram bot loop
-8. launches Dramatiq workers in a subprocess
+- `crate-worker`: `fast,default` queues, service loop, scheduler, watcher,
+  imports, cleanup, Telegram, and write-capable general work.
+- `crate-maintenance-worker`: `maintenance` queue for repair/sync/enrichment
+  style work that can be deferred.
+- `crate-analysis-worker`: `heavy` queue for CPU/DSP-heavy analysis,
+  fingerprints, and bliss work.
+- `crate-playback-worker`: `playback` queue for playback prepare and
+  transcoding work with its own ffmpeg/thread limits.
+- `crate-projector`: dedicated `projector` command consuming domain events and
+  warming snapshots.
+- `crate-media-worker`: Rust service used by API/worker paths for package
+  generation, download artifacts, Redis progress, cancellation, and slot
+  admission.
 
-This means the worker container hosts several cooperating concerns, not only
-message consumption.
+All Python worker containers initialize the DB/runtime they need, but flags such
+as `--no-service-loop`, `--no-daemons`, `--no-projector`, and queue selection
+keep each runtime narrowly scoped.
 
 ## Task model
 
@@ -124,7 +132,9 @@ Queues:
 
 - `fast` — lightweight HTTP/DB-heavy but short jobs
 - `default` — mixed work, library pipeline, downloads, management
+- `maintenance` — repair, sync, enrichment and other deferrable maintenance
 - `heavy` — reserved for heavier CPU paths
+- `playback` — playback preparation and transcode jobs
 
 Priority bands broadly map to:
 
@@ -134,6 +144,21 @@ Priority bands broadly map to:
 - lower-priority maintenance/backfills
 
 ## Coordination primitives
+
+### Resource governor and maintenance window
+
+`app/crate/resource_governor.py` protects interactive playback/API usage from
+expensive background work. Governed tasks can be deferred based on:
+
+- one-minute load ratio
+- sampled iowait
+- swap and available memory pressure
+- active listeners and recent streams
+- configured maintenance windows for destructive or heavy maintenance flows
+
+The main knobs are `CRATE_RESOURCE_*` and `CRATE_MAINTENANCE_WINDOW_*`. Manual
+or narrowly scoped tasks can bypass parts of this protection only when the task
+type explicitly allows it.
 
 ### DB-heavy mutex
 
@@ -218,7 +243,7 @@ task row.
 
 ## Projector loop
 
-The projector thread is the worker-side consumer for the domain-event bus.
+`crate-projector` is the dedicated consumer for the domain-event bus.
 
 It:
 
@@ -228,6 +253,16 @@ It:
 - marks processed messages only after warming completes
 
 This is the bridge between write-side mutations and snapshot-driven UI surfaces.
+
+## Media worker bridge
+
+`crate-media-worker` is a Rust service used for download/package work that
+should not run inside request handlers. It supports ZIP64 packages, stores
+job/progress state in Redis, honors cancel keys, and uses a Redis slot gate via
+`CRATE_MEDIA_WORKER_MAX_ACTIVE` so package generation does not saturate the
+host. Python code in `app/crate/media_worker.py` and
+`app/crate/media_worker_progress.py` adapts it into the existing task/progress
+model.
 
 ## Import queue
 

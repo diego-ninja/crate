@@ -115,22 +115,18 @@ def create_app() -> FastAPI:
         "capacitor://localhost",
         "https://localhost",
     ]
-    # Project surfaces (docs, reference) — always allowed because they
-    # live on a fixed domain regardless of the operator's DOMAIN.
+    # Docs lives on a fixed domain regardless of the operator's DOMAIN.
     allowed_origins += [
         "https://docs.cratemusic.app",
-        "https://reference.cratemusic.app",
     ]
     if is_dev:
         # Dev-only origins — Vite dev servers + dev subdomains
         allowed_origins += [
-            f"https://docs.{domain}", f"https://reference.{domain}",
+            f"https://docs.{domain}",
             "https://docs.dev.cratemusic.app",
-            "https://reference.dev.cratemusic.app",
             "http://localhost:3000", "http://localhost:5173",
             "http://localhost:5174", "http://localhost:4173",
-            "http://localhost:5177", "http://127.0.0.1:4173",
-            "http://127.0.0.1:5177", "http://localhost:8585",
+            "http://127.0.0.1:4173", "http://localhost:8585",
         ]
     app.add_middleware(
         CORSMiddleware,

@@ -2,10 +2,7 @@
 
 This page is a high-level orientation, not a full endpoint inventory.
 
-The authoritative contract is:
-
-- the live OpenAPI schema at `/openapi.json`
-- the Scalar reference app in `app/reference/`
+The authoritative contract is the live OpenAPI schema at `/openapi.json`.
 
 Crate has grown past the point where a handwritten endpoint table stays
 accurate for long. This note exists to explain the major API surfaces and the

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useApi } from "@/hooks/use-api";
+import { useUserAvatarUrl } from "@/hooks/use-user-avatar-url";
 import { api } from "@/lib/api";
 import { formatTotalDuration } from "@/lib/utils";
 
@@ -56,14 +57,17 @@ interface PublicProfile {
 function UserAvatar({
   name,
   avatar,
+  userId,
   className = "h-20 w-20",
 }: {
   name: string;
   avatar?: string | null;
+  userId?: number | null;
   className?: string;
 }) {
-  if (avatar) {
-    return <img src={avatar} alt={name} className={`${className} rounded-full object-cover`} />;
+  const { avatarUrl, handleAvatarError } = useUserAvatarUrl(avatar, userId);
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={name} onError={handleAvatarError} className={`${className} rounded-full object-cover`} />;
   }
   const initial = name.trim().charAt(0).toUpperCase() || "U";
   return (
@@ -153,7 +157,7 @@ export function UserProfile() {
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5 sm:p-6">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
-            <UserAvatar name={displayName} avatar={data.avatar} />
+            <UserAvatar name={displayName} avatar={data.avatar} userId={data.id} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate text-3xl font-bold text-foreground">{displayName}</h1>
@@ -307,7 +311,7 @@ export function UserProfile() {
                   to={item.username ? `/users/${item.username}` : "/people"}
                   className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-2.5 hover:bg-white/[0.05] transition-colors"
                 >
-                  <UserAvatar name={item.display_name || item.username || "User"} avatar={item.avatar} className="h-10 w-10" />
+                  <UserAvatar name={item.display_name || item.username || "User"} avatar={item.avatar} userId={item.id} className="h-10 w-10" />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-foreground">{item.display_name || item.username}</div>
                     <div className="truncate text-xs text-muted-foreground">{item.username ? `@${item.username}` : "Profile"}</div>
@@ -336,7 +340,7 @@ export function UserProfile() {
                   to={item.username ? `/users/${item.username}` : "/people"}
                   className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-2.5 hover:bg-white/[0.05] transition-colors"
                 >
-                  <UserAvatar name={item.display_name || item.username || "User"} avatar={item.avatar} className="h-10 w-10" />
+                  <UserAvatar name={item.display_name || item.username || "User"} avatar={item.avatar} userId={item.id} className="h-10 w-10" />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-foreground">{item.display_name || item.username}</div>
                     <div className="truncate text-xs text-muted-foreground">{item.username ? `@${item.username}` : "Profile"}</div>

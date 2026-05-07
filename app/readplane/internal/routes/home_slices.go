@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/httpx"
-	"github.com/diego-ninja/crate/app/readplane/internal/snapshots"
+	"github.com/thecrateapp/crate/app/readplane/internal/httpx"
+	"github.com/thecrateapp/crate/app/readplane/internal/snapshots"
 )
 
 type homeSliceDef struct {

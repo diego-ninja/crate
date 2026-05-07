@@ -23,7 +23,7 @@ export function Footer() {
             Documentation
           </a>
           <a
-            href="https://github.com/diego-ninja/crate"
+            href="https://github.com/thecrateapp/crate"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 transition hover:text-white"

@@ -12,7 +12,7 @@ Set up a local development environment for contributing to Crate.
 ## 1. Clone and install
 
 ```bash
-git clone https://github.com/diego-ninja/crate.git
+git clone https://github.com/thecrateapp/crate.git
 cd crate
 npm install    # Installs all workspace dependencies (shared/ui, admin, listen)
 ```
@@ -36,7 +36,7 @@ This does everything:
 1. Kills any leftover Vite processes
 2. Starts Docker containers (PostgreSQL with pgvector, Redis, API, Worker, Caddy)
 3. Installs npm dependencies
-4. Launches five Vite dev servers with hot reload
+4. Launches four Vite dev servers with hot reload
 
 | Service | URL | Port |
 |---------|-----|------|
@@ -44,7 +44,6 @@ This does everything:
 | Listen app | `https://listen.dev.lespedants.org` | 5174 |
 | Docs | `https://docs.dev.cratemusic.app` | 5175 |
 | Marketing site | `https://www.dev.cratemusic.app` | 5176 |
-| API reference | `https://reference.dev.cratemusic.app` | 5177 |
 | API | `https://api.dev.lespedants.org` | 8585 |
 
 Local HTTPS is handled by Caddy with auto-generated certificates. Run `make trust-local-ca` once to trust the local CA in your browser.
@@ -100,10 +99,13 @@ crate/
       api/                  # FastAPI routers
       db/                   # Database layer (SQLAlchemy + Alembic)
       worker_handlers/      # Background task handlers
+    readplane/              # Go read plane
+    media-worker/           # Rust media worker
     shared/
       ui/                   # @crate/ui design system
         tokens/             # CSS design tokens
         primitives/         # UI primitives (AppModal, ActionIconButton, etc.)
+        composites/         # Shared composed UI blocks
         shadcn/             # Curated shadcn/Radix components
         domain/             # Shared domain components
         lib/                # Shared hooks and utilities
@@ -113,7 +115,6 @@ crate/
     listen/                 # Listen frontend (React 19 + Vite + Capacitor)
     site/                   # Marketing landing page
     docs/                   # Documentation site
-    reference/              # Scalar API reference
     tests/                  # Python backend tests
   docs/
     technical/              # Technical documentation (rendered by docs app)

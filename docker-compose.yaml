@@ -187,7 +187,7 @@ services:
 
   # Crate — Music stack management
   crate-api:
-    image: ghcr.io/diego-ninja/crate-api:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-api:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: api
@@ -218,7 +218,16 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - APPLE_CLIENT_ID=${APPLE_CLIENT_ID:-}
+      - APPLE_TEAM_ID=${APPLE_TEAM_ID:-}
+      - APPLE_KEY_ID=${APPLE_KEY_ID:-}
+      - APPLE_PRIVATE_KEY=${APPLE_PRIVATE_KEY:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama/llama3.1:8b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - REDIS_URL=redis://crate-redis:6379/0
       - CRATE_METRICS_REDIS_TTL_SECONDS=${CRATE_METRICS_REDIS_TTL_SECONDS:-86400}
       - CRATE_SSE_REDIS_MAX_CONNECTIONS=${CRATE_SSE_REDIS_MAX_CONNECTIONS:-128}
@@ -264,7 +273,7 @@ services:
     command: ["api"]
 
   crate-readplane:
-    image: ghcr.io/diego-ninja/crate-readplane:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-readplane:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app/readplane
     container_name: crate-readplane
@@ -300,7 +309,7 @@ services:
     cpus: "0.25"
 
   crate-worker:
-    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: worker
@@ -330,6 +339,11 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama/llama3.1:8b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - OMP_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
       - OPENBLAS_NUM_THREADS=${CRATE_WORKER_NATIVE_THREADS:-1}
@@ -351,6 +365,8 @@ services:
       - CRATE_RESOURCE_MAX_LOAD_RATIO=${CRATE_RESOURCE_MAX_LOAD_RATIO:-0.85}
       - CRATE_RESOURCE_MAX_IOWAIT_PERCENT=${CRATE_RESOURCE_MAX_IOWAIT_PERCENT:-25}
       - CRATE_RESOURCE_MAX_SWAP_PERCENT=${CRATE_RESOURCE_MAX_SWAP_PERCENT:-30}
+      - CRATE_RESOURCE_MIN_SWAP_USED_MB=${CRATE_RESOURCE_MIN_SWAP_USED_MB:-512}
+      - CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT=${CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT:-15}
       - CRATE_RESOURCE_MAX_ACTIVE_USERS=${CRATE_RESOURCE_MAX_ACTIVE_USERS:-0}
       - CRATE_RESOURCE_MAX_ACTIVE_STREAMS=${CRATE_RESOURCE_MAX_ACTIVE_STREAMS:-0}
       - CRATE_RESOURCE_DEFER_SECONDS=${CRATE_RESOURCE_DEFER_SECONDS:-300}
@@ -378,7 +394,7 @@ services:
     command: ["worker", "--queues", "fast,default", "--processes", "${CRATE_WORKER_PROCESSES:-1}", "--no-daemons", "--no-projector"]
 
   crate-projector:
-    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: worker
@@ -420,7 +436,7 @@ services:
     command: ["projector"]
 
   crate-maintenance-worker:
-    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: worker
@@ -457,6 +473,8 @@ services:
       - CRATE_RESOURCE_MAX_LOAD_RATIO=${CRATE_RESOURCE_MAX_LOAD_RATIO:-0.85}
       - CRATE_RESOURCE_MAX_IOWAIT_PERCENT=${CRATE_RESOURCE_MAX_IOWAIT_PERCENT:-25}
       - CRATE_RESOURCE_MAX_SWAP_PERCENT=${CRATE_RESOURCE_MAX_SWAP_PERCENT:-30}
+      - CRATE_RESOURCE_MIN_SWAP_USED_MB=${CRATE_RESOURCE_MIN_SWAP_USED_MB:-512}
+      - CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT=${CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT:-15}
       - CRATE_RESOURCE_MAX_ACTIVE_USERS=${CRATE_RESOURCE_MAX_ACTIVE_USERS:-0}
       - CRATE_RESOURCE_MAX_ACTIVE_STREAMS=${CRATE_RESOURCE_MAX_ACTIVE_STREAMS:-0}
       - CRATE_RESOURCE_DEFER_SECONDS=${CRATE_RESOURCE_DEFER_SECONDS:-300}
@@ -482,7 +500,7 @@ services:
     command: ["worker", "--queues", "maintenance", "--processes", "${MAINTENANCE_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
 
   crate-analysis-worker:
-    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: worker
@@ -519,6 +537,8 @@ services:
       - CRATE_RESOURCE_MAX_LOAD_RATIO=${CRATE_RESOURCE_MAX_LOAD_RATIO:-0.85}
       - CRATE_RESOURCE_MAX_IOWAIT_PERCENT=${CRATE_RESOURCE_MAX_IOWAIT_PERCENT:-25}
       - CRATE_RESOURCE_MAX_SWAP_PERCENT=${CRATE_RESOURCE_MAX_SWAP_PERCENT:-30}
+      - CRATE_RESOURCE_MIN_SWAP_USED_MB=${CRATE_RESOURCE_MIN_SWAP_USED_MB:-512}
+      - CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT=${CRATE_RESOURCE_MIN_MEMORY_AVAILABLE_PERCENT:-15}
       - CRATE_RESOURCE_MAX_ACTIVE_USERS=${CRATE_RESOURCE_MAX_ACTIVE_USERS:-0}
       - CRATE_RESOURCE_MAX_ACTIVE_STREAMS=${CRATE_RESOURCE_MAX_ACTIVE_STREAMS:-0}
       - CRATE_RESOURCE_DEFER_SECONDS=${CRATE_RESOURCE_DEFER_SECONDS:-300}
@@ -544,7 +564,7 @@ services:
     command: ["worker", "--queues", "heavy", "--processes", "${ANALYSIS_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-projector", "--no-telegram"]
 
   crate-playback-worker:
-    image: ghcr.io/diego-ninja/crate-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: worker
@@ -596,7 +616,7 @@ services:
     command: ["worker", "--queues", "playback", "--processes", "${PLAYBACK_WORKER_PROCESSES:-1}", "--no-service-loop", "--no-daemons", "--no-projector", "--no-telegram"]
 
   crate-media-worker:
-    image: ghcr.io/diego-ninja/crate-media-worker:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-media-worker:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       target: media-worker
@@ -638,7 +658,7 @@ services:
       - crate
 
   crate-ui:
-    image: ghcr.io/diego-ninja/crate-ui:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-ui:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       dockerfile: ui/Dockerfile
@@ -658,7 +678,7 @@ services:
       traefik.http.routers.admin.tls.certresolver: letsencrypt
 
   crate-listen:
-    image: ghcr.io/diego-ninja/crate-listen:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-listen:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       dockerfile: listen/Dockerfile

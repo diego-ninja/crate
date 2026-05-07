@@ -30,6 +30,22 @@ Responsibilities include:
 - expose analyser/output-chain hooks for visualizer and EQ
 - support fade helpers and engine sync with React state
 
+## Playback prepare and transcoding
+
+Playback preparation is not executed by the general worker in production.
+`crate-playback-worker` owns the `playback` queue and runs with separate native
+thread/ffmpeg limits so stream preparation cannot starve the normal task pool.
+
+Key knobs:
+
+- `STREAM_TRANSCODE_MAX_CONCURRENT` controls
+  `CRATE_STREAM_TRANSCODE_MAX_CONCURRENT` inside the playback worker.
+- `PLAYBACK_NATIVE_THREADS` caps BLAS/Numba/Torch-style native thread pools.
+- `PLAYBACK_FFMPEG_THREADS` caps ffmpeg worker threads.
+
+The API still serves the HTTP playback/stream contract, but expensive
+preparation/transcode work is admitted through that dedicated queue.
+
 ## PlayerContext today
 
 `PlayerContext.tsx` still exports the public player contract used by the rest of
@@ -132,6 +148,10 @@ Crate uses several realtime mechanisms:
 This feed supports `Last-Event-ID` replay and is used by authenticated clients
 to invalidate local caches. Live updates arrive through Redis pub/sub and the
 replay window comes from the bounded Redis invalidation log.
+
+When `crate-readplane` is enabled, Listen can consume selected replay/SSE read
+surfaces from the Go read plane, reducing persistent connection pressure on the
+FastAPI process while preserving FastAPI fallback.
 
 ### Snapshot-driven feeds
 

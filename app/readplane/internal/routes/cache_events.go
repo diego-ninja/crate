@@ -11,8 +11,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/auth"
-	"github.com/diego-ninja/crate/app/readplane/internal/httpx"
+	"github.com/thecrateapp/crate/app/readplane/internal/auth"
+	"github.com/thecrateapp/crate/app/readplane/internal/httpx"
 )
 
 const (

@@ -101,7 +101,7 @@ export function WhyCrate() {
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <a
-                  href="https://github.com/diego-ninja/crate"
+                  href="https://github.com/thecrateapp/crate"
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex rounded-full bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-cyan-200"

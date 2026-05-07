@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { Track } from "./player-types";
 import { resolveMaybeApiAssetUrl } from "@/lib/api";
+import { isAndroidNative } from "@/lib/capacitor";
+import { CrateMediaSession } from "@/lib/native-media-session";
 
 /**
  * Sync the Web MediaSession API with the current player state.
@@ -34,8 +36,64 @@ export function useMediaSession({
     actionsRef.current = { pause, resume, next, prev, seek, currentTime, duration };
   }, [currentTime, duration, next, pause, prev, resume, seek]);
 
+  useEffect(() => {
+    if (!isAndroidNative) return;
+    let cancelled = false;
+    let handle: { remove: () => Promise<void> } | null = null;
+
+    void CrateMediaSession.addListener("mediaSessionAction", (event) => {
+      const { pause, resume, next, prev, seek } = actionsRef.current;
+      if (event.action === "play") {
+        void CrateMediaSession.requestAudioFocus().catch(() => {});
+        resume();
+      } else if (event.action === "pause") {
+        pause();
+      } else if (event.action === "next") {
+        next();
+      } else if (event.action === "previous") {
+        prev();
+      } else if (event.action === "seek" && typeof event.position === "number") {
+        seek(event.position);
+      }
+    }).then((listener) => {
+      if (cancelled) {
+        void listener.remove();
+      } else {
+        handle = listener;
+      }
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (handle) void handle.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAndroidNative) return;
+    if (!currentTrack) {
+      void CrateMediaSession.clear().catch(() => {});
+      return;
+    }
+    const artworkUrl = resolveMaybeApiAssetUrl(currentTrack.albumCover) || "";
+    void CrateMediaSession.setMetadata({
+      title: currentTrack.title || "Unknown",
+      artist: currentTrack.artist || "",
+      album: currentTrack.album || "",
+      artworkUrl,
+    }).catch(() => {});
+  }, [currentTrack?.id, currentTrack?.title, currentTrack?.artist, currentTrack?.album, currentTrack?.albumCover]);
+
+  useEffect(() => {
+    if (!isAndroidNative) return;
+    return () => {
+      void CrateMediaSession.clear().catch(() => {});
+    };
+  }, []);
+
   // Update metadata when track changes
   useEffect(() => {
+    if (isAndroidNative) return;
     if (!("mediaSession" in navigator) || !currentTrack) return;
 
     const artwork: MediaImage[] = [];
@@ -54,6 +112,7 @@ export function useMediaSession({
 
   // Update playback state
   useEffect(() => {
+    if (isAndroidNative) return;
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [isPlaying]);
@@ -61,6 +120,16 @@ export function useMediaSession({
   // Update position state for seek bar on lockscreen
   const positionSeconds = Math.floor(Math.min(currentTime, duration));
   useEffect(() => {
+    if (!isAndroidNative || !currentTrack) return;
+    void CrateMediaSession.setPlaybackState({
+      playing: isPlaying,
+      position: Number.isFinite(positionSeconds) ? positionSeconds : 0,
+      duration: Number.isFinite(duration) ? duration : 0,
+    }).catch(() => {});
+  }, [currentTrack?.id, duration, isPlaying, positionSeconds]);
+
+  useEffect(() => {
+    if (isAndroidNative) return;
     if (!("mediaSession" in navigator) || !duration) return;
     try {
       navigator.mediaSession.setPositionState({
@@ -75,6 +144,7 @@ export function useMediaSession({
 
   // Register action handlers
   useEffect(() => {
+    if (isAndroidNative) return;
     if (!("mediaSession" in navigator)) return;
 
     const actions: Array<[MediaSessionAction, MediaSessionActionHandler]> = [

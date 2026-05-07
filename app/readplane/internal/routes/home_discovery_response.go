@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/diego-ninja/crate/app/readplane/internal/snapshots"
+	"github.com/thecrateapp/crate/app/readplane/internal/snapshots"
 )
 
 var homeDiscoveryListDefaults = []string{

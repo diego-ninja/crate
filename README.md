@@ -102,35 +102,50 @@ snapshot/read-model plane for admin and Listen surfaces.
 ## Architecture
 
 ```
-                     Traefik (reverse proxy + TLS)
-                                |
-       +------------------------+------------------------+
-       |                        |                        |
-   crate-ui               crate-listen               crate-api
-  (admin SPA)          (PWA + Capacitor apps)       (FastAPI)
-                                                     /music:ro
-       |                        |                        |
-       +---------------+--------+-----------+------------+
-                       |                    |
-                  crate-worker         PostgreSQL 15
-             (Dramatiq + daemons +          |
-                 projector)             Redis 7
-                    /music:rw      (cache / broker / event bus)
-                       |
-                 crate-cli
-                    (Rust CLI)
+                         Traefik (reverse proxy + TLS)
+                                      |
+         +----------------------------+----------------------------+
+         |                            |                            |
+     crate-ui                    crate-listen                  crate-api
+    (admin SPA)              (PWA + Capacitor)                (FastAPI)
+                                                                   |
+                                                        /music read-only
+         |                            |                            |
+         +----------------------------+--------------+-------------+
+                                                   |
+                                             crate-readplane
+                                          (Go snapshot/read API)
+                                                   |
+                         +-------------------------+-------------------------+
+                         |                                                   |
+                    PostgreSQL 15                                        Redis 7
+                  (source of truth)                         (cache, broker, SSE, events)
+                         |                                                   |
+             +-----------+-----------+----------------+----------------------+
+             |                       |                |                      |
+        crate-worker          crate-projector   analysis/playback      media-worker
+     (fast/default tasks,       (snapshots)      maintenance queues   (Go/Rust media)
+       service loop)
+             |
+       /music read-write
 ```
 
 | Service | Tech | Role |
 |---------|------|------|
 | **crate-api** | FastAPI + Uvicorn | REST API, audio streaming, SSE events, snapshot-driven surfaces |
-| **crate-worker** | Python + Dramatiq (Redis broker) | Background tasks, filesystem writes, daemons, projector |
+| **crate-readplane** | Go | Low-latency read plane for snapshot-backed Listen/Admin routes |
+| **crate-worker** | Python + Dramatiq (Redis broker) | Fast/default background tasks, filesystem writes, scheduler/service loop |
+| **crate-projector** | Python | Redis/domain events → warmed PostgreSQL snapshots/read models |
+| **crate-maintenance-worker** | Python + Dramatiq | Repair, enrichment, sync and maintenance queues |
+| **crate-analysis-worker** | Python + native tools | CPU-heavy audio analysis, fingerprints and bliss vectors |
+| **crate-playback-worker** | Python + ffmpeg | Playback preparation and transcoding work |
+| **crate-media-worker** | Go/Rust-backed service | Lightweight media metadata/stream helper service |
 | **crate-ui** | React 19 + Vite + Tailwind 4 | Admin SPA (desktop-oriented library management) |
 | **crate-listen** | React 19 + Vite + Tailwind 4 + Capacitor | Consumer listening app (PWA + iOS + Android) |
 | **crate-postgres** | PostgreSQL 15 | Persistent storage |
 | **crate-redis** | Redis 7 | Cache + Dramatiq broker + invalidation replay + domain-event stream |
-| **slskd** | — | Soulseek client (REST API) |
-| **proton-vpn** | `genericmale/protonvpn` | HTTP proxy for scraping workloads (Last.fm events) |
+| **slskd** | Optional | Soulseek client (REST API) for acquisition |
+| **proton-vpn** | Optional | HTTP proxy for scraping/acquisition workloads |
 | **traefik** | — | Reverse proxy + automatic TLS (Let's Encrypt) |
 
 The API container mounts the music library as **read-only**. All filesystem modifications (tag writes, file moves, downloads) go through the worker via Dramatiq actors.
@@ -147,22 +162,58 @@ The API container mounts the music library as **read-only**. All filesystem modi
 
 **Audio analysis** — Essentia (signal processing), PANNs CNN14 (AudioSet classification), `bliss-rs` (Rust song similarity vectors).
 
-**Infrastructure** — Docker Compose, Traefik, slskd, Redis, PostgreSQL, ProtonVPN.
+**Infrastructure** — Docker Compose, GHCR images, Traefik, Redis, PostgreSQL, optional slskd and ProtonVPN.
 
 ## Quickstart
 
+### Self-hosted install
+
+Fastest path on a Linux/macOS machine with Docker:
+
+```bash
+curl -fsSL https://cratemusic.app/install.sh | bash
+```
+
+The installer asks for the install directory, music library path, optional
+domain, and initial admin password. It writes a small self-hosted stack to your
+machine, pulls pre-built GHCR images, and starts Crate with Docker Compose.
+
+After installation:
+
+- Admin: `http://localhost:8580`
+- Listen: `http://localhost:8581`
+- If you configured a domain: `https://admin.<domain>` and `https://listen.<domain>`
+
+Advanced/non-interactive example:
+
+```bash
+curl -fsSL https://cratemusic.app/install.sh \
+  | CRATE_ASSUME_YES=1 \
+    CRATE_INSTALL_DIR=/opt/crate \
+    CRATE_MUSIC_DIR=/srv/music \
+    CRATE_DOMAIN=example.com \
+    CF_DNS_API_TOKEN=cloudflare-token \
+    DEFAULT_ADMIN_PASSWORD=change-me \
+    bash
+```
+
+Set `CRATE_SKIP_START=1` if you only want the installer to write
+`docker-compose.yaml`, `.env`, and `config.yaml`.
+
+### Local development
+
 Minimum steps to get the full stack running locally from a fresh clone.
 
-### Prerequisites
+#### Prerequisites
 
 - Docker + Docker Compose
 - Node.js 20+ and npm (for the Vite dev servers)
 - A music folder on disk (or use `test-music/` which ships with 3 artists for dev)
 
-### 1. Clone and configure
+#### 1. Clone and configure
 
 ```bash
-git clone https://github.com/diego-ninja/crate.git
+git clone https://github.com/thecrateapp/crate.git
 cd crate
 
 cp .env.example .env
@@ -176,7 +227,7 @@ cp .env.example .env
 
 Everything else in `.env` is optional and can be filled in later from the admin Settings page.
 
-### 2. Start the stack
+#### 2. Start the stack
 
 ```bash
 make dev
@@ -196,7 +247,7 @@ When using the local dev domains through Caddy, the equivalent URLs are:
 - **Docs** — <https://docs.dev.cratemusic.app>
 - **API** — <https://api.dev.lespedants.org>
 
-### 3. Log in
+#### 3. Log in
 
 Default dev credentials:
 
@@ -207,7 +258,7 @@ password: admin
 
 Change them from **Settings → Users** after first login.
 
-### 4. Index your library
+#### 4. Index your library
 
 The filesystem watcher picks up new files automatically. To force a full re-scan:
 
@@ -217,7 +268,7 @@ The filesystem watcher picks up new files automatically. To force a full re-scan
 
 Enrichment (Last.fm / MusicBrainz / audio analysis) runs automatically after the scan.
 
-### 5. (Optional) Mobile apps
+#### 5. (Optional) Mobile apps
 
 ```bash
 make cap-ios       # build + run Listen in iOS Simulator
@@ -226,7 +277,7 @@ make cap-android   # build + run Listen in Android Emulator
 
 Requires Xcode / Android Studio installed locally.
 
-### Stopping / resetting
+#### Stopping / resetting
 
 ```bash
 make dev-down        # stop everything
@@ -258,6 +309,7 @@ The `.env` file drives both dev and production. Required unless noted.
 | `PROTONVPN_USER` / `PROTONVPN_PASS` | No | Proton VPN credentials for the scraping proxy |
 | `CRATE_POSTGRES_USER` / `CRATE_POSTGRES_PASSWORD` / `CRATE_POSTGRES_DB` | Yes | App-level Postgres role |
 | `PUID` / `PGID` | Yes | Host UID/GID for file ownership |
+| `CRATE_IMAGE_OWNER` / `CRATE_IMAGE_REGISTRY` | No | Container image namespace and registry. Defaults to `thecrateapp` / `ghcr.io` |
 | `TZ` | Yes | Timezone (e.g. `Europe/Madrid`) |
 
 ## Makefile commands

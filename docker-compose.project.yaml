@@ -19,7 +19,7 @@
 
 services:
   crate-site:
-    image: ghcr.io/diego-ninja/crate-site:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-site:${CRATE_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: app/site/Dockerfile
@@ -37,7 +37,7 @@ services:
       traefik.http.routers.site.tls.certresolver: letsencrypt
 
   crate-docs:
-    image: ghcr.io/diego-ninja/crate-docs:${CRATE_IMAGE_TAG:-latest}
+    image: ${CRATE_IMAGE_REGISTRY:-ghcr.io}/${CRATE_IMAGE_OWNER:-thecrateapp}/crate-docs:${CRATE_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: app/docs/Dockerfile
@@ -53,24 +53,6 @@ services:
       traefik.http.services.docs.loadbalancer.server.port: 80
       traefik.http.routers.docs.tls: true
       traefik.http.routers.docs.tls.certresolver: letsencrypt
-
-  crate-reference:
-    image: ghcr.io/diego-ninja/crate-reference:${CRATE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: app/reference/Dockerfile
-    container_name: crate-reference
-    restart: unless-stopped
-    networks:
-      - crate
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.routers.reference.rule: Host(`reference.cratemusic.app`)
-      traefik.http.routers.reference.entryPoints: websecure
-      traefik.http.services.reference.loadbalancer.server.port: 80
-      traefik.http.routers.reference.tls: true
-      traefik.http.routers.reference.tls.certresolver: letsencrypt
 
 networks:
   crate:

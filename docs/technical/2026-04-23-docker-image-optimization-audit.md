@@ -8,13 +8,14 @@ The biggest Docker optimization opportunity in this repo is not runtime tuning. 
 
 The backend image was being built from the full `app/` context while the context still contained large frontend trees that the backend image never uses:
 
-- `app/reference`: ~492 MB
 - `app/listen`: ~315 MB
 - `app/docs`: ~141 MB
 - `app/site`: ~126 MB
 - `app/ui`: ~51 MB
 - `app/bin`: ~28 MB
 - `app/crate`: ~5.7 MB
+
+Note: the former Scalar reference app has since been removed from the active stack.
 
 That means the backend image was paying I/O, cache, and hashing cost for a lot of irrelevant material on every build, even before considering final image size.
 
@@ -75,13 +76,13 @@ These changes are not expected to materially improve request latency by themselv
 
 ### Frontend build reproducibility
 
-`app/site`, `app/reference`, and `app/docs` already use `npm ci`, which is good.
+`app/site` and `app/docs` already use `npm ci`, which is good.
 
 `app/ui` and `app/listen` still use `npm install` because they strip a local workspace dependency from `package.json` during the Docker build. That makes `npm ci` less straightforward. A future improvement would be to make `@crate/ui` consumable without mutating manifests during the build.
 
 ### Root-context builds
 
-`site`, `reference`, and `docs` are built from the repo root because their Dockerfiles need files outside their own subdirectories. They already rely on Dockerfile-specific ignore files. That is acceptable, but they should be watched for context growth as the repo expands.
+`site` and `docs` are built from the repo root because their Dockerfiles need files outside their own subdirectories. They already rely on Dockerfile-specific ignore files. That is acceptable, but they should be watched for context growth as the repo expands.
 
 ### Backend multi-stage build
 

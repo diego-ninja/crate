@@ -165,7 +165,7 @@ export function Manifesto() {
               Self-host Crate
             </a>
             <a
-              href="https://github.com/diego-ninja/crate"
+              href="https://github.com/thecrateapp/crate"
               className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-5 py-2.5 text-sm font-semibold text-white/80 transition hover:border-white/20 hover:text-white"
             >
               Browse the source

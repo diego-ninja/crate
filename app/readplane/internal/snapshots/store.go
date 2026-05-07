@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/diego-ninja/crate/app/readplane/internal/postgres"
+	"github.com/thecrateapp/crate/app/readplane/internal/postgres"
 )
 
 var ErrNotFound = errors.New("snapshot not found")
