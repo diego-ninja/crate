@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize, KeyboardStyle } from "@capacitor/keyboard";
 
 const allowMixedContent = process.env.CRATE_ALLOW_MIXED_CONTENT === "true";
 
@@ -19,7 +20,7 @@ const config: CapacitorConfig = {
   },
 
   ios: {
-    contentInset: "always",
+    contentInset: "never",
     backgroundColor: "#0a0a0f",
     preferredContentMode: "mobile",
   },
@@ -32,13 +33,18 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       launchAutoHide: true,
-      launchShowDuration: 800,
+      launchShowDuration: 350,
       backgroundColor: "#0a0a0f",
       showSpinner: false,
     },
     StatusBar: {
       style: "DARK",
       overlaysWebView: true,
+    },
+    Keyboard: {
+      resize: KeyboardResize.Body,
+      style: KeyboardStyle.Dark,
+      resizeOnFullScreen: true,
     },
   },
 };

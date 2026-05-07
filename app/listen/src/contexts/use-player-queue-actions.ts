@@ -30,6 +30,9 @@ import {
   shuffleKeepingCurrent,
 } from "@/contexts/player-queue-helpers";
 import { getStreamUrl, getTrackCacheKey, STORAGE_KEY } from "@/contexts/player-utils";
+import { isNative } from "@/lib/capacitor-runtime";
+import type { PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
+import { preparePlaybackDelivery } from "@/lib/playback-delivery";
 
 const SOFT_PAUSE_FADE_MS = 220;
 const PREV_DOUBLE_TAP_WINDOW_MS = 1500;
@@ -84,6 +87,7 @@ interface UsePlayerQueueActionsParams {
     options?: { autoplay?: boolean; positionMs?: number },
   ) => void;
   advanceCursorTo: (index: number) => void;
+  playbackDeliveryPolicy: PlaybackDeliveryPolicy;
 }
 
 export function usePlayerQueueActions({
@@ -128,6 +132,7 @@ export function usePlayerQueueActions({
   pullFromEngine,
   pushToEngine,
   advanceCursorTo,
+  playbackDeliveryPolicy,
 }: UsePlayerQueueActionsParams) {
   const startQueuePlayback = useCallback((tracks: Track[], startIndex: number, source?: PlaySource) => {
     if (!tracks.length) return;
@@ -144,6 +149,7 @@ export function usePlayerQueueActions({
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
 
+    preparePlaybackDelivery(tracks, normalizedIndex, playbackDeliveryPolicy, { immediate: true });
     gpLoadQueue(buildEngineUrls(tracks), normalizedIndex, { restartIfSameIndex: true });
     gpSetLoop(repeatRef.current === "all");
     gpSetSingleMode(repeatRef.current === "one");
@@ -174,6 +180,7 @@ export function usePlayerQueueActions({
     rememberActiveTrack,
     resetPlaybackIntelligence,
     pullFromEngine,
+    playbackDeliveryPolicy,
     queueRef,
     startTrackerSession,
   ]);
@@ -225,12 +232,21 @@ export function usePlayerQueueActions({
   }, [cancelSoftInterruption, commitIsBuffering, queueRef]);
 
   const advanceToTrack = useCallback((targetIndex: number) => {
+    preparePlaybackDelivery(queueRef.current, targetIndex, playbackDeliveryPolicy, { immediate: true });
     const outgoing = queueRef.current[currentIndexRef.current];
     flushCurrentPlayEvent("skipped", outgoing);
     advanceCursorTo(targetIndex);
     const incoming = queueRef.current[targetIndex];
     if (incoming) startTrackerSession(incoming, playSourceRef.current);
-  }, [advanceCursorTo, currentIndexRef, flushCurrentPlayEvent, playSourceRef, queueRef, startTrackerSession]);
+  }, [
+    advanceCursorTo,
+    currentIndexRef,
+    flushCurrentPlayEvent,
+    playSourceRef,
+    playbackDeliveryPolicy,
+    queueRef,
+    startTrackerSession,
+  ]);
 
   const next = useCallback(() => {
     if (!queueRef.current.length) return;
@@ -317,13 +333,15 @@ export function usePlayerQueueActions({
   }, [bufferingIntentRef, commitCurrentTime, commitIsBuffering, isPlayingRef, markSeekPosition]);
 
   const setVolume = useCallback((volume: number) => {
-    gpSetVolume(volume);
-    setVolumeState(volume);
-    if (volume > 0) {
-      lastNonZeroVolumeRef.current = volume;
+    const effectiveVolume = isNative ? 1 : volume;
+    gpSetVolume(effectiveVolume);
+    setVolumeState(effectiveVolume);
+    if (effectiveVolume > 0) {
+      lastNonZeroVolumeRef.current = effectiveVolume;
     }
+    if (isNative) return;
     try {
-      localStorage.setItem("listen-player-volume", String(volume));
+      localStorage.setItem("listen-player-volume", String(effectiveVolume));
     } catch {
       // ignore persistence failures
     }

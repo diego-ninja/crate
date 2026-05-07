@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 
 import type { PlaySource, Track } from "@/contexts/player-types";
 import { getTrackCacheKey } from "@/contexts/player-utils";
+import { getListenAppPlatform, getListenDeviceType } from "@/lib/listen-device";
 import { postWithRetry } from "@/lib/play-event-queue";
 import { toTrackReferencePayload } from "@/lib/track-reference";
 
@@ -89,8 +90,8 @@ function dispatchPlayEvent(session: PlayEventSession, reason: FlushReason) {
       session.playSource?.type === "playlist" && typeof session.playSource.id === "number"
         ? session.playSource.id
         : null,
-    device_type: "web",
-    app_platform: "listen-web",
+    device_type: getListenDeviceType(),
+    app_platform: getListenAppPlatform(),
   });
 }
 

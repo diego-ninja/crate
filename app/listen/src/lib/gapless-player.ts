@@ -168,10 +168,10 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
     crossfadeShape: GAPLESS_CROSSFADE_EQUAL_POWER,
     volume: lastVolume,
     logLevel: GAPLESS_LOG_LEVEL_WARNING,
-    // Only keep the current + next track loaded at once. Default is -1
-    // (no limit) which fires dozens of parallel XHR+HTML5 loads on
-    // large playlists, saturating the browser connection pool and
-    // causing noticeable latency before the current track starts.
+    // Keep the live HTML5 pipeline conservative on mobile. Gapless-5's
+    // range math loads the current track plus the next track even with
+    // loadLimit=1; higher values create multiple parallel <audio> loads
+    // and Android WebView/emulators can start dropping audio frames.
     loadLimit: preferHtml5Audio ? 1 : 2,
   });
   appliedVolume = lastVolume;

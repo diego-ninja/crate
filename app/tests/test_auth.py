@@ -1,6 +1,7 @@
 """Tests for the auth system (JWT, password hashing, middleware, API endpoints)."""
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
@@ -127,6 +128,38 @@ class TestOAuthRedirectHelpers:
         )
         assert _post_auth_redirect_url("https://admin.example/users", "abc123") == "https://admin.example/users"
         assert _post_auth_redirect_url("/auth/callback?next=%2Fmix", "abc123") == "/auth/callback?next=%2Fmix&token=abc123"
+
+    @patch.dict("os.environ", {
+        "APPLE_ASSOCIATED_APP_IDS": "",
+        "APPLE_TEAM_ID": "TEAM123456",
+        "APPLE_LISTEN_BUNDLE_ID": "org.lespedants.crate.listen",
+    })
+    def test_apple_app_site_association_uses_listen_app_id(self):
+        from crate.api.auth import apple_app_site_association
+
+        response = asyncio.run(apple_app_site_association())
+        payload = json.loads(response.body)
+
+        assert payload == {
+            "applinks": {
+                "apps": [],
+                "details": [
+                    {
+                        "appID": "TEAM123456.org.lespedants.crate.listen",
+                        "paths": ["/auth/callback*"],
+                    }
+                ],
+            },
+        }
+
+    @patch.dict("os.environ", {"APPLE_ASSOCIATED_APP_IDS": "TEAM.one, TEAM.two"}, clear=False)
+    def test_apple_app_site_association_supports_multiple_app_ids(self):
+        from crate.api.auth import apple_app_site_association
+
+        response = asyncio.run(apple_app_site_association())
+        payload = json.loads(response.body)
+
+        assert [item["appID"] for item in payload["applinks"]["details"]] == ["TEAM.one", "TEAM.two"]
 
 
 class TestOAuthStart:

@@ -11,6 +11,7 @@ import { getTrackQualityFallback, getTrackQualityFromInfo, mergeTrackQualityPart
 import { getTrackQualityFromPlaybackQuality } from "@/lib/track-playback";
 import { getPlaybackDeliveryPolicyPreference, PLAYER_PLAYBACK_PREFS_EVENT, type PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
 import { canUseWebAudioEffects } from "@/lib/mobile-audio-mode";
+import { triggerHaptic } from "@/lib/haptics";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
@@ -43,6 +44,7 @@ import {
   shouldFetchTrackQualityInfo,
 } from "@/components/player/bar/player-bar-utils";
 import { QualityBadge } from "@/components/player/bar/QualityBadge";
+import { getHorizontalPlayerSwipeAction } from "@/components/player/player-gestures";
 
 const FS_OPEN_KEY = "listen-fs-player-open";
 const SHOW_PLAYER_BAR_ANALYZER = true;
@@ -113,7 +115,7 @@ function PlayerSurfaceFallback({ fullscreen = false }: { fullscreen?: boolean })
     );
   }
   return (
-    <div className="fixed inset-0 z-app-player-overlay flex items-center justify-center bg-black/70 backdrop-blur-xl">
+    <div className="fixed inset-0 z-fullscreen-player flex items-center justify-center bg-black/70 backdrop-blur-xl">
       <Loader2 size={24} className="animate-spin text-primary" />
     </div>
   );
@@ -228,12 +230,17 @@ export function PlayerBar() {
     if (!t) return;
     const deltaX = t.clientX - touchStartX.current;
     const deltaY = t.clientY - touchStartY.current;
-    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 2) {
-      if (deltaX < 0) {
-        next();
-      } else {
-        prev();
-      }
+    const action = getHorizontalPlayerSwipeAction({
+      deltaX,
+      deltaY,
+      viewportWidth: window.innerWidth,
+    });
+    if (action === "next") {
+      triggerHaptic("selection");
+      next();
+    } else if (action === "previous") {
+      triggerHaptic("selection");
+      prev();
     }
   }
 
@@ -270,7 +277,14 @@ export function PlayerBar() {
   const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
   const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
   const sourceLabel = getPlaySourceLabel(playSource);
+  const hidePlayerBarForMobileFullscreen = !isDesktop && fsOpen;
 
+  useEffect(() => {
+    if (!isDesktop && fsOpen) {
+      setShouldRenderFullscreenPlayer(true);
+      void preloadFullscreenPlayer();
+    }
+  }, [fsOpen, isDesktop]);
 
   if (!currentTrack) return null;
 
@@ -306,8 +320,59 @@ export function PlayerBar() {
   }
 
   function openFullscreenPlayer() {
+    triggerHaptic("medium");
     prepareFullscreenPlayer();
     setFsOpen(true);
+  }
+
+  function handlePlayPause() {
+    triggerHaptic("light");
+    if (isPlaying) pause();
+    else resume();
+  }
+
+  function handlePreviousTrack() {
+    triggerHaptic("selection");
+    prev();
+  }
+
+  function handleNextTrack() {
+    triggerHaptic("selection");
+    next();
+  }
+
+  function handleToggleShuffle() {
+    triggerHaptic("selection");
+    toggleShuffle();
+  }
+
+  function handleCycleRepeat() {
+    triggerHaptic("selection");
+    cycleRepeat();
+  }
+
+  function handleToggleQueue() {
+    triggerHaptic("selection");
+    prepareQueuePanel();
+    setShowQueue(!showQueue);
+    setShowLyrics(false);
+  }
+
+  function handleToggleLyrics() {
+    triggerHaptic("selection");
+    prepareLyricsPanel();
+    setShowLyrics(!showLyrics);
+    setShowQueue(false);
+  }
+
+  function handleToggleExtendedPlayer() {
+    triggerHaptic("medium");
+    prepareExtendedPlayer();
+    setExtendedOpen(!extendedOpen);
+    if (!extendedOpen) {
+      setShowQueue(false);
+      setShowLyrics(false);
+    }
   }
 
   async function toggleLike() {
@@ -343,17 +408,18 @@ export function PlayerBar() {
         {isPlaying ? `Now playing ${currentTrack.title} by ${currentTrack.artist}` : `Paused: ${currentTrack.title} by ${currentTrack.artist}`}
       </div>
 
-      <div
-        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[var(--listen-mobile-player-height)] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 md:h-[82px] ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
-        style={{
-          bottom: isDesktop ? 12 : "calc(var(--listen-mobile-bottom-nav-height) + var(--listen-mobile-player-gap))",
-          left: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-left))",
-          right: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-right))",
-          contain: "paint",
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
+      {!hidePlayerBarForMobileFullscreen ? (
+        <div
+          className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[var(--listen-mobile-player-height)] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 md:h-[82px] ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+          style={{
+            bottom: isDesktop ? 12 : "calc(var(--listen-mobile-bottom-nav-height) + var(--listen-mobile-player-gap))",
+            left: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-left))",
+            right: isDesktop ? undefined : "max(0.5rem, var(--listen-safe-right))",
+            contain: "paint",
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
         <div className="flex h-full items-center gap-2 px-3 lg:px-4">
 
             {/* ── Block 1: Track Info ── */}
@@ -528,17 +594,17 @@ export function PlayerBar() {
 
               <div className="relative flex items-center justify-center gap-3 lg:gap-5">
                 <button
-                  onClick={toggleShuffle}
+                  onClick={handleToggleShuffle}
                   aria-label={shuffle ? "Disable shuffle" : "Enable shuffle"}
                   className={`transition-colors ${shuffle ? "text-primary" : "text-white/30 hover:text-white/60"}`}
                 >
                   <Shuffle size={15} />
                 </button>
-                <button onClick={prev} aria-label="Previous track" className="text-white/50 hover:text-white transition-colors">
+                <button onClick={handlePreviousTrack} aria-label="Previous track" className="text-white/50 hover:text-white transition-colors">
                   <SkipBack size={18} fill="currentColor" />
                 </button>
                 <button
-                  onClick={isPlaying ? pause : resume}
+                  onClick={handlePlayPause}
                   aria-label={isPlaying ? "Pause" : "Play"}
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200 hover:scale-105",
@@ -553,11 +619,11 @@ export function PlayerBar() {
                     <Play size={16} className="text-black ml-0.5" fill="black" />
                   )}
                 </button>
-                <button onClick={next} aria-label="Next track" className="text-white/50 hover:text-white transition-colors">
+                <button onClick={handleNextTrack} aria-label="Next track" className="text-white/50 hover:text-white transition-colors">
                   <SkipForward size={18} fill="currentColor" />
                 </button>
                 <button
-                  onClick={cycleRepeat}
+                  onClick={handleCycleRepeat}
                   aria-label={`Repeat: ${repeat}`}
                   className={`transition-colors ${repeat !== "off" ? "text-primary" : "text-white/30 hover:text-white/60"}`}
                 >
@@ -628,16 +694,16 @@ export function PlayerBar() {
               <RadioFeedback
                 sessionId={shapedRadioSessionId!}
                 trackId={currentTrack.libraryTrackId}
-                onDislike={() => next()}
+                onDislike={handleNextTrack}
                 size="sm"
               />
             ) : (
-              <button onClick={prev} aria-label="Previous track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
+              <button onClick={handlePreviousTrack} aria-label="Previous track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
                 <SkipBack size={18} fill="currentColor" />
               </button>
             )}
             <button
-              onClick={isPlaying ? pause : resume}
+              onClick={handlePlayPause}
               aria-label={isPlaying ? "Pause" : "Play"}
               className={cn(
                 "flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200 active:scale-95",
@@ -662,7 +728,7 @@ export function PlayerBar() {
                 <Maximize2 size={16} />
               </button>
             ) : (
-              <button onClick={next} aria-label="Next track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
+              <button onClick={handleNextTrack} aria-label="Next track" className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-white/50 transition-colors active:bg-white/5 active:text-white">
                 <SkipForward size={18} fill="currentColor" />
               </button>
             )}
@@ -697,6 +763,7 @@ export function PlayerBar() {
               {!extendedOpen && allowEqualizer && (
                 <button
                   onClick={() => {
+                    triggerHaptic("selection");
                     prepareEqualizerPopover();
                     setShowEqualizer((v) => !v);
                     setShowQueue(false);
@@ -714,7 +781,7 @@ export function PlayerBar() {
               {/* Queue (hidden when extended player is open) */}
               {!extendedOpen && (
                 <button
-                  onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
+                  onClick={handleToggleQueue}
                   onMouseEnter={prepareQueuePanel}
                   onFocus={prepareQueuePanel}
                   className={`relative rounded-md p-1.5 transition-colors hover:bg-white/5 ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
@@ -732,7 +799,7 @@ export function PlayerBar() {
               {/* Lyrics (hidden when extended player is open) */}
               {!extendedOpen && (
                 <button
-                  onClick={() => { prepareLyricsPanel(); setShowLyrics(!showLyrics); setShowQueue(false); }}
+                  onClick={handleToggleLyrics}
                   onMouseEnter={prepareLyricsPanel}
                   onFocus={prepareLyricsPanel}
                   className={`hidden rounded-md p-1.5 transition-colors hover:bg-white/5 xl:block ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
@@ -744,11 +811,7 @@ export function PlayerBar() {
 
               {/* Extended / Full player */}
               <button
-                onClick={() => {
-                  prepareExtendedPlayer();
-                  setExtendedOpen(!extendedOpen);
-                  if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
-                }}
+                onClick={handleToggleExtendedPlayer}
                 onMouseEnter={prepareExtendedPlayer}
                 onFocus={prepareExtendedPlayer}
                 className={`rounded-md p-1.5 transition-colors hover:bg-white/5 ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
@@ -763,7 +826,7 @@ export function PlayerBar() {
           <div className="hidden items-center gap-1 md:flex lg:hidden">
             {!extendedOpen && (
               <button
-                onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
+                onClick={handleToggleQueue}
                 onMouseEnter={prepareQueuePanel}
                 onFocus={prepareQueuePanel}
                 aria-label="Queue"
@@ -773,11 +836,7 @@ export function PlayerBar() {
               </button>
             )}
             <button
-              onClick={() => {
-                prepareExtendedPlayer();
-                setExtendedOpen(!extendedOpen);
-                if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
-              }}
+              onClick={handleToggleExtendedPlayer}
               onMouseEnter={prepareExtendedPlayer}
               onFocus={prepareExtendedPlayer}
               aria-label="Expand player"
@@ -788,7 +847,8 @@ export function PlayerBar() {
           </div>
 
         </div>
-      </div>
+        </div>
+      ) : null}
       {shouldRenderQueuePanel ? (
         <Suspense fallback={<PlayerSurfaceFallback />}>
           <LazyQueuePanel open={showQueue} onClose={() => setShowQueue(false)} />

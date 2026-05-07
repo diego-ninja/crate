@@ -66,7 +66,7 @@ from crate.db.repositories.streaming import (
     mark_variant_missing,
 )
 from crate.streaming.policy import normalize_policy
-from crate.streaming.service import media_type_for_path, resolution_to_payload, resolve_playback
+from crate.streaming.service import media_type_for_path, prepare_playback, resolution_to_payload, resolve_playback
 
 log = logging.getLogger(__name__)
 
@@ -940,7 +940,7 @@ def api_playback_prepare(request: Request, body: PlaybackPrepareRequest):
             items.append({"ok": False, "error": "Track not found"})
             continue
         try:
-            resolution = resolve_playback(track, policy, enqueue=True)
+            resolution = prepare_playback(track, policy)
             items.append({
                 "track_id": track.get("id"),
                 "entity_uid": str(track["entity_uid"]) if track.get("entity_uid") is not None else None,

@@ -4,11 +4,13 @@ import { ChevronDown, Settings, SlidersHorizontal } from "lucide-react";
 
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSwitch";
+import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { PlayerTrackIdentity } from "@/components/player/PlayerTrackIdentity";
 import { InfoTab } from "@/components/player/extended/InfoTab";
 import { SpinningDisc } from "@/components/player/SpinningDisc";
 import { artistPagePath } from "@/lib/library-routes";
 import { getPlaySourceLabel } from "@/components/player/player-source";
+import { triggerHaptic } from "@/lib/haptics";
 import { LyricsTab } from "@/components/player/extended/LyricsTab";
 import { QueueTab } from "@/components/player/extended/QueueTab";
 import { SuggestedTab } from "@/components/player/extended/SuggestedTab";
@@ -42,7 +44,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
   const { currentTrack, currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
-  const { pause, resume, playSource, queue } = usePlayerActions();
+  const { pause, resume, playSource, queue, seek } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
     crossfadeTransition,
@@ -143,6 +145,11 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
   if (!isDesktop || !currentTrack) return null;
 
+  function closeWithFeedback() {
+    triggerHaptic("selection");
+    onClose();
+  }
+
   function goToArtist() {
     if (!resolvedArtist?.id) return;
     navigate(artistPagePath({
@@ -154,14 +161,14 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
   return (
     <div
-      className={`z-app-extended-player fixed inset-0 flex bg-app-surface transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-        open ? "top-0 opacity-100" : "pointer-events-none top-[100vh] opacity-0"
+      className={`z-app-extended-player fixed inset-0 flex bg-app-surface transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform ${
+        open ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"
       }`}
     >
       <div ref={panelRef} className="relative flex w-1/2 flex-col items-center justify-center overflow-hidden bg-app-surface">
         <div className="z-app-header absolute top-4 right-4 left-4 flex justify-between">
           <button
-            onClick={onClose}
+            onClick={closeWithFeedback}
             aria-label="Close player"
             className="rounded-full bg-black/30 p-2 text-white/60 backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white"
           >
@@ -311,6 +318,14 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               {vizCfg.trackVizProfile.summary}
             </p>
           ) : null}
+          <PlayerSeekBar
+            className="mx-auto mt-5 w-full max-w-[420px]"
+            currentTime={displayedTime}
+            duration={displayedDuration}
+            onSeek={seek}
+            showTimes
+            variant="glow"
+          />
         </div>
       </div>
 
@@ -319,7 +334,10 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           {TABS.map((item) => (
             <button
               key={item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                triggerHaptic("selection");
+                setTab(item.id);
+              }}
               className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
                 tab === item.id ? "bg-white/10 text-white" : "text-white/40 hover:text-white/60"
               }`}

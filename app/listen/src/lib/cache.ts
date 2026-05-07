@@ -24,11 +24,14 @@ const memoryCache = new Map<string, CacheEntry>();
 type ScheduledStorageWriteHandle = number | ReturnType<typeof setTimeout>;
 const pendingStorageWrites = new Map<string, ScheduledStorageWriteHandle>();
 
-/** Safety-net TTL for localStorage entries. Data older than this is
- *  discarded on retrieval even if no invalidation event was missed.
- *  24 hours is generous — scope-based invalidation should clear it
- *  much sooner in practice. */
-const LOCALSTORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** Safety-net TTL for localStorage entries.
+ *
+ * Listen's cache is primarily invalidation-driven; this TTL only protects
+ * against very old/corrupt local snapshots after a client has missed events
+ * for a long time. Keep it long enough that daily app opens do not turn into
+ * cold starts.
+ */
+const LOCALSTORAGE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 const STORAGE_WRITE_TIMEOUT_MS = 250;
 
 function _cancelPendingStorageWrite(url: string): void {

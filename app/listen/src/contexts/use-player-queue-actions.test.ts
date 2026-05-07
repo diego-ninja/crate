@@ -75,6 +75,7 @@ function createParams() {
     pullFromEngine: vi.fn(() => ({ resolvedTrack: TRACK })),
     pushToEngine: vi.fn(),
     advanceCursorTo: vi.fn(),
+    playbackDeliveryPolicy: "original" as const,
   };
 }
 

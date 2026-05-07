@@ -7,12 +7,15 @@ import { isOnline as isRuntimeOnline } from "@/lib/capacitor";
 import {
   fadeInAndPlay as gpFadeInAndPlay,
   fadeOutAndPause as gpFadeOutAndPause,
+  getPosition as gpGetPosition,
+  play as gpPlay,
   isCurrentTrackFullyBuffered,
   pause as gpPause,
   restoreVolume as gpRestoreVolume,
 } from "@/lib/gapless-player";
 
 const STREAM_STALL_GRACE_MS = 2500;
+const BACKGROUND_STALL_GRACE_MS = 8000;
 const RECOVERY_RETRY_MS = 3000;
 const STREAM_PROBE_TIMEOUT_MS = 4000;
 const SOFT_PAUSE_FADE_MS = 220;
@@ -60,6 +63,12 @@ export function useSoftInterruption({
   const stallTimerRef = useRef<number | null>(null);
   const recoveryTimerRef = useRef<number | null>(null);
   const recoveryProbeInFlightRef = useRef(false);
+  const backgroundSnapshotRef = useRef<{
+    at: number;
+    positionMs: number;
+    wasPlaying: boolean;
+    trackId: string | null;
+  } | null>(null);
   // Forward-declared so callbacks can reach the latest implementation.
   const maybeResumeRef = useRef<() => Promise<void>>(async () => {});
 
@@ -194,6 +203,53 @@ export function useSoftInterruption({
     }
   };
 
+  const reconcileAfterAppResume = useCallback(() => {
+    const snapshot = backgroundSnapshotRef.current;
+    backgroundSnapshotRef.current = null;
+    if (!snapshot || !snapshot.wasPlaying || !currentTrackRef.current) return;
+
+    const currentTrackId = currentTrackRef.current.id || null;
+    if (snapshot.trackId && currentTrackId && snapshot.trackId !== currentTrackId) return;
+
+    const elapsedMs = Math.max(0, Date.now() - snapshot.at);
+    const actualPositionMs = gpGetPosition();
+    const barelyAdvanced = actualPositionMs <= snapshot.positionMs + 800;
+    const longBackgroundGap = elapsedMs >= BACKGROUND_STALL_GRACE_MS;
+
+    if (!longBackgroundGap || !barelyAdvanced) {
+      if (isBufferingRef.current) {
+        commitIsBuffering(false);
+        bufferingIntentRef.current = false;
+      }
+      return;
+    }
+
+    bufferingIntentRef.current = true;
+    commitIsBuffering(true);
+    void isRuntimeOnline().then((online) => {
+      if (!online) {
+        beginSoftInterruption("offline");
+        return;
+      }
+      gpPlay();
+      window.setTimeout(() => {
+        const recoveredPositionMs = gpGetPosition();
+        if (recoveredPositionMs > actualPositionMs + 500 || !currentTrackRef.current) {
+          bufferingIntentRef.current = false;
+          commitIsBuffering(false);
+          return;
+        }
+        beginSoftInterruption("stream");
+      }, 1_500);
+    });
+  }, [
+    beginSoftInterruption,
+    bufferingIntentRef,
+    commitIsBuffering,
+    currentTrackRef,
+    isBufferingRef,
+  ]);
+
   // Listen to browser online/offline + app-level network-restored events.
   useEffect(() => {
     const handleOffline = () => {
@@ -213,15 +269,49 @@ export function useSoftInterruption({
       scheduleRecoveryCheck(0);
     };
 
+    const handleAppPaused = () => {
+      backgroundSnapshotRef.current = {
+        at: Date.now(),
+        positionMs: gpGetPosition(),
+        wasPlaying: isPlayingRef.current || isBufferingRef.current,
+        trackId: currentTrackRef.current?.id ?? null,
+      };
+    };
+    const handleAppResumed = (event?: Event) => {
+      if (
+        event?.type === "visibilitychange" &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+      reconcileAfterAppResume();
+      if (!shouldAutoResumeAfterInterruptionRef.current) return;
+      scheduleRecoveryCheck(0);
+    };
+
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleRestored);
     window.addEventListener("crate:network-restored", handleRestored as EventListener);
+    window.addEventListener("crate:app-paused", handleAppPaused as EventListener);
+    window.addEventListener("crate:app-resumed", handleAppResumed as EventListener);
+    document.addEventListener("visibilitychange", handleAppResumed);
     return () => {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleRestored);
       window.removeEventListener("crate:network-restored", handleRestored as EventListener);
+      window.removeEventListener("crate:app-paused", handleAppPaused as EventListener);
+      window.removeEventListener("crate:app-resumed", handleAppResumed as EventListener);
+      document.removeEventListener("visibilitychange", handleAppResumed);
     };
-  }, [beginSoftInterruption, currentTrackRef, isBufferingRef, isPlayingRef, scheduleRecoveryCheck]);
+  }, [
+    beginSoftInterruption,
+    currentTrackRef,
+    isBufferingRef,
+    isPlayingRef,
+    reconcileAfterAppResume,
+    scheduleRecoveryCheck,
+  ]);
 
   // Cleanup timers on unmount.
   useEffect(() => () => {

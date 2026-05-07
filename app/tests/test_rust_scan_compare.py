@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
-
-def _load_compare_module():
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "compare_rust_scan.py"
-    spec = importlib.util.spec_from_file_location("compare_rust_scan", script_path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from crate import scan_compare as compare
 
 
 def test_discover_python_audio_files_matches_album_flac_preference(tmp_path):
-    compare = _load_compare_module()
     album_dir = tmp_path / "Artist" / "Album"
     album_dir.mkdir(parents=True)
     flac = album_dir / "01 - Track.flac"
@@ -31,7 +20,6 @@ def test_discover_python_audio_files_matches_album_flac_preference(tmp_path):
 
 
 def test_discover_python_audio_files_ignores_hidden_album_entries(tmp_path):
-    compare = _load_compare_module()
     album_dir = tmp_path / "Artist" / "Album"
     hidden_dir = album_dir / ".download"
     hidden_dir.mkdir(parents=True)
@@ -46,7 +34,6 @@ def test_discover_python_audio_files_ignores_hidden_album_entries(tmp_path):
 
 
 def test_compare_indexes_reports_path_and_field_diffs():
-    compare = _load_compare_module()
     python_index = {
         "Artist/Album/01.flac": {"title": "One", "duration_ms": 1000},
         "Artist/Album/02.flac": {"title": "Two"},
@@ -69,7 +56,6 @@ def test_compare_indexes_reports_path_and_field_diffs():
 
 
 def test_compare_indexes_reports_non_tolerated_field_diffs():
-    compare = _load_compare_module()
     python_index = {"Artist/Album/01.flac": {"title": "One", "duration_ms": 1000}}
     rust_index = {
         "Artist/Album/01.flac": {"title": "Uno", "duration_ms": 3000},

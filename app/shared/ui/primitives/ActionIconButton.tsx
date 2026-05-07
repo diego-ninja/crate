@@ -28,10 +28,10 @@ function actionToneClassName(tone: ActionTone, disabled: boolean) {
 
 function actionVariantClassName(variant: ActionVariant) {
   if (variant === "card") {
-    return "h-9 w-9 border border-[var(--idle-border)] bg-black/55 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md hover:bg-black/70";
+    return "h-9 min-h-11 w-9 min-w-11 border border-[var(--idle-border)] bg-black/55 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md hover:bg-black/70 md:min-h-0 md:min-w-0";
   }
 
-  return "h-10 w-10";
+  return "h-10 min-h-11 w-10 min-w-11 md:min-h-0 md:min-w-0";
 }
 
 interface ActionIconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

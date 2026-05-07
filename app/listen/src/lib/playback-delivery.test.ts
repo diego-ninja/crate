@@ -41,13 +41,14 @@ function mockMatchMedia(matches: boolean): void {
 
 describe("upcomingDeliveryTracks", () => {
   it("keeps the desktop prepare window by default", () => {
-    const tracks = Array.from({ length: 6 }, (_, index) => makeTrack(index + 1));
+    const tracks = Array.from({ length: 7 }, (_, index) => makeTrack(index + 1));
     expect(upcomingDeliveryTracks(tracks, 0).map((item) => item.id)).toEqual([
       "track-1",
       "track-2",
       "track-3",
       "track-4",
       "track-5",
+      "track-6",
     ]);
   });
 
@@ -86,7 +87,15 @@ describe("preparePlaybackDelivery", () => {
 
     const request = apiFetchMock.mock.calls[0]?.[1];
     const body = JSON.parse(String(request?.body));
-    expect(body.tracks).toHaveLength(3);
+    expect(body.tracks).toHaveLength(5);
+  });
+
+  it("can prepare the active track immediately on user-initiated playback", async () => {
+    apiFetchMock.mockResolvedValueOnce({});
+
+    preparePlaybackDelivery([makeTrack(43)], 0, "balanced", { immediate: true });
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("retries the same batch after a transient prepare failure", async () => {

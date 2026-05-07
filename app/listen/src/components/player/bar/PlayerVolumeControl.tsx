@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Volume2, VolumeX } from "lucide-react";
 
 import { AppPopover } from "@crate/ui/primitives/AppPopover";
+import { useHoverCapability } from "@/hooks/use-hover-capability";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 
 interface PlayerVolumeControlProps {
@@ -18,20 +19,12 @@ export function PlayerVolumeControl({
 }: PlayerVolumeControlProps) {
   const [showVolume, setShowVolume] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; bottom: number } | null>(null);
-  const [canUseWheel, setCanUseWheel] = useState(false);
+  const canUseWheel = useHoverCapability();
   const trackRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const volumeButtonRef = useRef<HTMLButtonElement>(null);
   const volumeIconRef = useRef<HTMLSpanElement>(null);
   const volumePct = Math.max(0, Math.min(100, volume * 100));
-
-  useEffect(() => {
-    const query = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const update = () => setCanUseWheel(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
 
   const updatePopoverPosition = useCallback(() => {
     const button = volumeButtonRef.current;

@@ -360,6 +360,36 @@ def _pkce_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _associated_app_ids() -> list[str]:
+    configured = os.environ.get("APPLE_ASSOCIATED_APP_IDS", "")
+    if configured.strip():
+        return [part.strip() for part in configured.split(",") if part.strip()]
+    team_id = os.environ.get("APPLE_TEAM_ID", "").strip()
+    if not team_id:
+        return []
+    bundle_id = os.environ.get("APPLE_LISTEN_BUNDLE_ID", "org.lespedants.crate.listen").strip()
+    return [f"{team_id}.{bundle_id}"]
+
+
+@router.get("/apple-app-site-association", include_in_schema=False)
+async def apple_app_site_association():
+    app_ids = _associated_app_ids()
+    if not app_ids:
+        raise HTTPException(status_code=404, detail="Apple associated app id is not configured")
+    return JSONResponse({
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": app_id,
+                    "paths": ["/auth/callback*"],
+                }
+                for app_id in app_ids
+            ],
+        },
+    })
+
+
 def _build_apple_client_secret() -> str:
     now = datetime.now(timezone.utc)
     team_id = os.environ["APPLE_TEAM_ID"]

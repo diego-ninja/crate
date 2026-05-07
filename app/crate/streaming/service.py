@@ -10,6 +10,7 @@ from crate.api._deps import library_path, safe_path
 from crate.db.repositories.tasks import create_task_dedup
 from crate.streaming.paths import resolve_data_file, variant_relative_path
 from crate.streaming.policy import (
+    ORIGINAL_POLICY,
     PIPELINE_VERSION,
     DeliveryDecision,
     bitrate_to_kbps,
@@ -71,12 +72,16 @@ def resolve_source_path(track: dict) -> Path | None:
     return safe_path(lib, filepath)
 
 
-def _source_quality(track: dict, source_path: Path, stat) -> dict:
+def _source_quality(track: dict, source_path: Path, stat, *, probe_missing: bool = True) -> dict:
     source_format = infer_format(track.get("format"), source_path)
-    quality = read_audio_quality(source_path)
-    bitrate_kbps = bitrate_to_kbps(track.get("bitrate") or quality.get("bitrate"))
-    sample_rate = track.get("sample_rate") or quality.get("sample_rate")
-    bit_depth = track.get("bit_depth") or quality.get("bit_depth")
+    bitrate_kbps = bitrate_to_kbps(track.get("bitrate"))
+    sample_rate = track.get("sample_rate")
+    bit_depth = track.get("bit_depth")
+    if probe_missing and (bitrate_kbps is None or sample_rate is None or bit_depth is None):
+        quality = read_audio_quality(source_path)
+        bitrate_kbps = bitrate_kbps or bitrate_to_kbps(quality.get("bitrate"))
+        sample_rate = sample_rate or quality.get("sample_rate")
+        bit_depth = bit_depth or quality.get("bit_depth")
     return {
         "format": source_format or source_path.suffix.lower().lstrip("."),
         "bitrate": bitrate_kbps,
@@ -140,7 +145,7 @@ def _variant_matches_descriptor(row: dict, descriptor: dict) -> bool:
 
 def _passthrough_resolution(track: dict, source_path: Path, requested_policy: str, reason: str) -> PlaybackResolution:
     stat = source_path.stat()
-    source = _source_quality(track, source_path, stat)
+    source = _source_quality(track, source_path, stat, probe_missing=False)
     return PlaybackResolution(
         requested_policy=normalize_policy(requested_policy),
         effective_policy="original",
@@ -174,7 +179,7 @@ def resolve_playback(track: dict, requested_policy: str | None, *, enqueue: bool
         row = get_variant_by_cache_key(row["cache_key"]) or row
         variant_path = resolve_data_file(row.get("relative_path"))
     if row.get("status") == "ready" and variant_path and variant_path.is_file():
-        source = _source_quality(track, source_path, source_path.stat())
+        source = _source_quality(track, source_path, source_path.stat(), probe_missing=False)
         delivery = {
             "format": row.get("delivery_format"),
             "codec": row.get("delivery_codec"),
@@ -221,6 +226,98 @@ def resolve_playback(track: dict, requested_policy: str | None, *, enqueue: bool
         file_path=fallback.file_path,
         media_type=fallback.media_type,
         source=fallback.source,
+        delivery={
+            "format": descriptor["delivery_format"],
+            "codec": descriptor["delivery_codec"],
+            "bitrate": descriptor["delivery_bitrate"],
+            "sample_rate": descriptor["delivery_sample_rate"],
+            "bit_depth": None,
+            "bytes": None,
+            "lossless": False,
+            "fallback": True,
+        },
+        transcoded=False,
+        cache_hit=False,
+        preparing=True,
+        task_id=task_id,
+        variant_id=row.get("id"),
+        variant_status=row.get("status"),
+    )
+
+
+def prepare_playback(track: dict, requested_policy: str | None) -> PlaybackResolution | None:
+    source_path = resolve_source_path(track)
+    if not source_path or not source_path.is_file():
+        return None
+
+    decision = decide_delivery(track, source_path, requested_policy)
+    if decision.passthrough:
+        return PlaybackResolution(
+            requested_policy=decision.requested_policy,
+            effective_policy=ORIGINAL_POLICY,
+            file_path=source_path,
+            media_type=media_type_for_path(source_path),
+            source={},
+            delivery={"reason": decision.reason},
+            transcoded=False,
+            cache_hit=False,
+            preparing=False,
+            task_id=None,
+            variant_id=None,
+            variant_status=None,
+        )
+
+    descriptor = _descriptor(track, source_path, decision)
+    row = ensure_variant_record(descriptor)
+    variant_path = resolve_data_file(row.get("relative_path"))
+    if row.get("status") == "ready" and not _variant_matches_descriptor(row, descriptor):
+        mark_variant_missing(row["cache_key"])
+        row = get_variant_by_cache_key(row["cache_key"]) or row
+        variant_path = resolve_data_file(row.get("relative_path"))
+    if row.get("status") == "ready" and variant_path and variant_path.is_file():
+        return PlaybackResolution(
+            requested_policy=decision.requested_policy,
+            effective_policy=decision.effective_policy,
+            file_path=variant_path,
+            media_type=media_type_for_path(variant_path),
+            source={},
+            delivery={
+                "format": row.get("delivery_format"),
+                "codec": row.get("delivery_codec"),
+                "bitrate": row.get("delivery_bitrate"),
+                "sample_rate": row.get("delivery_sample_rate"),
+                "bit_depth": None,
+                "bytes": row.get("bytes"),
+                "lossless": False,
+            },
+            transcoded=True,
+            cache_hit=True,
+            preparing=False,
+            task_id=row.get("task_id"),
+            variant_id=row.get("id"),
+            variant_status=row.get("status"),
+        )
+
+    if row.get("status") == "ready":
+        mark_variant_missing(row["cache_key"])
+        row = get_variant_by_cache_key(row["cache_key"]) or row
+
+    task_id = row.get("task_id")
+    created_task_id = create_task_dedup(
+        "prepare_stream_variant",
+        {"cache_key": row["cache_key"]},
+        dedup_key=row["cache_key"],
+    )
+    if created_task_id:
+        task_id = created_task_id
+        mark_variant_task(row["cache_key"], task_id)
+
+    return PlaybackResolution(
+        requested_policy=decision.requested_policy,
+        effective_policy=ORIGINAL_POLICY,
+        file_path=source_path,
+        media_type=media_type_for_path(source_path),
+        source={},
         delivery={
             "format": descriptor["delivery_format"],
             "codec": descriptor["delivery_codec"],

@@ -1,28 +1,60 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
-export interface NativeMediaSessionAction {
-  action: "play" | "pause" | "next" | "previous" | "seek";
+import { isNative } from "@/lib/capacitor-runtime";
+
+export type NativeMediaControl = "play" | "pause" | "next" | "previous" | "seekTo";
+
+export type NativeMediaSessionPayload = {
+  title: string;
+  artist?: string;
+  album?: string;
+  artwork?: string;
+  isPlaying: boolean;
+  position: number;
+  duration: number;
+};
+
+type NativeMediaControlEvent = {
+  control?: NativeMediaControl;
   position?: number;
-}
+};
 
-interface NativeMediaSessionPlugin {
-  setMetadata(options: {
-    title: string;
-    artist?: string;
-    album?: string;
-    artworkUrl?: string;
-  }): Promise<void>;
-  setPlaybackState(options: {
-    playing: boolean;
-    position: number;
-    duration: number;
-  }): Promise<void>;
-  requestAudioFocus(): Promise<void>;
-  clear(): Promise<void>;
+type CrateMediaSessionPlugin = {
+  start(options: NativeMediaSessionPayload): Promise<void>;
+  update(options: NativeMediaSessionPayload): Promise<void>;
+  stop(): Promise<void>;
   addListener(
-    eventName: "mediaSessionAction",
-    listenerFunc: (event: NativeMediaSessionAction) => void,
+    eventName: "control",
+    listener: (event: NativeMediaControlEvent) => void,
   ): Promise<PluginListenerHandle>;
+};
+
+const nativeMediaSession = registerPlugin<CrateMediaSessionPlugin>("CrateMediaSession");
+
+export async function syncNativeMediaSession(payload: NativeMediaSessionPayload): Promise<void> {
+  if (!isNative) return;
+  try {
+    await nativeMediaSession.update(payload);
+  } catch {
+    // Native media controls are best-effort and should never interrupt playback.
+  }
 }
 
-export const CrateMediaSession = registerPlugin<NativeMediaSessionPlugin>("CrateMediaSession");
+export async function stopNativeMediaSession(): Promise<void> {
+  if (!isNative) return;
+  try {
+    await nativeMediaSession.stop();
+  } catch {
+    // Ignore native bridge failures during teardown.
+  }
+}
+
+export async function onNativeMediaControl(
+  listener: (event: NativeMediaControlEvent) => void,
+): Promise<() => void> {
+  if (!isNative) return () => {};
+  const handle = await nativeMediaSession.addListener("control", listener);
+  return () => {
+    void handle.remove();
+  };
+}

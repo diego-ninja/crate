@@ -14,6 +14,9 @@ project(':capacitor-filesystem').projectDir = new File('../../../node_modules/@c
 include ':capacitor-haptics'
 project(':capacitor-haptics').projectDir = new File('../../../node_modules/@capacitor/haptics/android')
 
+include ':capacitor-keyboard'
+project(':capacitor-keyboard').projectDir = new File('../../../node_modules/@capacitor/keyboard/android')
+
 include ':capacitor-network'
 project(':capacitor-network').projectDir = new File('../../../node_modules/@capacitor/network/android')
 

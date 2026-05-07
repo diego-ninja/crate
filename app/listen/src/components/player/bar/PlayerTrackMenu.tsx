@@ -7,12 +7,13 @@ import type { Track } from "@/contexts/PlayerContext";
 
 interface PlayerTrackMenuProps {
   currentTrack: Track;
-  duration: number;
-  onOverlayChange: (open: boolean) => void;
-  onAddToCollection: () => Promise<void>;
+  duration?: number;
+  onOverlayChange?: (open: boolean) => void;
+  onAddToCollection?: () => Promise<void>;
+  className?: string;
 }
 
-export function PlayerTrackMenu({ currentTrack }: PlayerTrackMenuProps) {
+export function PlayerTrackMenu({ currentTrack, className }: PlayerTrackMenuProps) {
   const menuTrack = useMemo(() => trackToMenuData(currentTrack), [currentTrack]);
   const actions = useTrackActionEntries({
     track: menuTrack,
@@ -26,7 +27,7 @@ export function PlayerTrackMenu({ currentTrack }: PlayerTrackMenuProps) {
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="shrink-0 h-8 w-8"
+        className={className ?? "shrink-0 h-8 w-8"}
       />
       <ItemActionMenu
         actions={actions}

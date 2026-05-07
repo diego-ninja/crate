@@ -160,7 +160,7 @@ export function ArtistHeroSection({
 
               {bio ? (
                 <div className="mt-3 max-w-2xl">
-                  <p className="line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-white/70">
+                  <p className="line-clamp-2 whitespace-pre-line text-sm leading-relaxed text-white/70 sm:line-clamp-3">
                     {bio}
                   </p>
                   {bio.length > 200 ? (

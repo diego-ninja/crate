@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 
 import { AppPopover } from "@crate/ui/primitives/AppPopover";
 import { usePlayerActions } from "@/contexts/PlayerContext";
+import { useHoverCapability } from "@/hooks/use-hover-capability";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ function SearchResultThumb({ item }: { item: TopBarSearchItem }) {
 export function TopBarSearch() {
   const navigate = useNavigate();
   const { play } = usePlayerActions();
+  const canHover = useHoverCapability();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TopBarSearchItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -337,11 +339,11 @@ export function TopBarSearch() {
         "group relative flex-1 shrink-0 overflow-visible md:flex-none md:origin-right",
         "transition-[width,transform] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
         searchOpen
-          ? "w-[min(20rem,calc(100vw-8.5rem))] sm:w-[min(24rem,calc(100vw-9.25rem))] md:w-[440px] lg:w-[500px]"
+          ? "w-[min(22rem,calc(100vw-7.25rem))] sm:w-[min(24rem,calc(100vw-9.25rem))] md:w-[440px] lg:w-[500px]"
           : "w-11",
       )}
-      onMouseEnter={() => openSearch(false)}
-      onMouseLeave={() => scheduleCollapseIfIdle()}
+      onMouseEnter={() => { if (canHover) openSearch(false); }}
+      onMouseLeave={() => { if (canHover) scheduleCollapseIfIdle(); }}
     >
       <div
         className={cn(

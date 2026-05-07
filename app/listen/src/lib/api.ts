@@ -8,6 +8,7 @@ import {
   migrateLegacyToken,
   setCurrentServerToken,
 } from "@/lib/server-store";
+import { getListenDeviceLabel } from "@/lib/listen-device";
 
 /**
  * Default URL used when no server has been configured yet in a native
@@ -158,7 +159,7 @@ export function getApiAuthHeaders(): Record<string, string> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   headers["X-Crate-App"] = isNative ? `listen-${platform}` : "listen-web";
   if (isNative) {
-    headers["X-Device-Label"] = `${platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "Native"} (Listen)`;
+    headers["X-Device-Label"] = getListenDeviceLabel();
   }
   return headers;
 }
