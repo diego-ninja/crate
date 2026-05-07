@@ -16,6 +16,7 @@ let package = Package(
         .package(name: "CapacitorBrowser", path: "../../../../../node_modules/@capacitor/browser"),
         .package(name: "CapacitorFilesystem", path: "../../../../../node_modules/@capacitor/filesystem"),
         .package(name: "CapacitorHaptics", path: "../../../../../node_modules/@capacitor/haptics"),
+        .package(name: "CapacitorKeyboard", path: "../../../../../node_modules/@capacitor/keyboard"),
         .package(name: "CapacitorNetwork", path: "../../../../../node_modules/@capacitor/network"),
         .package(name: "CapacitorSplashScreen", path: "../../../../../node_modules/@capacitor/splash-screen"),
         .package(name: "CapacitorStatusBar", path: "../../../../../node_modules/@capacitor/status-bar")
@@ -30,6 +31,7 @@ let package = Package(
                 .product(name: "CapacitorBrowser", package: "CapacitorBrowser"),
                 .product(name: "CapacitorFilesystem", package: "CapacitorFilesystem"),
                 .product(name: "CapacitorHaptics", package: "CapacitorHaptics"),
+                .product(name: "CapacitorKeyboard", package: "CapacitorKeyboard"),
                 .product(name: "CapacitorNetwork", package: "CapacitorNetwork"),
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar")

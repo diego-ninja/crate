@@ -14,6 +14,24 @@ interface UseApiOptions {
   reactive?: boolean;
   revalidateOnReconnect?: boolean;
   safetyNetMs?: number;
+  revalidateIfCached?: "immediate" | "idle" | "never";
+  idleRevalidateMs?: number;
+}
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function scheduleIdleRevalidate(callback: () => void, timeoutMs: number): () => void {
+  if (typeof window === "undefined") return () => {};
+  const idleWindow = window as IdleWindow;
+  if (idleWindow.requestIdleCallback) {
+    const handle = idleWindow.requestIdleCallback(callback, { timeout: timeoutMs });
+    return () => idleWindow.cancelIdleCallback?.(handle);
+  }
+  const handle = window.setTimeout(callback, Math.min(timeoutMs, 2_000));
+  return () => window.clearTimeout(handle);
 }
 
 /**
@@ -33,6 +51,8 @@ export function useApi<T>(
     reactive = true,
     revalidateOnReconnect = true,
     safetyNetMs = 0,
+    revalidateIfCached = "immediate",
+    idleRevalidateMs = 8_000,
   } = options;
   const initialStateRef = useRef<{ data: T | null; loading: boolean } | null>(null);
   if (initialStateRef.current == null) {
@@ -69,35 +89,54 @@ export function useApi<T>(
     const requestUrl = url;
     const controller = new AbortController();
     let cancelled = false;
+    let cancelScheduledFetch: (() => void) | null = null;
+    const hasCachedPayload = method === "GET" ? cacheGet<T>(requestUrl) !== null : false;
 
     // Only show loading if no cached data
     if (!data) setLoading(true);
     setError(null);
 
-    api<T>(requestUrl, method, body, { signal: controller.signal })
-      .then((freshData) => {
-        cacheSet(requestUrl, freshData);
-        if (cancelled) return;
-        if (urlRef.current !== requestUrl) return;
-        dataUrlRef.current = requestUrl;
-        startTransition(() => {
-          setData(freshData);
+    const runFetch = () => {
+      if (cancelled || controller.signal.aborted) return;
+      api<T>(requestUrl, method, body, { signal: controller.signal })
+        .then((freshData) => {
+          cacheSet(requestUrl, freshData);
+          if (cancelled) return;
+          if (urlRef.current !== requestUrl) return;
+          dataUrlRef.current = requestUrl;
+          startTransition(() => {
+            setData(freshData);
+          });
+        })
+        .catch((e: Error) => {
+          if (!cancelled && !controller.signal.aborted) {
+            setError(e.message);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
         });
-      })
-      .catch((e: Error) => {
-        if (!cancelled && !controller.signal.aborted) {
-          setError(e.message);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    };
+
+    const canDeferInitialRevalidate =
+      trigger === 0 &&
+      hasCachedPayload &&
+      revalidateIfCached !== "immediate";
+
+    if (canDeferInitialRevalidate && revalidateIfCached === "never") {
+      setLoading(false);
+    } else if (canDeferInitialRevalidate) {
+      cancelScheduledFetch = scheduleIdleRevalidate(runFetch, idleRevalidateMs);
+    } else {
+      runFetch();
+    }
 
     return () => {
       cancelled = true;
+      cancelScheduledFetch?.();
       controller.abort();
     };
-  }, [url, method, trigger]);
+  }, [url, method, trigger, revalidateIfCached, idleRevalidateMs]);
 
   // Listen to SSE invalidation events — refetch when ANY matching scope fires.
   // The old code only refetched if cacheGet returned null, which let stale

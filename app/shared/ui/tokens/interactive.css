@@ -61,9 +61,11 @@
   background: var(--idle-bg);
   transition: border-color 0.15s, background-color 0.15s;
 }
-.interactive-row:hover {
-  border-color: var(--hover-border);
-  background: var(--hover-bg);
+@media (hover: hover) and (pointer: fine) {
+  .interactive-row:hover {
+    border-color: var(--hover-border);
+    background: var(--hover-bg);
+  }
 }
 .interactive-row[data-active="true"],
 .interactive-row.active {

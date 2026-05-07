@@ -2,10 +2,15 @@ import type { Track } from "@/contexts/player-types";
 import { apiFetch } from "@/lib/api";
 import type { PlaybackDeliveryPolicy } from "@/lib/player-playback-prefs";
 
-const DESKTOP_PREPARE_WINDOW = 5;
-const MOBILE_PREPARE_WINDOW = 3;
+const DESKTOP_PREPARE_WINDOW = 6;
+const MOBILE_PREPARE_WINDOW = 5;
 const SAVE_DATA_PREPARE_WINDOW = 2;
 let lastPrepareKey = "";
+
+interface PreparePlaybackDeliveryOptions {
+  immediate?: boolean;
+  prepareWindow?: number;
+}
 
 type NavigatorWithConnection = Navigator & {
   connection?: {
@@ -49,10 +54,15 @@ export function preparePlaybackDelivery(
   queue: Track[],
   currentIndex: number,
   policy: PlaybackDeliveryPolicy,
+  options: PreparePlaybackDeliveryOptions = {},
 ): void {
   if (typeof window === "undefined") return;
   if (policy === "original") return;
-  const tracks = upcomingDeliveryTracks(queue, currentIndex, runtimePrepareWindow());
+  const tracks = upcomingDeliveryTracks(
+    queue,
+    currentIndex,
+    options.prepareWindow ?? runtimePrepareWindow(),
+  );
   if (tracks.length === 0) return;
 
   const refs = tracks
@@ -64,7 +74,7 @@ export function preparePlaybackDelivery(
   if (key === lastPrepareKey) return;
   lastPrepareKey = key;
 
-  window.setTimeout(() => {
+  const runPrepare = () => {
     void apiFetch("/api/playback/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,5 +84,12 @@ export function preparePlaybackDelivery(
         lastPrepareKey = "";
       }
     });
-  }, 250);
+  };
+
+  if (options.immediate) {
+    runPrepare();
+    return;
+  }
+
+  window.setTimeout(runPrepare, 150);
 }

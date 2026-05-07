@@ -96,7 +96,11 @@ export function Home() {
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
 
   const { data: discovery, refetch: refetchDiscovery } =
-    useApi<HomeDiscoveryPayload>("/api/me/home/discovery", "GET", undefined, { reactive: false });
+    useApi<HomeDiscoveryPayload>("/api/me/home/discovery", "GET", undefined, {
+      reactive: false,
+      revalidateIfCached: "idle",
+      idleRevalidateMs: 12_000,
+    });
   const [liveDiscovery, setLiveDiscovery] = useState<HomeDiscoveryPayload | null>(null);
   const refreshingLiveDiscoveryRef = useRef(false);
   const lastDegradedRefreshAtRef = useRef(0);
@@ -139,7 +143,7 @@ export function Home() {
         degradeAfterMs: HOME_DISCOVERY_DEGRADE_AFTER_MS,
       });
       if (reconnected) {
-        void refreshLiveDiscovery(true);
+        void refreshLiveDiscovery();
       }
     };
     source.onmessage = (event) => {
@@ -179,7 +183,7 @@ export function Home() {
       const now = Date.now();
       if (now - lastDegradedRefreshAtRef.current < HOME_DISCOVERY_DEGRADED_REFRESH_MS) return;
       lastDegradedRefreshAtRef.current = now;
-      void refreshLiveDiscovery(true);
+      void refreshLiveDiscovery();
     });
   }, [refreshLiveDiscovery]);
 
@@ -189,7 +193,7 @@ export function Home() {
       if (typeof navigator !== "undefined" && "onLine" in navigator && !navigator.onLine) return;
       const state = getSseChannelState(HOME_DISCOVERY_SSE_CHANNEL);
       if (!state?.degraded) return;
-      void refreshLiveDiscovery(true);
+      void refreshLiveDiscovery();
     };
     window.addEventListener("online", maybeRecoverFromDegradedStream);
     document.addEventListener("visibilitychange", maybeRecoverFromDegradedStream);

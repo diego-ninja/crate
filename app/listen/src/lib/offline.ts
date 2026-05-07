@@ -2,7 +2,8 @@ import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 
 import { api, apiFetch, apiUrl, getApiAuthHeaders, getApiBase } from "@/lib/api";
-import { isAndroidNative, isNative } from "@/lib/capacitor-runtime";
+import { getStoredAuthUserId } from "@/lib/auth-user-storage";
+import { isAndroidNative, isIosBrowser, isNative } from "@/lib/capacitor-runtime";
 import {
   trackOfflineManifestApiPath,
   trackStreamApiPath,
@@ -98,6 +99,7 @@ const OFFLINE_NATIVE_SNAPSHOT_PREFIX = "offline-index-";
 const OFFLINE_NATIVE_ASSET_FILE_PREFIX = "offline-assets-";
 const OFFLINE_STORAGE_HEADROOM_BYTES = 5 * 1024 * 1024;
 const NATIVE_OFFLINE_SOFT_LIMIT_BYTES = 8 * 1024 * 1024 * 1024;
+const IOS_BROWSER_OFFLINE_SOFT_LIMIT_BYTES = 450 * 1024 * 1024;
 const ANDROID_OFFLINE_DELIVERY_POLICY = "balanced";
 const EMPTY_SNAPSHOT: OfflineSnapshot = { items: {} };
 const nativeSnapshotCache = new Map<string, OfflineSnapshot>();
@@ -123,7 +125,7 @@ export function deriveOfflineProfileKey(userId: number, serverOrigin?: string): 
 
 export function deriveOfflineProfileKeyFromStoredUser(serverOrigin?: string): string | null {
   if (typeof window === "undefined") return null;
-  const rawUserId = localStorage.getItem("listen-auth-user-id");
+  const rawUserId = getStoredAuthUserId(serverOrigin);
   const userId = rawUserId ? Number(rawUserId) : NaN;
   if (!Number.isFinite(userId) || userId <= 0) return null;
   return deriveOfflineProfileKey(userId, serverOrigin);
@@ -707,6 +709,9 @@ export async function ensureOfflineStorageBudget(
   const estimate = await navigator.storage.estimate();
   const quota = Number(estimate.quota || 0);
   const usage = Number(estimate.usage || 0);
+  if (isIosBrowser && usage + pendingBytes + OFFLINE_STORAGE_HEADROOM_BYTES > IOS_BROWSER_OFFLINE_SOFT_LIMIT_BYTES) {
+    throw new Error("Offline copies are above the iOS browser storage budget");
+  }
   if (!quota || quota <= 0) return;
   const available = Math.max(quota - usage, 0);
   if (pendingBytes + OFFLINE_STORAGE_HEADROOM_BYTES > available) {

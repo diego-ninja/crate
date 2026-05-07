@@ -31,6 +31,7 @@ describe("useApi", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("reads cached data once per URL instead of on every rerender", async () => {
@@ -187,5 +188,43 @@ describe("useApi", () => {
 
     expect(apiMock).toHaveBeenCalledTimes(2);
     expect(result.current.data).toEqual({ ok: 2 });
+  });
+
+  it("defers initial revalidation when cached data is good enough for first paint", async () => {
+    vi.useFakeTimers();
+    const apiMock = vi.mocked(api);
+    const cacheGetMock = vi.mocked(cacheGet);
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: IdleRequestCallback, options?: IdleRequestOptions) => {
+        const handle = window.setTimeout(() => {
+          callback({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline);
+        }, options?.timeout ?? 0);
+        return handle;
+      }),
+    );
+    vi.stubGlobal("cancelIdleCallback", vi.fn((handle: number) => window.clearTimeout(handle)));
+
+    cacheGetMock.mockImplementation((url) => (
+      url === "/api/me/home/discovery" ? { ok: 1 } : null
+    ));
+    apiMock.mockResolvedValueOnce({ ok: 2 });
+
+    const { result } = renderHook(() =>
+      useApi<{ ok: number }>("/api/me/home/discovery", "GET", undefined, {
+        revalidateIfCached: "idle",
+        idleRevalidateMs: 8_000,
+      }),
+    );
+
+    expect(result.current.data).toEqual({ ok: 1 });
+    expect(result.current.loading).toBe(false);
+    expect(apiMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(apiMock).toHaveBeenCalledTimes(1);
   });
 });

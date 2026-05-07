@@ -1,73 +1,36 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 import { usePlayerActions } from "@/contexts/PlayerContext";
-import { useEqFeatures } from "@/hooks/use-eq-features";
-import { useTrackGenre } from "@/hooks/use-track-genre";
-import { computeAdaptiveGains } from "@/lib/adaptive-eq";
+import {
+  useEqualizerSnapshotState,
+  useResolvedEqualizer,
+} from "@/hooks/use-equalizer-runtime";
 import {
   applyEqualizerPreset,
-  EQ_PREFS_EVENT,
-  getEqualizerSnapshot,
   setCustomEqualizerGains,
   setEqualizerEnabled,
   setEqualizerAdaptive,
   setEqualizerGenreAdaptive,
-  type EqualizerSnapshot,
 } from "@/lib/equalizer-prefs";
-import { EQ_BAND_COUNT, EQ_PRESETS, type EqGains, type EqPresetName } from "@/lib/equalizer";
-import { setEqualizer as engineSetEqualizer } from "@/lib/gapless-player";
-
-const FLAT_GAINS: EqGains = new Array(EQ_BAND_COUNT).fill(0);
+import { EQ_PRESETS, type EqPresetName } from "@/lib/equalizer";
 
 /**
  * Subscribes a React component to equalizer preferences and keeps the
- * Gapless-5 engine chain in sync. Returns the current snapshot + setters
- * that both persist and push to the engine in one call.
+ * current snapshot in sync. Returns the current snapshot + setters.
+ *
+ * Audio application is handled by useEqualizerRuntime; this hook is UI-only
+ * so mounting/unmounting an EQ panel cannot alter the output chain.
  */
 export function useEqualizer() {
-  const [snapshot, setSnapshot] = useState<EqualizerSnapshot>(getEqualizerSnapshot);
+  const [snapshot, setSnapshot] = useEqualizerSnapshotState();
   const { currentTrack } = usePlayerActions();
-
-  // Fetch analysis features only while feature-adaptive mode is on.
-  const featuresState = useEqFeatures(snapshot.adaptive ? currentTrack : undefined);
-  const features = featuresState.status === "ready" ? featuresState.features : null;
-
-  // Fetch primary genre + resolved preset only while genre-adaptive
-  // mode is on. The backend resolves preset gains via taxonomy
-  // inheritance (direct hit or first ancestor with a preset), so the
-  // frontend just applies whatever comes back.
-  const genreState = useTrackGenre(snapshot.genreAdaptive ? currentTrack : undefined);
-  const trackGenre = genreState.status === "ready" ? genreState.genre : null;
-
-  // Effective gains — priority order:
-  //   1. Feature-adaptive (uses track features; flat if missing)
-  //   2. Genre-adaptive   (uses backend-resolved preset; flat if none)
-  //   3. Manual (persisted preset / custom gains)
-  const effectiveGains: EqGains = (() => {
-    if (snapshot.adaptive) return computeAdaptiveGains(features);
-    if (snapshot.genreAdaptive) {
-      const preset = trackGenre?.preset;
-      if (!preset || preset.gains.length !== EQ_BAND_COUNT) return FLAT_GAINS;
-      return preset.gains;
-    }
-    return snapshot.gains;
-  })();
-
-  // Push to the engine whenever what we'd apply changes.
-  useEffect(() => {
-    engineSetEqualizer(snapshot.enabled, effectiveGains);
-  }, [snapshot.enabled, effectiveGains]);
-
-  // Listen for cross-component / cross-tab pref changes.
-  useEffect(() => {
-    const sync = () => setSnapshot(getEqualizerSnapshot());
-    window.addEventListener(EQ_PREFS_EVENT, sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener(EQ_PREFS_EVENT, sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
+  const {
+    effectiveGains,
+    featuresState,
+    features,
+    genreState,
+    trackGenre,
+  } = useResolvedEqualizer(snapshot, currentTrack);
 
   const toggleEnabled = useCallback((enabled: boolean) => {
     setEqualizerEnabled(enabled);

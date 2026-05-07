@@ -10,6 +10,7 @@ import { getPlaySourceLabel } from "@/components/player/player-source";
 import { useResolvedPlayerArtist } from "@/components/player/useResolvedPlayerArtist";
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { InfoTab } from "@/components/player/extended/InfoTab";
+import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
 import { api } from "@/lib/api";
 import {
   canUseWebAudioEffects,
@@ -27,17 +28,29 @@ import {
   ListMusic,
   AlignLeft,
   Disc3,
+  Heart,
   Info,
+  Loader2,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
   SlidersHorizontal,
+  SkipBack,
+  SkipForward,
 } from "lucide-react";
 import { artistPagePath } from "@/lib/library-routes";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
+import { getHorizontalPlayerSwipeAction } from "@/components/player/player-gestures";
 import { toast } from "sonner";
+import { triggerHaptic } from "@/lib/haptics";
 
 type FSTab = "player" | "queue" | "lyrics" | "info";
 
@@ -76,15 +89,20 @@ function FullscreenQueueRow({
   });
   const actionMenu = useItemActionMenu(actions);
 
+  function jumpWithFeedback() {
+    triggerHaptic("selection");
+    onJump();
+  }
+
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={onJump}
+      onClick={jumpWithFeedback}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onJump();
+          jumpWithFeedback();
         }
       }}
       onContextMenu={actionMenu.handleContextMenu}
@@ -131,8 +149,23 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, crossfadeTransition, playSource } = usePlayer();
-  const { pause, resume } = usePlayerActions();
+  const {
+    currentTrack,
+    queue,
+    currentIndex,
+    currentTime,
+    duration,
+    isBuffering,
+    seek,
+    jumpTo,
+    isPlaying,
+    crossfadeTransition,
+    playSource,
+    shuffle,
+    repeat,
+  } = usePlayer();
+  const { pause, resume, next, prev, toggleShuffle, cycleRepeat } = usePlayerActions();
+  const { isLiked, toggleTrackLike } = useLikedTracks();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Keep the crossfade visuals, but let time/progress track the live
   // incoming song so the UI does not jump backwards after the fade.
@@ -155,8 +188,16 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [showEqualizer, setShowEqualizer] = useState(false);
   const { resolvedArtist, artistAvatarUrl, markArtistPhotoFailed } = useResolvedPlayerArtist(currentTrack, queue);
   const sourceLabel = getPlaySourceLabel(playSource);
+  const liked = currentTrack
+    ? isLiked(
+        currentTrack.libraryTrackId ?? null,
+        currentTrack.entityUid ?? null,
+        currentTrack.path || currentTrack.id,
+      )
+    : false;
 
   const swipeStartRef = useRef<number | null>(null);
+  const horizontalSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const swipeYRef = useRef(0);
   const swipeFrameRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -166,6 +207,55 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const equalizerRef = useRef<HTMLDivElement>(null);
   const equalizerButtonRef = useRef<HTMLButtonElement>(null);
   const isCdMode = surfaceMode === "cd";
+
+  function closeWithFeedback() {
+    triggerHaptic("selection");
+    onClose();
+  }
+
+  function togglePlaybackWithFeedback() {
+    triggerHaptic("light");
+    if (isPlaying) {
+      pause();
+    } else {
+      resume();
+    }
+  }
+
+  async function toggleLikeWithFeedback() {
+    if (!currentTrack) return;
+    triggerHaptic("selection");
+    try {
+      const nextLiked = await toggleTrackLike(
+        currentTrack.libraryTrackId ?? null,
+        currentTrack.entityUid ?? null,
+        currentTrack.path || currentTrack.id,
+      );
+      toast.success(nextLiked ? "Added to liked tracks" : "Removed from liked tracks");
+    } catch {
+      toast.error("Failed to update liked tracks");
+    }
+  }
+
+  function goNextWithFeedback() {
+    triggerHaptic("selection");
+    next();
+  }
+
+  function goPrevWithFeedback() {
+    triggerHaptic("selection");
+    prev();
+  }
+
+  function toggleShuffleWithFeedback() {
+    triggerHaptic("selection");
+    toggleShuffle();
+  }
+
+  function cycleRepeatWithFeedback() {
+    triggerHaptic("selection");
+    cycleRepeat();
+  }
 
   // Animate in/out
   useEffect(() => {
@@ -302,26 +392,55 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     });
   }, []);
 
-  // Swipe-down to dismiss (only from top 150px)
+  // Swipe-down to dismiss from the upper part of the sheet.
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
     if (draggingRef.current) return;
-    const startY = e.touches[0]!.clientY;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const startX = touch.clientX;
+    const startY = touch.clientY;
     const el = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    if (startY - el.top > 150) return;
+    horizontalSwipeStartRef.current = activeTab === "player" ? { x: startX, y: startY } : null;
+    if (startY - el.top > Math.min(260, el.height * 0.35)) return;
     swipeStartRef.current = startY;
-  }, []);
+  }, [activeTab]);
   const onSwipeMove = useCallback((e: React.TouchEvent) => {
     if (swipeStartRef.current === null || draggingRef.current) return;
     const dy = e.touches[0]!.clientY - swipeStartRef.current;
     scheduleSwipeY(dy > 0 ? Math.min(dy * 0.6, 300) : 0);
   }, [scheduleSwipeY]);
-  const onSwipeEnd = useCallback(() => {
+  const onSwipeEnd = useCallback((e: React.TouchEvent) => {
+    const horizontalStart = horizontalSwipeStartRef.current;
+    horizontalSwipeStartRef.current = null;
+
+    if (horizontalStart && activeTab === "player" && !draggingRef.current) {
+      const touch = e.changedTouches[0];
+      if (touch) {
+        const action = getHorizontalPlayerSwipeAction({
+          deltaX: touch.clientX - horizontalStart.x,
+          deltaY: touch.clientY - horizontalStart.y,
+          viewportWidth: window.innerWidth,
+        });
+        if (action) {
+          if (action === "next") {
+            goNextWithFeedback();
+          } else {
+            goPrevWithFeedback();
+          }
+          scheduleSwipeY(0);
+          swipeStartRef.current = null;
+          return;
+        }
+      }
+    }
+
     if (swipeYRef.current > 100) {
+      triggerHaptic("selection");
       onClose();
     }
     scheduleSwipeY(0);
     swipeStartRef.current = null;
-  }, [onClose, scheduleSwipeY]);
+  }, [activeTab, goNextWithFeedback, goPrevWithFeedback, onClose, scheduleSwipeY]);
 
   if (!visible || !currentTrack) return null;
 
@@ -365,7 +484,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {/* Header row 1: close + compact actions */}
       <div className="flex items-center justify-between px-4 pb-1">
         <button
-          onClick={onClose}
+          onClick={closeWithFeedback}
           aria-label="Close player"
           className="w-11 h-11 flex items-center justify-center -ml-2 text-white/60 active:text-white"
         >
@@ -378,6 +497,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             className="mr-1"
             mode={surfaceMode}
             onChange={(mode) => {
+              triggerHaptic("selection");
               const nextMode = mode === "visualizer" ? "cd" : mode;
               setSurfaceMode(nextMode);
               setPlayerSurfaceModePreference(nextMode);
@@ -388,7 +508,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           {allowMobileEqualizer ? (
             <button
               ref={equalizerButtonRef}
-              onClick={() => setShowEqualizer((v) => !v)}
+              onClick={() => {
+                triggerHaptic("selection");
+                setShowEqualizer((v) => !v);
+              }}
               aria-label="Equalizer"
               className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
             >
@@ -398,6 +521,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             <button
               type="button"
               onClick={() => {
+                triggerHaptic("warning");
                 toast.info(
                   stableMobileAudioPipeline
                     ? "Enable Enhanced mobile audio in Settings, then restart Listen to use EQ on mobile."
@@ -418,7 +542,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         {TAB_PILLS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
-            onClick={() => setActiveTab(id)}
+            onClick={() => {
+              triggerHaptic("selection");
+              setActiveTab(id);
+            }}
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
               activeTab === id
                 ? "bg-white/12 text-white border border-white/15"
@@ -466,7 +593,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                 jogEnabled
                 onJoggingChange={(jogging) => { draggingRef.current = jogging; }}
                 onSeek={seek}
-                onTogglePlay={isPlaying ? pause : resume}
+                onTogglePlay={togglePlaybackWithFeedback}
               />
             ) : (
               <div className="relative aspect-square overflow-hidden rounded-xl">
@@ -534,6 +661,69 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               duration={displayedDuration}
               onSeek={seek}
               thin
+              variant="glow"
+            />
+          </div>
+
+          <div className="mx-auto mt-5 flex w-full max-w-[360px] items-center justify-center gap-3">
+            <button
+              onClick={toggleShuffleWithFeedback}
+              aria-label={shuffle ? "Disable shuffle" : "Enable shuffle"}
+              className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-full transition-colors active:bg-white/8 ${
+                shuffle ? "text-primary" : "text-white/35 active:text-white/70"
+              }`}
+            >
+              <Shuffle size={18} />
+            </button>
+            <button
+              onClick={goPrevWithFeedback}
+              aria-label="Previous track"
+              className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full text-white/70 transition-colors active:bg-white/8 active:text-white"
+            >
+              <SkipBack size={22} fill="currentColor" />
+            </button>
+            <button
+              onClick={togglePlaybackWithFeedback}
+              aria-label={isPlaying ? "Pause" : "Play"}
+              className="flex h-16 w-16 touch-manipulation items-center justify-center rounded-full bg-primary text-black shadow-[0_12px_36px_rgba(6,182,212,0.28)] transition-transform active:scale-95"
+            >
+              {isBuffering ? (
+                <Loader2 size={22} className="animate-spin" />
+              ) : isPlaying ? (
+                <Pause size={24} />
+              ) : (
+                <Play size={24} className="ml-1" fill="currentColor" />
+              )}
+            </button>
+            <button
+              onClick={goNextWithFeedback}
+              aria-label="Next track"
+              className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full text-white/70 transition-colors active:bg-white/8 active:text-white"
+            >
+              <SkipForward size={22} fill="currentColor" />
+            </button>
+            <button
+              onClick={cycleRepeatWithFeedback}
+              aria-label={`Repeat: ${repeat}`}
+              className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-full transition-colors active:bg-white/8 ${
+                repeat !== "off" ? "text-primary" : "text-white/35 active:text-white/70"
+              }`}
+            >
+              {repeat === "one" ? <Repeat1 size={18} /> : <Repeat size={18} />}
+            </button>
+          </div>
+
+          <div className="mx-auto mt-3 flex w-full max-w-[360px] items-center justify-center gap-3">
+            <button
+              onClick={() => { void toggleLikeWithFeedback(); }}
+              aria-label={liked ? "Unlike track" : "Like track"}
+              className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/55 transition-colors active:bg-white/8 active:text-white"
+            >
+              <Heart size={19} className={liked ? "fill-primary text-primary" : ""} />
+            </button>
+            <PlayerTrackMenu
+              currentTrack={currentTrack}
+              className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.04] text-white/55 transition-colors active:bg-white/8 active:text-white"
             />
           </div>
         </div>
@@ -575,7 +765,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                 <button
                   key={i}
                   ref={i === activeLyricIndex ? activeLyricRef : null}
-                  onClick={() => seek(line.time)}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    seek(line.time);
+                  }}
                   className={`w-full max-w-md rounded-md px-3 py-1 text-center transition-all duration-500 ${
                     i === activeLyricIndex
                       ? "bg-primary/10 text-lg font-semibold text-primary"

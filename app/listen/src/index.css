@@ -11,6 +11,12 @@
 html, body {
   overscroll-behavior: none;
   background: #0a0a0f;
+  min-height: var(--listen-viewport-height);
+}
+
+#root {
+  min-height: var(--listen-viewport-height);
+  background: #0a0a0f;
 }
 
 /* Prevent iOS WebView auto-zoom on input focus (requires font-size >= 16px) */
@@ -34,7 +40,31 @@ body {
   overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [tabindex]:not([tabindex="-1"]) {
+    touch-action: manipulation;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Allow text selection in content areas */
@@ -54,6 +84,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   --listen-safe-bottom: env(safe-area-inset-bottom, 0px);
   --listen-safe-left: env(safe-area-inset-left, 0px);
   --listen-safe-right: env(safe-area-inset-right, 0px);
+  --listen-keyboard-height: 0px;
   --listen-mobile-header-content-height: 4rem;
   --listen-mobile-header-gap: 1.5rem;
   --listen-mobile-header-height: calc(var(--listen-safe-top) + var(--listen-mobile-header-content-height));
@@ -67,11 +98,21 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
     var(--listen-mobile-player-height) +
     var(--listen-mobile-player-gap)
   );
-  --listen-mobile-bottom-clearance: calc(var(--listen-mobile-bottom-chrome-height) + 1rem);
-  --listen-mobile-bottom-clearance-no-player: calc(var(--listen-mobile-bottom-nav-height) + 1rem);
+  --listen-mobile-bottom-clearance: calc(var(--listen-mobile-bottom-chrome-height) + var(--listen-keyboard-height) + 1rem);
+  --listen-mobile-bottom-clearance-no-player: calc(var(--listen-mobile-bottom-nav-height) + var(--listen-keyboard-height) + 1rem);
   --listen-mobile-fullscreen-player-clearance: calc(var(--listen-safe-bottom) + 4rem);
   --listen-mobile-fullscreen-scroll-clearance: calc(var(--listen-safe-bottom) + 2rem);
   --listen-mobile-fullscreen-eq-top: calc(var(--listen-safe-top) + 7.25rem);
+}
+
+html[data-keyboard-open] {
+  scroll-padding-bottom: calc(var(--listen-keyboard-height) + 1rem);
+}
+
+html[data-keyboard-open] input,
+html[data-keyboard-open] textarea,
+html[data-keyboard-open] select {
+  scroll-margin-bottom: calc(var(--listen-keyboard-height) + 1rem);
 }
 
 @supports (height: 100dvh) {

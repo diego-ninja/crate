@@ -1,5 +1,6 @@
 import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 import { getApiBase, getAuthToken, resolveMaybeApiAssetUrl } from "@/lib/api";
+import { isNative } from "@/lib/capacitor-runtime";
 import { trackStreamApiPath } from "@/lib/library-routes";
 import { stableMobileAudioPipeline } from "@/lib/mobile-audio-mode";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
@@ -40,6 +41,7 @@ const KEY_TO_PITCH_CLASS: Record<string, number> = {
 };
 
 export function getStoredVolume(): number {
+  if (isNative) return 1;
   try {
     const v = localStorage.getItem("listen-player-volume");
     if (v !== null) return parseFloat(v);
@@ -380,13 +382,22 @@ export function getEffectiveCrossfadeSeconds(
   options: { androidNative?: boolean; html5OnlyPlayback?: boolean; mobileEnhancedAudio?: boolean } = {},
 ): number {
   const clampedSeconds = Math.max(0, configuredSeconds || 0);
+  const continuousAlbumTransition = isContinuousAlbumTransition(currentTrack, nextTrack, playSource, shuffle);
+  const mobileHtml5Pipeline = (options.androidNative || stableMobileAudioPipeline)
+    && !options.mobileEnhancedAudio;
+  const shouldMaskHtml5Gap = options.html5OnlyPlayback ?? mobileHtml5Pipeline;
+
+  if (smartCrossfadeEnabled && continuousAlbumTransition) {
+    if (shouldMaskHtml5Gap) {
+      return Math.min(
+        clampedSeconds > 0 ? clampedSeconds : ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS,
+        ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS,
+      );
+    }
+  }
   if (clampedSeconds <= 0) return 0;
   if (!smartCrossfadeEnabled) return clampedSeconds;
-  const continuousAlbumTransition = isContinuousAlbumTransition(currentTrack, nextTrack, playSource, shuffle);
   if (continuousAlbumTransition) {
-    const mobileHtml5Pipeline = (options.androidNative || stableMobileAudioPipeline)
-      && !options.mobileEnhancedAudio;
-    const shouldMaskHtml5Gap = options.html5OnlyPlayback ?? mobileHtml5Pipeline;
     return shouldMaskHtml5Gap ? Math.min(clampedSeconds, ANDROID_CONTINUOUS_ALBUM_CROSSFADE_SECONDS) : 0;
   }
   return Math.min(clampedSeconds, smartTransitionSeconds(currentTrack, nextTrack, playSource, shuffle));

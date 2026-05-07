@@ -85,6 +85,37 @@ describe("listen api cache", () => {
     expect(localStorage.getItem("crate-api-cache:/api/me/stats/overview?window=30d")).toBeNull();
   });
 
+  it("keeps persistent entries for normal daily app opens", () => {
+    vi.setSystemTime(new Date("2026-05-06T12:00:00Z"));
+    localStorage.setItem(
+      "crate-api-cache:/api/me/home/discovery",
+      JSON.stringify({
+        data: { hero: ["Dredg"] },
+        timestamp: Date.now() - 179 * 24 * 60 * 60 * 1000,
+        scopes: ["home"],
+      }),
+    );
+
+    expect(cacheGet<{ hero: string[] }>("/api/me/home/discovery")).toEqual({
+      hero: ["Dredg"],
+    });
+  });
+
+  it("drops very old entries as a missed-invalidation safety net", () => {
+    vi.setSystemTime(new Date("2026-05-06T12:00:00Z"));
+    localStorage.setItem(
+      "crate-api-cache:/api/me/home/discovery",
+      JSON.stringify({
+        data: { hero: ["Old"] },
+        timestamp: Date.now() - 181 * 24 * 60 * 60 * 1000,
+        scopes: ["home"],
+      }),
+    );
+
+    expect(cacheGet("/api/me/home/discovery")).toBeNull();
+    expect(localStorage.getItem("crate-api-cache:/api/me/home/discovery")).toBeNull();
+  });
+
   it("maps jam room endpoints to the jam scope", () => {
     expect(scopesForUrl("/api/jam/rooms")).toContain("jam");
     expect(scopesForUrl("/api/jam/rooms/room-1")).toContain("jam");

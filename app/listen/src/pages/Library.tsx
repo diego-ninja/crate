@@ -624,21 +624,24 @@ export function Library() {
       )}
 
       {/* Tab bar */}
-      <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        {tabs.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
-              tab === key
-                ? "bg-primary text-primary-foreground"
-                : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        ))}
+      <div className="relative -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-10 bg-gradient-to-l from-[var(--surface-app)] to-transparent sm:hidden" />
+        <div className="flex scroll-px-4 gap-2 overflow-x-auto pr-8 transform-gpu will-change-scroll [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] sm:pr-0">
+          {tabs.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex min-h-11 flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                tab === key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab content */}

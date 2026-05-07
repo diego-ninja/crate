@@ -61,6 +61,14 @@ describe("capacitor OAuth callback helpers", () => {
     expect(consumePendingOAuthNext()).toBeNull();
   });
 
+  it("stores token and pending next for iOS universal link callbacks", async () => {
+    const result = await consumeOAuthCallbackUrl("https://listen.lespedants.org/auth/callback?token=abc123&next=%2Fmixes");
+
+    expect(result).toEqual({ handled: true, next: "/mixes" });
+    expect(setAuthToken).toHaveBeenCalledWith("abc123");
+    expect(consumePendingOAuthNext()).toBe("/mixes");
+  });
+
   it("ignores unrelated URLs", async () => {
     const result = await consumeOAuthCallbackUrl("https://example.com/login");
 

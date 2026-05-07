@@ -37,6 +37,7 @@ import { usePlayerEngineSync } from "@/contexts/use-player-engine-sync";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
 import { usePlaybackPersistence } from "@/contexts/use-playback-persistence";
+import { useEqualizerRuntime } from "@/hooks/use-equalizer-runtime";
 import { useRestoreOnMount } from "@/contexts/use-restore-on-mount";
 import { usePlayerAuthSync } from "@/contexts/use-player-auth-sync";
 import { usePlayerEngineCallbacks } from "@/contexts/use-player-engine-callbacks";
@@ -182,6 +183,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     currentTrack,
     isPlaying,
   });
+  useEqualizerRuntime(currentTrack);
 
   const getPlaybackSnapshot = useCallback(() => ({
     currentTime: currentTimeRef.current,
@@ -558,6 +560,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     pullFromEngine,
     pushToEngine,
     advanceCursorTo,
+    playbackDeliveryPolicy,
   });
 
   const clearQueueRef = useRef(clearQueue);

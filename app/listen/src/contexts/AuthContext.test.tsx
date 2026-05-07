@@ -6,6 +6,7 @@ const {
   apiMock,
   clearQueueMock,
   consumePendingOAuthNextMock,
+  getApiBaseMock,
   navigateMock,
   primeOfflineRuntimeProfileMock,
   setActiveOfflineProfileKeyMock,
@@ -15,6 +16,7 @@ const {
   apiMock: vi.fn(),
   clearQueueMock: vi.fn(),
   consumePendingOAuthNextMock: vi.fn<() => string | null>(() => null),
+  getApiBaseMock: vi.fn(() => ""),
   navigateMock: vi.fn(),
   primeOfflineRuntimeProfileMock: vi.fn(),
   setActiveOfflineProfileKeyMock: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("react-router", async () => {
 
 vi.mock("@/lib/api", () => ({
   api: apiMock,
+  getApiBase: getApiBaseMock,
   setAuthToken: setAuthTokenMock,
 }));
 
@@ -68,6 +71,8 @@ describe("AuthProvider", () => {
     clearQueueMock.mockReset();
     consumePendingOAuthNextMock.mockReset();
     consumePendingOAuthNextMock.mockReturnValue(null);
+    getApiBaseMock.mockReset();
+    getApiBaseMock.mockReturnValue("");
     navigateMock.mockReset();
     primeOfflineRuntimeProfileMock.mockReset();
     setActiveOfflineProfileKeyMock.mockReset();
