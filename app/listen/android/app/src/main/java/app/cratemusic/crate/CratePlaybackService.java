@@ -10,7 +10,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -55,7 +54,6 @@ public class CratePlaybackService extends Service {
     private MediaSession mediaSession;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
-    private AudioManager audioManager;
     private Bitmap artworkBitmap;
 
     private String title = "Crate";
@@ -69,8 +67,6 @@ public class CratePlaybackService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        resetMediaAudioRoute();
         createNotificationChannel();
         mediaSession = new MediaSession(this, "CratePlayback");
         mediaSession.setCallback(new MediaSession.Callback() {
@@ -315,7 +311,6 @@ public class CratePlaybackService extends Service {
 
     private void updateWakeLocks() {
         if (isPlaying) {
-            resetMediaAudioRoute();
             acquireWakeLocks();
         } else {
             releaseWakeLocks();
@@ -365,16 +360,6 @@ public class CratePlaybackService extends Service {
             stopForeground(true);
         }
         stopSelf();
-    }
-
-    private void resetMediaAudioRoute() {
-        if (audioManager == null) {
-            return;
-        }
-        audioManager.setMode(AudioManager.MODE_NORMAL);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.clearCommunicationDevice();
-        }
     }
 
     private void loadArtworkAsync(String url) {
