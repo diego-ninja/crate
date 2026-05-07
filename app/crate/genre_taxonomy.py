@@ -674,6 +674,30 @@ def get_top_level_slug(value: str) -> str:
     return slug
 
 
+def get_genre_ancestor_slugs(value: str, *, include_self: bool = True) -> list[str]:
+    graph = _get_runtime_taxonomy_graph()
+    slug = resolve_genre_slug(value)
+    if not slug:
+        return []
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    queue: deque[str] = deque([slug] if include_self else sorted(graph["parents_by_slug"].get(slug, set())))
+
+    while queue:
+        current_slug = queue.popleft()
+        if not current_slug or current_slug in seen:
+            continue
+        seen.add(current_slug)
+        if current_slug in graph["nodes_by_slug"]:
+            ordered.append(current_slug)
+        for parent_slug in sorted(graph["parents_by_slug"].get(current_slug, set())):
+            if parent_slug not in seen:
+                queue.append(parent_slug)
+
+    return ordered
+
+
 def get_related_genre_terms(value: str, *, limit: int = 24, max_depth: int = 2) -> list[str]:
     graph = _get_runtime_taxonomy_graph()
     seed_slug = resolve_genre_slug(value)

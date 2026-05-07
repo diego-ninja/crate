@@ -122,8 +122,8 @@ export function useMediaSession({
   }, [duration, positionSeconds]);
 
   const nativePositionSeconds = Math.floor(
-    Math.min(duration > 0 ? duration : currentTime, currentTime) / 15,
-  ) * 15;
+    Math.max(0, duration > 0 ? Math.min(currentTime, duration) : currentTime),
+  );
   useEffect(() => {
     if (!currentTrack) {
       void stopNativeMediaSession();

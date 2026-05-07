@@ -386,7 +386,12 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
         log.warn(`Failed to play ${this.audioPath}: ${e.message}`);
         // Notify the player so the UI can react (e.g. show retry)
         if (e.name === 'NotAllowedError') {
-          player.onerror(this.audioPath, e);
+          setState(Gapless5State.Stop);
+          player.onerror(this.audioPath, {
+            type: 'not_allowed',
+            name: e.name,
+            message: e.message,
+          });
         }
       });
     }

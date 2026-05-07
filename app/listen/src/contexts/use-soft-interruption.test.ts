@@ -52,6 +52,7 @@ function createRefs(overrides: {
     isPlayingRef: { current: overrides.isPlaying ?? true } as MutableRefObject<boolean>,
     isBufferingRef: { current: overrides.isBuffering ?? false } as MutableRefObject<boolean>,
     bufferingIntentRef: { current: overrides.bufferingIntent ?? false } as MutableRefObject<boolean>,
+    commitIsPlaying: vi.fn(),
     commitIsBuffering: vi.fn(),
   };
   return refs;
@@ -131,6 +132,24 @@ describe("useSoftInterruption", () => {
 
     act(() => { result.current.cancelSoftInterruption(); });
     expect(result.current.isSoftInterrupted()).toBe(false);
+  });
+
+  it("requireUserGestureToResume stops automatic recovery and emits a resume event", () => {
+    const refs = createRefs();
+    const listener = vi.fn();
+    window.addEventListener("crate:playback-needs-user-gesture", listener);
+    const { result } = renderHook(() => useSoftInterruption(refs));
+
+    act(() => { result.current.beginSoftInterruption("stream"); });
+    act(() => { result.current.requireUserGestureToResume(); });
+    act(() => { vi.advanceTimersByTime(3100); });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(refs.commitIsPlaying).toHaveBeenCalledWith(false);
+    expect(refs.commitIsBuffering).toHaveBeenLastCalledWith(false);
+    expect(gaplessPlayer.fadeInAndPlay).not.toHaveBeenCalled();
+
+    window.removeEventListener("crate:playback-needs-user-gesture", listener);
   });
 
   it("upgrades stream interruption to offline if detected later", () => {

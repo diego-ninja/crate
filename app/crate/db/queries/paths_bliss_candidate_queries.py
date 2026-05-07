@@ -39,6 +39,7 @@ def find_anchor_track_row(
                     SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
                            t.album_id, a.entity_uid::text AS album_entity_uid,
                            ar.entity_uid::text AS artist_entity_uid,
+                           t.duration, t.year,
                            t.bpm, t.audio_key, t.audio_scale, t.energy,
                            t.danceability, t.valence,
                            t.bliss_vector, 0.0 AS distance
@@ -98,17 +99,18 @@ def find_anchor_track_row(
                 SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
                        t.album_id, a.entity_uid::text AS album_entity_uid,
                        ar.entity_uid::text AS artist_entity_uid,
+                       t.duration, t.year,
                        t.bpm, t.audio_key, t.audio_scale, t.energy,
                        t.danceability, t.valence,
                        t.bliss_vector,
-                       (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
+                       (t.bliss_embedding <=> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = a.artist
                 WHERE t.bliss_embedding IS NOT NULL
                 {scope_clause}
                 {exclude_clause}
-                ORDER BY t.bliss_embedding <-> CAST(:probe_vector AS vector(20))
+                ORDER BY t.bliss_embedding <=> CAST(:probe_vector AS vector(20))
                 LIMIT 1
                 """
             ),
@@ -123,6 +125,7 @@ def find_anchor_track_row(
                     SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
                            t.album_id, a.entity_uid::text AS album_entity_uid,
                            ar.entity_uid::text AS artist_entity_uid,
+                           t.duration, t.year,
                            t.bpm, t.audio_key, t.audio_scale, t.energy,
                            t.danceability, t.valence,
                            t.bliss_vector,
@@ -165,16 +168,17 @@ def find_candidate_rows(
                 SELECT t.id, t.entity_uid, t.title, a.artist,
                        a.name AS album, t.album_id, a.entity_uid::text AS album_entity_uid,
                        ar.entity_uid::text AS artist_entity_uid,
+                       t.duration, t.year,
                        t.bpm, t.audio_key, t.audio_scale, t.energy,
                        t.danceability, t.valence,
                        t.bliss_vector,
-                       (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
+                       (t.bliss_embedding <=> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = a.artist
                 WHERE t.bliss_embedding IS NOT NULL
                 {exclude_clause}
-                ORDER BY t.bliss_embedding <-> CAST(:probe_vector AS vector(20))
+                ORDER BY t.bliss_embedding <=> CAST(:probe_vector AS vector(20))
                 LIMIT {int(limit)}
                 """
             ),
@@ -189,6 +193,7 @@ def find_candidate_rows(
                     SELECT t.id, t.entity_uid, t.title, a.artist,
                            a.name AS album, t.album_id, a.entity_uid::text AS album_entity_uid,
                            ar.entity_uid::text AS artist_entity_uid,
+                           t.duration, t.year,
                            t.bpm, t.audio_key, t.audio_scale, t.energy,
                            t.danceability, t.valence,
                            t.bliss_vector,

@@ -22,7 +22,7 @@ def get_bliss_candidates(
                 SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
                        t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
                        t.danceability, t.valence, t.rating,
-                       (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS bliss_dist
+                       (t.bliss_embedding <=> CAST(:probe_vector AS vector(20))) AS bliss_dist
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE t.bliss_embedding IS NOT NULL AND t.path != :exclude_path
@@ -68,7 +68,7 @@ def get_recommend_without_bliss_candidates(
                         t.rating,
                         ROW_NUMBER() OVER (
                             PARTITION BY LOWER(a.artist)
-                            ORDER BY RANDOM()
+                            ORDER BY COALESCE(t.lastfm_playcount, 0) DESC, t.id
                         ) AS artist_pick
                     FROM library_tracks t
                     JOIN library_albums a ON t.album_id = a.id
@@ -137,7 +137,7 @@ def get_multi_seed_bliss_candidates(
                         t.rating,
                         ROW_NUMBER() OVER (
                             PARTITION BY s.seed_path
-                            ORDER BY t.bliss_embedding <-> s.seed_bliss_embedding ASC
+                            ORDER BY t.bliss_embedding <=> s.seed_bliss_embedding ASC
                         ) AS seed_rank
                     FROM seeds s
                     JOIN library_tracks t

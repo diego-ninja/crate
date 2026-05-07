@@ -44,6 +44,12 @@ export interface GaplessPlayerCallbacks {
   onAnalyserReady?: (analyser: AnalyserNode) => void;
 }
 
+export interface PlaybackGestureRequiredError {
+  type: "not_allowed";
+  name?: string;
+  message?: string;
+}
+
 let instance: Gapless5 | null = null;
 let currentCallbacks: GaplessPlayerCallbacks = {};
 let currentAnalyser: AnalyserNode | null = null;
@@ -85,6 +91,12 @@ export function getAnalyserNode(): AnalyserNode | null {
  */
 export function isCurrentTrackFullyBuffered(): boolean {
   return currentTrackFullyBuffered;
+}
+
+export function isPlaybackGestureRequiredError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as Partial<PlaybackGestureRequiredError>;
+  return candidate.type === "not_allowed" || candidate.name === "NotAllowedError";
 }
 
 function setAnalyser(analyser: AnalyserNode | null) {
@@ -342,7 +354,30 @@ export function replaceTrack(index: number, url: string): void {
  * user-initiated play path so the first tap always unlocks audio.
  */
 function ensureContextResumed(): void {
-  const ctx = (instance as any)?.context as AudioContext | undefined;
+  const patched = instance as (Gapless5 & {
+    context?: AudioContext;
+    masterOut?: GainNode;
+    _outputChainInput?: AudioNode | null;
+    _outputChainOutput?: AudioNode | null;
+  }) | null;
+  const ctx = patched?.context;
+  if (ctx?.state === "closed") {
+    const audioWindow = window as unknown as {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+      gapless5AudioContext?: AudioContext;
+    };
+    const MaybeContext = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+    if (!MaybeContext || !patched) return;
+    const nextContext = new MaybeContext();
+    audioWindow.gapless5AudioContext = nextContext;
+    patched.context = nextContext;
+    patched.masterOut = nextContext.createGain();
+    patched.masterOut.connect(nextContext.destination);
+    patched._outputChainInput = null;
+    patched._outputChainOutput = null;
+    return;
+  }
   if (ctx?.state === "suspended") {
     void ctx.resume();
   }

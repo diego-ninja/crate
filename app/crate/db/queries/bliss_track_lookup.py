@@ -60,7 +60,7 @@ def get_same_artist_tracks(
                     JOIN library_albums a ON t.album_id = a.id
                     JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
                     WHERE ar.id = :artist_id AND t.path != :exclude_path
-                    ORDER BY RANDOM()
+                    ORDER BY COALESCE(t.lastfm_playcount, 0) DESC, t.id
                     LIMIT :limit
                     """
                 ),
@@ -89,7 +89,7 @@ def get_same_artist_tracks(
                     FROM library_tracks t
                     JOIN library_albums a ON t.album_id = a.id
                     WHERE LOWER(a.artist) = LOWER(:artist_name) AND t.path != :exclude_path
-                    ORDER BY RANDOM()
+                    ORDER BY COALESCE(t.lastfm_playcount, 0) DESC, t.id
                     LIMIT :limit
                     """
                 ),

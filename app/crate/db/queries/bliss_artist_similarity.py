@@ -176,7 +176,7 @@ def get_artist_tracks(session=None, artist_id: int | None = None) -> list[dict]:
                 JOIN library_albums a ON t.album_id = a.id
                 JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
                 WHERE ar.id = :artist_id
-                ORDER BY RANDOM()
+                ORDER BY COALESCE(t.lastfm_playcount, 0) DESC, t.id
                 """
             ),
             {"artist_id": artist_id},
