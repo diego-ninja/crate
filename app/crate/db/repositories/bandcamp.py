@@ -1590,6 +1590,100 @@ def refresh_bandcamp_radar_for_user(user_id: int, *, session=None) -> dict[str, 
     return {"upserted": upserted}
 
 
+def refresh_bandcamp_discover_for_user(
+    user_id: int,
+    items: list[dict[str, Any]],
+    *,
+    last_cursor: str = "",
+    cache_metadata: Mapping[str, str] | None = None,
+    session=None,
+) -> dict[str, int]:
+    """Persist connection-scoped Discover candidates in the existing Radar model."""
+    del last_cursor, cache_metadata
+    if not has_active_connection(user_id, session=session):
+        return {"upserted": 0, "stale": 0}
+
+    now = _now()
+    seen_item_ids: list[int] = []
+    upserted = 0
+    with optional_scope(session) as s:
+        for fallback_rank, entry in enumerate(items):
+            relation = entry.get("item") if isinstance(entry, dict) else None
+            item = relation if isinstance(relation, dict) else entry
+            if not isinstance(item, dict) or not item.get("item_url"):
+                continue
+
+            persisted = upsert_bandcamp_item(item, session=s)
+            bandcamp_item_id = int(persisted["id"])
+            seen_item_ids.append(bandcamp_item_id)
+            rank = _safe_non_negative_int(
+                entry.get("rank") if isinstance(entry, dict) else None,
+                fallback_rank,
+            )
+            reason = {
+                "source": "discover_followed",
+                "artist": item.get("artist_name"),
+                "album": item.get("album_title"),
+                "track": item.get("track_title"),
+                "release_date": item.get("release_date"),
+                "rank": rank,
+                "page_cursor": str(
+                    entry.get("page_cursor") if isinstance(entry, dict) else ""
+                ),
+            }
+            score = max(1.0, 100.0 - float(rank))
+            s.execute(
+                text("""
+                INSERT INTO bandcamp_radar_items (
+                    user_id, bandcamp_item_id, scope, source, score, status,
+                    reason_json, first_seen_at, updated_at
+                )
+                VALUES (
+                    :user_id, :bandcamp_item_id, 'user', 'discover_followed',
+                    :score, 'new', CAST(:reason_json AS jsonb), :now, :now
+                )
+                ON CONFLICT (user_id, bandcamp_item_id, source) DO UPDATE SET
+                    score = EXCLUDED.score,
+                    status = CASE
+                        WHEN bandcamp_radar_items.status IN ('saved', 'dismissed')
+                            THEN bandcamp_radar_items.status
+                        ELSE 'new'
+                    END,
+                    reason_json = EXCLUDED.reason_json,
+                    updated_at = EXCLUDED.updated_at
+                """),
+                {
+                    "user_id": user_id,
+                    "bandcamp_item_id": bandcamp_item_id,
+                    "score": score,
+                    "reason_json": json.dumps(reason),
+                    "now": now,
+                },
+            )
+            upserted += 1
+
+        stale_result = s.execute(
+            text("""
+            UPDATE bandcamp_radar_items
+            SET status = 'stale',
+                reason_json = reason_json || CAST(:stale_reason AS jsonb),
+                updated_at = :now
+            WHERE user_id = :user_id
+              AND source = 'discover_followed'
+              AND status = 'new'
+              AND NOT (bandcamp_item_id = ANY(:seen_item_ids))
+            """),
+            {
+                "user_id": user_id,
+                "seen_item_ids": seen_item_ids or [-1],
+                "stale_reason": json.dumps({"stale": True}),
+                "now": now,
+            },
+        )
+        stale = _rowcount(stale_result)
+    return {"upserted": upserted, "stale": stale}
+
+
 def list_bandcamp_radar_items(
     user_id: int,
     *,
@@ -1664,3 +1758,10 @@ def update_bandcamp_radar_status(
             .first()
         )
     return serialize_row(row) if row else None
+
+
+def _safe_non_negative_int(value: Any, fallback: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return max(0, int(fallback))

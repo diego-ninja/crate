@@ -643,6 +643,7 @@ _HANDLER_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "bandcamp_connect_credentials",
             "bandcamp_sync_collection",
+            "bandcamp_discover_refresh",
             "bandcamp_import_purchase",
             "bandcamp_radar_refresh",
             "bandcamp_backfill_entity_urls",

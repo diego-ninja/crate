@@ -1958,6 +1958,90 @@ def test_bandcamp_private_items_are_hidden_after_connection_revocation(pg_db):
     assert refresh_bandcamp_radar_for_user(1) == {"upserted": 0}
 
 
+def test_bandcamp_discover_refresh_is_idempotent_and_preserves_radar_state(pg_db):
+    from crate.db.repositories.bandcamp import (
+        refresh_bandcamp_discover_for_user,
+        update_bandcamp_radar_status,
+        upsert_connection,
+    )
+    from crate.db.tx import read_scope
+
+    upsert_connection(
+        user_id=1,
+        session_secret_ref="bandcamp_session:test-discover",
+        session_fingerprint="fingerprint-discover",
+        connection_method="manual_dev",
+        username="fan",
+        fan_id=456,
+    )
+    items = [
+        {
+            "item": {
+                "item_url": "https://discoverartist.bandcamp.com/album/first",
+                "bandcamp_item_type": "album",
+                "artist_name": "Discover Artist",
+                "album_title": "First",
+                "release_date": "2026-08-20",
+                "raw": {"title": "First"},
+            },
+            "page_cursor": "*",
+            "rank": 0,
+        },
+        {
+            "item": {
+                "item_url": "https://discoverartist.bandcamp.com/album/second",
+                "bandcamp_item_type": "album",
+                "artist_name": "Discover Artist",
+                "album_title": "Second",
+                "release_date": "2026-08-21",
+                "raw": {"title": "Second"},
+            },
+            "page_cursor": "cursor-2",
+            "rank": 1,
+        },
+    ]
+
+    first = refresh_bandcamp_discover_for_user(
+        1,
+        items,
+        last_cursor="cursor-3",
+        cache_metadata={"etag": '"discover"'},
+    )
+    assert first == {"upserted": 2, "stale": 0}
+
+    with read_scope() as session:
+        rows = (
+            session.execute(
+                text("""
+            SELECT bri.id, bri.status, bri.source, bri.reason_json
+            FROM bandcamp_radar_items bri
+            WHERE bri.user_id = 1 AND bri.source = 'discover_followed'
+            ORDER BY (bri.reason_json->>'rank')::int
+            """)
+            )
+            .mappings()
+            .all()
+        )
+    assert len(rows) == 2
+    assert rows[0]["reason_json"]["release_date"] == "2026-08-20"
+    assert rows[0]["reason_json"]["page_cursor"] == "*"
+
+    update_bandcamp_radar_status(user_id=1, radar_id=rows[0]["id"], status="saved")
+    second = refresh_bandcamp_discover_for_user(1, items[:1])
+    assert second == {"upserted": 1, "stale": 1}
+
+    with read_scope() as session:
+        states = session.execute(
+            text("""
+            SELECT status, source
+            FROM bandcamp_radar_items
+            WHERE user_id = 1 AND source = 'discover_followed'
+            ORDER BY id
+            """)
+        ).all()
+    assert states == [("saved", "discover_followed"), ("stale", "discover_followed")]
+
+
 def test_bandcamp_radar_refresh_requires_active_connection(
     bandcamp_api_client, monkeypatch
 ):

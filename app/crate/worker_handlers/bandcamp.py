@@ -11,7 +11,7 @@ from crate.bandcamp.collection_sync import (
     BandcampCollectionSyncError,
     sync_collection_with_command,
 )
-from crate.bandcamp.client import BandcampClient
+from crate.bandcamp.client import BandcampClient, BandcampClientError
 from crate.bandcamp.client import session_material_from_payload
 from crate.bandcamp.credential_broker import (
     BandcampCredentialBridgeChallenge,
@@ -19,6 +19,7 @@ from crate.bandcamp.credential_broker import (
     login_with_credentials,
 )
 from crate.bandcamp.credentials import (
+    CredentialSecretError,
     fingerprint_secret,
     load_secret,
     revoke_secret,
@@ -27,6 +28,13 @@ from crate.bandcamp.credentials import (
 from crate.bandcamp.downloads import (
     BandcampDownloadError,
     download_purchase_with_command,
+)
+from crate.bandcamp.discover import (
+    BandcampDiscoverAuthError,
+    BandcampDiscoverClient,
+    BandcampDiscoverError,
+    BandcampDiscoverRateLimited,
+    bandcamp_discover_enabled,
 )
 from crate.bandcamp.matcher import create_matches_for_bandcamp_item
 from crate.bandcamp.search import (
@@ -44,6 +52,7 @@ from crate.db.repositories.bandcamp import (
     get_bandcamp_global_import_guard,
     get_bandcamp_import,
     get_connection_by_id,
+    get_connection_for_user,
     get_existing_bandcamp_library_import,
     get_latest_bandcamp_import_for_item,
     get_user_owned_bandcamp_item,
@@ -55,6 +64,7 @@ from crate.db.repositories.bandcamp import (
     mark_bandcamp_imports_withdrawn,
     mark_user_bandcamp_items_removed,
     refresh_bandcamp_radar_for_user,
+    refresh_bandcamp_discover_for_user,
     set_library_entity_bandcamp_url,
     set_bandcamp_import_task,
     update_bandcamp_import_status,
@@ -746,7 +756,9 @@ def _handle_bandcamp_radar_refresh(task_id: str, params: dict, config: dict) -> 
         "bandcamp.radar.started",
         {"message": "Refreshing Bandcamp Radar"},
     )
-    result = refresh_bandcamp_radar_for_user(user_id)
+    radar_result = refresh_bandcamp_radar_for_user(user_id)
+    result: dict[str, object] = dict(radar_result)
+    result["discover"] = _handle_bandcamp_discover_refresh(task_id, params, config)
     emit_task_event(
         task_id,
         "bandcamp.radar.succeeded",
@@ -756,6 +768,90 @@ def _handle_bandcamp_radar_refresh(task_id: str, params: dict, config: dict) -> 
         },
     )
     return result
+
+
+def _handle_bandcamp_discover_refresh(
+    task_id: str,
+    params: dict,
+    config: dict,
+) -> dict:
+    del config
+    user_id = int(params["user_id"])
+    if not bandcamp_discover_enabled():
+        return {"enabled": False}
+
+    connection = get_connection_for_user(user_id)
+    if not connection or str(connection.get("status") or "") != "connected":
+        emit_task_event(
+            task_id,
+            "bandcamp.discover.skipped",
+            {"reason": "inactive_connection"},
+        )
+        return {"enabled": True, "skipped": "inactive_connection"}
+
+    emit_task_event(task_id, "bandcamp.discover.started", {})
+    try:
+        session_payload = load_secret(
+            str(connection["session_secret_ref"]),
+            scope="bandcamp_session",
+        )
+        session_material = session_material_from_payload(session_payload)
+        result = BandcampDiscoverClient(
+            session_material,
+            cache_key=f"bandcamp:discover:user:{user_id}",
+        ).fetch_followed()
+        persisted = refresh_bandcamp_discover_for_user(
+            user_id,
+            [
+                {
+                    "item": entry.item,
+                    "page_cursor": entry.page_cursor,
+                    "rank": entry.rank,
+                }
+                for entry in result.items
+            ],
+            last_cursor=result.last_cursor,
+            cache_metadata=result.cache_metadata,
+        )
+        response = {
+            "enabled": True,
+            "pages_fetched": result.pages_fetched,
+            "items_accepted": len(result.items),
+            "items_skipped": result.skipped_items,
+            "upserted": persisted.get("upserted", 0),
+            "stale": persisted.get("stale", 0),
+            "cache_hit": result.cache_hit,
+        }
+        emit_task_event(task_id, "bandcamp.discover.succeeded", response)
+        return response
+    except (
+        BandcampDiscoverAuthError,
+        BandcampClientError,
+        CredentialSecretError,
+    ) as exc:
+        response = {"enabled": True, "session_error": 1}
+        emit_task_event(
+            task_id,
+            "bandcamp.discover.session_error",
+            {"message": str(exc)},
+        )
+        return response
+    except BandcampDiscoverRateLimited as exc:
+        response = {"enabled": True, "rate_limited": 1}
+        emit_task_event(
+            task_id,
+            "bandcamp.discover.rate_limited",
+            {"message": str(exc)},
+        )
+        return response
+    except BandcampDiscoverError as exc:
+        response = {"enabled": True, "provider_error": 1}
+        emit_task_event(
+            task_id,
+            "bandcamp.discover.failed",
+            {"message": str(exc)},
+        )
+        return response
 
 
 def _handle_bandcamp_withdraw_contribution(
@@ -900,6 +996,7 @@ def _handle_bandcamp_cleanup_user_contributions(
 BANDCAMP_TASK_HANDLERS: dict[str, TaskHandler] = {
     "bandcamp_connect_credentials": _handle_bandcamp_connect_credentials,
     "bandcamp_sync_collection": _handle_bandcamp_sync_collection,
+    "bandcamp_discover_refresh": _handle_bandcamp_discover_refresh,
     "bandcamp_import_purchase": _handle_bandcamp_import_purchase,
     "bandcamp_radar_refresh": _handle_bandcamp_radar_refresh,
     "bandcamp_backfill_entity_urls": _handle_bandcamp_backfill_entity_urls,

@@ -182,6 +182,7 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
     "sync_shows": TaskPoolConfig("maintenance", 3, 3600, 1),
     "bandcamp_connect_credentials": TaskPoolConfig("maintenance", 1, 900, 0),
     "bandcamp_sync_collection": TaskPoolConfig("maintenance", 2, 7200, 1),
+    "bandcamp_discover_refresh": TaskPoolConfig("maintenance", 2, 600, 1),
     "bandcamp_import_purchase": TaskPoolConfig("default", 0, 14400, 0),
     "bandcamp_radar_refresh": TaskPoolConfig("maintenance", 2, 600, 1),
     "bandcamp_backfill_entity_urls": TaskPoolConfig("maintenance", 2, 7200, 0),
