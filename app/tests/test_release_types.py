@@ -247,6 +247,107 @@ def test_existing_release_backfill_persists_first_public_release_date(monkeypatc
     ]
 
 
+def test_release_type_backfill_detects_stale_short_form_match_for_album():
+    from crate.worker_handlers.enrichment import _existing_release_is_incompatible
+
+    assert _existing_release_is_incompatible(
+        {"track_count": 11, "release_group_primary_type": "Single"},
+        {"track_count": 1, "release_group_primary_type": "Single"},
+    )
+
+    assert not _existing_release_is_incompatible(
+        {"track_count": 10, "release_group_primary_type": "Album"},
+        {"track_count": 11, "release_group_primary_type": "Album"},
+    )
+
+
+def test_release_types_backfill_rematches_stale_short_form_release(monkeypatch):
+    from crate.worker_handlers import enrichment
+
+    album = {
+        "id": 9,
+        "artist": "Chelsea Wolfe",
+        "name": "The Dark",
+        "track_count": 11,
+        "musicbrainz_albumid": "release-single",
+        "musicbrainz_releasegroupid": "rg-single",
+        "release_group_primary_type": "Single",
+        "release_date": "2026-06-23",
+    }
+    persisted: list[dict] = []
+    monkeypatch.setattr(
+        enrichment, "get_albums_needing_release_metadata", lambda: [album]
+    )
+    monkeypatch.setattr(
+        enrichment, "_backfill_known_release_group_types", lambda _albums: {9}
+    )
+    monkeypatch.setattr(enrichment, "get_library_tracks", lambda _album_id: [])
+    monkeypatch.setattr(enrichment, "get_setting", lambda *_args, **_kwargs: "95")
+    monkeypatch.setattr(enrichment, "is_cancelled", lambda _task_id: False)
+    monkeypatch.setattr(enrichment, "emit_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(enrichment, "emit_task_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        enrichment, "wait_for_provider_slot", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "crate.matcher._get_release_detail",
+        lambda _mbid: {
+            "mbid": "release-single",
+            "release_group_id": "rg-single",
+            "release_group_primary_type": "Single",
+            "release_group_secondary_types": [],
+            "track_count": 1,
+            "first_release_date": "2026-06-23",
+        },
+    )
+    monkeypatch.setattr(
+        enrichment,
+        "_find_best_album_release",
+        lambda *_args, **_kwargs: (
+            {
+                "mbid": "release-album",
+                "release_group_id": "rg-album",
+                "release_group_primary_type": "Album",
+                "release_group_secondary_types": [],
+                "first_release_date": "2026-08-21",
+                "tracks": [],
+            },
+            98,
+        ),
+    )
+    monkeypatch.setattr(
+        enrichment,
+        "_persist_album_release_mbids",
+        lambda album_id, _tracks, release: persisted.append(
+            {"id": album_id, "release": release}
+        ),
+    )
+    monkeypatch.setattr(
+        enrichment,
+        "_persist_existing_release_group_types",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("stale short-form release must be rematched")
+        ),
+    )
+
+    result = enrichment._handle_enrich_mbids("task-1", {"release_types_only": True}, {})
+
+    assert result == {"enriched": 1, "skipped": 0, "failed": 0, "total": 1}
+    assert persisted == [
+        {
+            "id": 9,
+            "release": {
+                "mbid": "release-album",
+                "release_group_id": "rg-album",
+                "release_group_primary_type": "Album",
+                "release_group_secondary_types": [],
+                "first_release_date": "2026-08-21",
+                "tracks": [],
+            },
+        }
+    ]
+
+
 def test_release_group_type_persistence_updates_existing_album_metadata(pg_db):
     from crate.db.jobs.enrichment import persist_album_release_group_types
 

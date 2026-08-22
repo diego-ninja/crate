@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -2212,6 +2213,46 @@ def test_users_map_rejects_regular_user():
         users_map(_request_for("user"))  # type: ignore[arg-type]
 
     assert exc.value.status_code == 403
+
+
+def test_admin_user_detail_exposes_derived_activity(monkeypatch):
+    from crate.api.auth import admin_get_user_detail
+
+    monkeypatch.setattr(
+        "crate.api.auth.get_user_by_id",
+        lambda _user_id: {
+            "id": 7,
+            "email": "inactive@example.com",
+            "name": "Inactive",
+            "avatar": None,
+            "role": "user",
+            "status": "active",
+            "created_at": datetime.now(timezone.utc) - timedelta(days=60),
+            "last_login": datetime.now(timezone.utc) - timedelta(days=31),
+            "password_hash": None,
+            "username": "inactive",
+            "bio": None,
+        },
+    )
+    monkeypatch.setattr("crate.api.auth.list_user_external_identities", lambda _id: [])
+    monkeypatch.setattr("crate.api.auth.list_sessions", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        "crate.api.auth.get_user_presence",
+        lambda _id: {
+            "online_now": False,
+            "active_devices": 0,
+            "active_sessions": 0,
+            "listening_now": False,
+            "current_track": None,
+            "last_played_at": None,
+            "last_seen_at": None,
+        },
+    )
+
+    response = admin_get_user_detail(_request_for("admin"), 7)  # type: ignore[arg-type]
+
+    assert response["activity_status"] == "inactive"
+    assert response["last_activity_at"] is not None
 
 
 def test_library_health_check_allows_librarian_without_admin_access(monkeypatch):

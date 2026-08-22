@@ -76,6 +76,42 @@ def _clean_album_lookup_name(album_name: str) -> str:
     return re.sub(r"^\d{4}\s*-\s*", "", album_name)
 
 
+def _may_have_stale_short_form_release(album: Mapping[str, Any]) -> bool:
+    primary_type = str(album.get("release_group_primary_type") or "").strip().casefold()
+    try:
+        track_count = int(album.get("track_count") or 0)
+    except (TypeError, ValueError):
+        track_count = 0
+    return primary_type in {"single", "ep"} and track_count > 1
+
+
+def _existing_release_is_incompatible(
+    album: Mapping[str, Any], release: Mapping[str, Any]
+) -> bool:
+    """Detect a short-form MB match that cannot represent the local album."""
+    primary_type = (
+        str(
+            release.get("release_group_primary_type")
+            or album.get("release_group_primary_type")
+            or ""
+        )
+        .strip()
+        .casefold()
+    )
+    if primary_type not in {"single", "ep"}:
+        return False
+
+    try:
+        local_count = int(album.get("track_count") or 0)
+        release_count = int(release.get("track_count") or 0)
+    except (TypeError, ValueError):
+        return False
+
+    if local_count <= 1 or release_count <= 0:
+        return False
+    return release_count * 2 < local_count
+
+
 def _build_album_match_local_info(
     album: Mapping[str, Any],
     artist_name: str,
@@ -609,17 +645,19 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
         existing_mbid = album.get("musicbrainz_albumid")
         existing_primary_type = album.get("release_group_primary_type")
         existing_release_date = normalize_release_date(album.get("release_date"))
+        may_have_stale_short_form = _may_have_stale_short_form_release(album)
         if album["id"] in type_backfilled_ids or (
             existing_mbid
             and existing_mbid.strip()
             and existing_primary_type
             and existing_release_date
         ):
-            if release_dates_only:
-                enriched += 1
-            else:
-                skipped += 1
-            continue
+            if not may_have_stale_short_form:
+                if release_dates_only:
+                    enriched += 1
+                else:
+                    skipped += 1
+                continue
 
         if release_dates_only and not existing_mbid:
             failed += 1
@@ -638,13 +676,18 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
             wait_for_provider_slot("musicbrainz", 1.1)
             existing_release = _get_release_detail(existing_mbid.strip())
-            if existing_release and _persist_existing_release_group_types(
-                int(album["id"]), existing_release
-            ):
-                enriched += 1
-            else:
+            if not existing_release:
                 failed += 1
-            continue
+                continue
+            if not _existing_release_is_incompatible(album, existing_release):
+                if _persist_existing_release_group_types(
+                    int(album["id"]), existing_release
+                ):
+                    enriched += 1
+                else:
+                    failed += 1
+                continue
+            existing_mbid = None
 
         clean_album = _clean_album_lookup_name(album_name)
         tracks_db = get_library_tracks(album["id"]) if "id" in album else []
@@ -932,6 +975,7 @@ def _process_new_content_album_mbids(
                 and existing_mbid.strip()
                 and album.get("release_group_primary_type")
                 and normalize_release_date(album.get("release_date"))
+                and not _may_have_stale_short_form_release(album)
             ):
                 continue
 
@@ -940,11 +984,14 @@ def _process_new_content_album_mbids(
 
                 wait_for_provider_slot("musicbrainz", 1.1)
                 existing_release = _get_release_detail(existing_mbid.strip())
-                if existing_release and _persist_existing_release_group_types(
-                    int(album["id"]), existing_release
-                ):
-                    mbid_count += 1
-                continue
+                if not existing_release:
+                    continue
+                if not _existing_release_is_incompatible(album, existing_release):
+                    if _persist_existing_release_group_types(
+                        int(album["id"]), existing_release
+                    ):
+                        mbid_count += 1
+                    continue
 
             clean_name = _clean_album_lookup_name(
                 album.get("tag_album") or album["name"]

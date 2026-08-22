@@ -81,6 +81,7 @@ from crate.auth import (
 )
 from crate.db.audit import log_audit
 from crate.db.cache_settings import get_setting, set_setting
+from crate.db.queries.auth_user_activity import derive_user_activity
 from crate.db.repositories.auth import (
     consume_auth_invite,
     count_users,
@@ -2766,7 +2767,15 @@ def admin_get_user_detail(request: Request, user_id: int):
     payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
-    payload.update(get_user_presence(user_id))
+    presence = get_user_presence(user_id)
+    payload.update(presence)
+    payload.update(
+        derive_user_activity(
+            last_login=payload.get("last_login"),
+            last_seen_at=presence.get("last_seen_at"),
+            last_played_at=presence.get("last_played_at"),
+        )
+    )
     return payload
 
 
