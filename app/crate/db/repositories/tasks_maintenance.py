@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 
 from sqlalchemy import text
 
@@ -60,6 +61,37 @@ def check_siblings_complete(parent_task_id: str) -> dict:
         "completed": row["completed"] if row else 0,
         "failed": row["failed"] if row else 0,
     }
+
+
+def get_child_task_results(parent_task_id: str) -> list[dict]:
+    """Return terminal child statuses and decoded results for a fan-out parent."""
+    with transaction_scope() as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    SELECT status, result_json
+                    FROM tasks
+                    WHERE parent_task_id = :parent_task_id
+                    ORDER BY created_at, id
+                    """
+                ),
+                {"parent_task_id": parent_task_id},
+            )
+            .mappings()
+            .all()
+        )
+
+    children: list[dict] = []
+    for row in rows:
+        result = row.get("result_json")
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except json.JSONDecodeError:
+                result = None
+        children.append({"status": row.get("status"), "result": result})
+    return children
 
 
 def cleanup_zombie_tasks(
@@ -250,6 +282,7 @@ def cleanup_orphaned_tasks(*, pools: list[str] | None = None, session=None) -> i
 
 __all__ = [
     "check_siblings_complete",
+    "get_child_task_results",
     "cleanup_orphaned_tasks",
     "cleanup_zombie_tasks",
     "delete_old_finished_tasks",

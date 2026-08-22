@@ -195,7 +195,7 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
         "maintenance", 2, 3600, 0
     ),  # deprecated legacy storage migration
     # Library completeness check
-    "compute_completeness": TaskPoolConfig("maintenance", 3, 3600, 0),
+    "compute_completeness": TaskPoolConfig("maintenance", 3, 900, 1),
     # Playback delivery
     "prepare_stream_variant": TaskPoolConfig("playback", 0, 1200, 1),
     "warmup_stream_variants": TaskPoolConfig("maintenance", 3, 900, 0),

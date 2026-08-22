@@ -25,6 +25,7 @@ import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { Input } from "@crate/ui/shadcn/input";
 import { useApi } from "@/hooks/use-api";
+import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
 import {
   artistPagePath,
@@ -306,8 +307,12 @@ function PopularityRow({
 
 export function Discover() {
   const navigate = useNavigate();
+  const { pollTask } = useTaskPoll();
   const [search, setSearch] = useState("");
   const [recomputing, setRecomputing] = useState(false);
+  const [completenessTaskId, setCompletenessTaskId] = useState<string | null>(
+    null,
+  );
   const [checking, setChecking] = useState(false);
 
   const {
@@ -414,7 +419,29 @@ export function Discover() {
   async function recomputeCompleteness() {
     setRecomputing(true);
     try {
-      await api("/api/discover/completeness/refresh", "POST");
+      const { task_id: taskId } = await api<{ task_id: string }>(
+        "/api/discover/completeness/refresh",
+        "POST",
+      );
+      setCompletenessTaskId(taskId);
+      pollTask(
+        taskId,
+        (result) => {
+          setCompletenessTaskId(null);
+          if (result?.finalization_skipped || result?.cache_written === false) {
+            toast.error("Completeness refresh finished with failed chunks");
+            return;
+          }
+          refetchCompleteness();
+          toast.success("Completeness refresh completed");
+        },
+        (error) => {
+          setCompletenessTaskId(null);
+          toast.error(error || "Completeness refresh failed");
+        },
+        3000,
+        30 * 60 * 1000,
+      );
       toast.success("Completeness refresh queued");
     } catch {
       toast.error("Failed to queue completeness refresh");
@@ -483,14 +510,16 @@ export function Discover() {
               size="sm"
               className="gap-2"
               onClick={recomputeCompleteness}
-              disabled={recomputing}
+              disabled={recomputing || completenessTaskId !== null}
             >
-              {recomputing ? (
+              {recomputing || completenessTaskId !== null ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <BarChart3 size={14} />
               )}
-              Recompute gaps
+              {recomputing || completenessTaskId !== null
+                ? "Recomputing..."
+                : "Recompute gaps"}
             </Button>
             <Button
               size="sm"
