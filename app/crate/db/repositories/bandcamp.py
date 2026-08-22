@@ -293,6 +293,24 @@ def get_connection_for_user(user_id: int, *, session=None) -> dict | None:
     return serialize_row(row) if row else None
 
 
+def has_active_connection(user_id: int, *, session=None) -> bool:
+    with optional_scope(session) as s:
+        return (
+            s.execute(
+                text("""
+                SELECT 1
+                FROM bandcamp_connections
+                WHERE user_id = :user_id
+                  AND status = 'connected'
+                  AND revoked_at IS NULL
+                LIMIT 1
+                """),
+                {"user_id": user_id},
+            ).first()
+            is not None
+        )
+
+
 def get_connection_by_id(connection_id: int, *, session=None) -> dict | None:
     with optional_scope(session) as s:
         row = (
@@ -525,6 +543,9 @@ def complete_pairing_challenge(
 def list_user_collection(
     user_id: int, relation_type: str, *, limit: int = 100, session=None
 ) -> list[dict]:
+    if not has_active_connection(user_id, session=session):
+        return []
+
     with optional_scope(session) as s:
         rows = (
             s.execute(
@@ -1499,6 +1520,9 @@ def list_bandcamp_match_candidates_for_name(
 
 
 def refresh_bandcamp_radar_for_user(user_id: int, *, session=None) -> dict[str, int]:
+    if not has_active_connection(user_id, session=session):
+        return {"upserted": 0}
+
     now = _now()
     with optional_scope(session) as s:
         rows = (
@@ -1572,6 +1596,9 @@ def list_bandcamp_radar_items(
     limit: int = 50,
     session=None,
 ) -> list[dict]:
+    if not has_active_connection(user_id, session=session):
+        return []
+
     with optional_scope(session) as s:
         rows = (
             s.execute(
