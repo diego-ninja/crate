@@ -5,6 +5,7 @@ import type {
   SpotifyData,
 } from "@/components/artist/artistPageTypes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
 
 interface ArtistAboutSectionProps {
@@ -39,9 +40,12 @@ export function ArtistAboutSection({
           <h3 className="text-sm font-semibold text-white/70 mb-2">
             Biography
           </h3>
-          <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">
-            {bioExpanded ? bioText : bioText.slice(0, 600)}
-            {!bioExpanded && bioText.length > 600 && "..."}
+          <p className="text-sm text-white/60 leading-relaxed">
+            <ArtistBioText
+              text={bioText}
+              maxChars={600}
+              expanded={bioExpanded}
+            />
           </p>
           {bioText.length > 600 && (
             <button

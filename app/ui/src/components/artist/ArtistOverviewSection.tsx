@@ -1,4 +1,6 @@
 import { StatCard } from "@/components/artist/ArtistPageBits";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
+import { AIButton } from "@/components/ui/AIButton";
 import type {
   ArtistExternalLink,
   LastfmData,
@@ -33,6 +35,8 @@ interface ArtistOverviewSectionProps {
   spotify?: SpotifyData;
   externalLinks: ArtistExternalLink[];
   enrichmentLoading: boolean;
+  canResearchBio?: boolean;
+  onResearchBio?: () => void;
 }
 
 export function ArtistOverviewSection({
@@ -46,17 +50,27 @@ export function ArtistOverviewSection({
   spotify,
   externalLinks,
   enrichmentLoading,
+  canResearchBio = false,
+  onResearchBio,
 }: ArtistOverviewSectionProps) {
   return (
     <div className="space-y-8">
       {bioText && (
         <div className="max-w-3xl">
-          <h3 className="text-sm font-semibold text-white/70 mb-2">
-            Biography
-          </h3>
-          <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">
-            {bioExpanded ? bioText : bioText.slice(0, 400)}
-            {!bioExpanded && bioText.length > 400 && "..."}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white/70">Biography</h3>
+            {canResearchBio && onResearchBio ? (
+              <AIButton type="button" onClick={onResearchBio}>
+                Research with AI
+              </AIButton>
+            ) : null}
+          </div>
+          <p className="text-sm text-white/60 leading-relaxed">
+            <ArtistBioText
+              text={bioText}
+              maxChars={400}
+              expanded={bioExpanded}
+            />
           </p>
           {bioText.length > 400 && (
             <button

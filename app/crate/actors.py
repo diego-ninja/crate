@@ -177,6 +177,8 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
     "cleanup_artwork_variants": TaskPoolConfig("maintenance", 3, 1800, 0),
     "repair_artwork_variants": TaskPoolConfig("maintenance", 3, 3600, 1),
     "backfill_similarities": TaskPoolConfig("maintenance", 3, 3600, 0),
+    "normalize_artist_bios": TaskPoolConfig("maintenance", 2, 3600, 0),
+    "research_artist_bio": TaskPoolConfig("default", 1, 900, 1),
     "sync_shows": TaskPoolConfig("maintenance", 3, 3600, 1),
     "bandcamp_connect_credentials": TaskPoolConfig("maintenance", 1, 900, 0),
     "bandcamp_sync_collection": TaskPoolConfig("maintenance", 2, 7200, 1),

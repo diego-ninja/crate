@@ -15,6 +15,7 @@ import {
   Users,
 } from "@crate/ui/icons";
 import { FollowHeartButton } from "@crate/ui/primitives/FollowHeartButton";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 
 import {
   type ArtistData,
@@ -250,8 +251,8 @@ export function ArtistHeroSection({
 
               {bio ? (
                 <div className="mt-3 max-w-2xl">
-                  <p className="line-clamp-2 whitespace-pre-line text-sm leading-relaxed text-white/70 sm:line-clamp-3">
-                    {bio}
+                  <p className="line-clamp-2 text-sm leading-relaxed text-white/70 sm:line-clamp-3">
+                    <ArtistBioText text={bio} />
                   </p>
                   {bio.length > 200 ? (
                     <button

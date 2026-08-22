@@ -368,7 +368,11 @@ class TestLastfmGetArtistInfo:
             "artist": {
                 "name": "Radiohead",
                 "bio": {
-                    "summary": 'English rock band <a href="https://www.last.fm/music/Radiohead">Read more on Last.fm</a>.'
+                    "summary": (
+                        'English rock band <a href="https://www.last.fm/music/Radiohead">'
+                        "Read more on Last.fm</a>. User-contributed text is available "
+                        "under the Creative Commons By-SA License; additional terms may apply."
+                    )
                 },
                 "image": [{"#text": "http://img.com/photo.jpg", "size": "large"}],
                 "tags": {"tag": [{"name": "rock"}, {"name": "alternative"}]},
@@ -391,6 +395,7 @@ class TestLastfmGetArtistInfo:
             assert result is not None
             assert "rock" in result["tags"]
             assert result["listeners"] == 5000000
+            assert result["bio"] == "English rock band"
             mock_set.assert_called_once()
 
     def test_get_artist_info_no_api_key(self):

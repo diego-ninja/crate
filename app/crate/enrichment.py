@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping
 
 from crate.artwork_tasks import queue_artwork_materialization
 from crate.artwork_variants import ArtworkAsset
+from crate.artist_bio import normalize_artist_bio
 from crate.bandcamp.search import BandcampSearchError, find_exact_artist_url
 from crate.db.cache_settings import get_setting
 from crate.db.cache_store import delete_cache, get_cache, set_cache
@@ -100,11 +101,15 @@ def _get_cached_source_payload(source: str, artist_name: str) -> Any | None:
     ttl = _source_ttl(source)
     cached = get_cache(_source_cache_key(source, artist_name), max_age_seconds=ttl)
     if cached is not None:
+        if source == "lastfm" and isinstance(cached, dict):
+            cached = {**cached, "bio": normalize_artist_bio(cached.get("bio"))}
         return cached
 
     legacy = get_cache(f"enrichment:{artist_name.lower()}", max_age_seconds=ttl)
     if isinstance(legacy, dict) and source in legacy:
         payload = legacy[source]
+        if source == "lastfm" and isinstance(payload, dict):
+            payload = {**payload, "bio": normalize_artist_bio(payload.get("bio"))}
         set_cache(_source_cache_key(source, artist_name), payload, ttl=ttl)
         return payload
     return None
@@ -370,6 +375,7 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
 
     info = payloads.get("lastfm")
     if info:
+        info = {**info, "bio": normalize_artist_bio(info.get("bio"))}
         enrichment_data["lastfm"] = info
         persist_data["bio"] = info.get("bio", "")
         persist_data["tags"] = info.get("tags", [])

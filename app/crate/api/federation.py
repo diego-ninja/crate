@@ -24,6 +24,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from crate.api import browse_artist as browse_artist_api
+from crate.artist_bio import normalize_artist_bio
 from crate.api.openapi_responses import error_response
 from crate.api.schemas.federation import (
     FederatedPlaybackPrepareBody,
@@ -1063,7 +1064,7 @@ def _public_facet_payload(
 
 def _artist_info_facet(artist: dict) -> dict:
     payload = {
-        "bio": artist.get("bio") or "",
+        "bio": normalize_artist_bio(artist.get("bio")),
         "tags": _json_list(artist.get("tags_json")),
         "similar": _json_list(artist.get("similar_json")),
         "listeners": int(artist.get("listeners") or 0),
@@ -1146,7 +1147,7 @@ def _public_artist_detail(remote_entity_uid: str) -> dict | None:
         "track_count": artist.get("track_count"),
         "primary_format": artist.get("primary_format"),
         "has_photo": bool(artist.get("has_photo")),
-        "bio": artist.get("bio"),
+        "bio": normalize_artist_bio(artist.get("bio")),
         "tags_json": artist.get("tags_json"),
         "similar_json": artist.get("similar_json"),
         "listeners": artist.get("listeners"),

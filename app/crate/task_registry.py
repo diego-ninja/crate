@@ -37,6 +37,8 @@ TASK_TYPE_LABELS: dict[str, str] = {
     # Enrichment
     "enrich_artists": "Artist Enrichment",
     "enrich_artist": "Artist Enrichment",
+    "normalize_artist_bios": "Normalize Artist Bios",
+    "research_artist_bio": "Research Artist Bio",
     "enrich_all": "Full Enrichment",
     "sync_lyrics": "Lyrics Sync",
     # Analysis

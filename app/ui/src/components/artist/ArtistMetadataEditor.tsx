@@ -13,12 +13,15 @@ import {
 } from "@crate/ui/shadcn/dialog";
 import { Input } from "@crate/ui/shadcn/input";
 import { Textarea } from "@crate/ui/shadcn/textarea";
+import { AIButton } from "@/components/ui/AIButton";
 
 import { api } from "@/lib/api";
 import { artistActionApiPath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 
 import type { ArtistData } from "./artistPageTypes";
+import { ArtistGenreSelector } from "./ArtistGenreSelector";
+import { ArtistBioResearchDialog } from "./ArtistBioResearchDialog";
 
 interface ArtistMetadataEditorProps {
   open: boolean;
@@ -29,7 +32,7 @@ interface ArtistMetadataEditorProps {
 
 interface ArtistMetadataFormState {
   bio: string;
-  tags: string;
+  genres: string[];
   urls: string;
   mbid: string;
   country: string;
@@ -60,20 +63,6 @@ function parseUrls(value: string) {
   return urls;
 }
 
-function tagsToList(value: string) {
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  for (const item of value.split(",")) {
-    const tag = item.trim();
-    const key = tag.toLowerCase();
-    if (tag && !seen.has(key)) {
-      seen.add(key);
-      tags.push(tag);
-    }
-  }
-  return tags;
-}
-
 function blankToNull(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
@@ -82,7 +71,7 @@ function blankToNull(value: string) {
 function initialState(artist: ArtistData): ArtistMetadataFormState {
   return {
     bio: artist.bio ?? "",
-    tags: (artist.tags_json ?? artist.genres ?? []).join(", "),
+    genres: artist.manual_genres ?? [],
     urls: urlsToLines(artist.urls_json),
     mbid: artist.mbid ?? "",
     country: artist.country ?? "",
@@ -104,6 +93,7 @@ export function ArtistMetadataEditor({
     initialState(artist),
   );
   const [saving, setSaving] = useState(false);
+  const [researchOpen, setResearchOpen] = useState(false);
 
   useEffect(() => {
     if (open) setValues(initialState(artist));
@@ -114,6 +104,20 @@ export function ArtistMetadataEditor({
     value: ArtistMetadataFormState[K],
   ) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function closeEditor(nextOpen: boolean) {
+    if (!nextOpen && !saving) {
+      const dirty =
+        JSON.stringify(values) !== JSON.stringify(initialState(artist));
+      if (
+        dirty &&
+        !window.confirm("Discard unsaved artist metadata changes?")
+      ) {
+        return;
+      }
+    }
+    onOpenChange(nextOpen);
   }
 
   async function save() {
@@ -127,7 +131,7 @@ export function ArtistMetadataEditor({
 
       const { task_id } = await api<{ task_id: string }>(endpoint, "PUT", {
         bio: blankToNull(values.bio),
-        tags: tagsToList(values.tags),
+        genres: values.genres,
         urls: parseUrls(values.urls),
         mbid: blankToNull(values.mbid),
         country: blankToNull(values.country),
@@ -155,124 +159,180 @@ export function ArtistMetadataEditor({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Edit artist metadata</DialogTitle>
-          <DialogDescription>
-            Update descriptive library metadata for {artist.name}. Audio files
-            are not modified by this action.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={closeEditor}>
+        <DialogContent className="max-h-[min(86vh,900px)] max-w-3xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Edit artist metadata</DialogTitle>
+            <DialogDescription>
+              Update descriptive library metadata for {artist.name}. Audio files
+              are not modified by this action.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">Bio</span>
-            <Textarea
-              value={values.bio}
-              onChange={(event) => updateField("bio", event.target.value)}
-              rows={5}
-            />
-          </label>
+          <div className="min-h-0 space-y-6 overflow-y-auto py-2 pr-1">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-white/75">
+                  Biography
+                </span>
+                <AIButton
+                  type="button"
+                  onClick={() => setResearchOpen(true)}
+                  disabled={saving}
+                >
+                  Research with AI
+                </AIButton>
+              </div>
+              <Textarea
+                aria-label="Bio"
+                value={values.bio}
+                onChange={(event) => updateField("bio", event.target.value)}
+                rows={5}
+                maxLength={4000}
+              />
+              <div className="text-right text-xs text-white/35">
+                {values.bio.length}/4000
+              </div>
+            </section>
 
-          <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">Tags</span>
-            <Input
-              value={values.tags}
-              onChange={(event) => updateField("tags", event.target.value)}
-              placeholder="screamo, post-hardcore"
-            />
-          </label>
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-white/75">Genres</h3>
+                <p className="mt-1 text-xs text-white/40">
+                  Choose canonical taxonomy genres. Provider tags remain stored
+                  separately.
+                </p>
+              </div>
+              <ArtistGenreSelector
+                value={values.genres}
+                onChange={(genres) => updateField("genres", genres)}
+                disabled={saving}
+              />
+            </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">MusicBrainz ID</span>
-              <Input
-                value={values.mbid}
-                onChange={(event) => updateField("mbid", event.target.value)}
+            <section className="space-y-3">
+              <h3 className="text-sm font-medium text-white/75">Identity</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">MusicBrainz ID</span>
+                  <Input
+                    value={values.mbid}
+                    onChange={(event) =>
+                      updateField("mbid", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Bandcamp URL</span>
+                  <Input
+                    value={values.bandcamp_url}
+                    onChange={(event) =>
+                      updateField("bandcamp_url", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Country</span>
+                  <Input
+                    value={values.country}
+                    onChange={(event) =>
+                      updateField("country", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Area</span>
+                  <Input
+                    value={values.area}
+                    onChange={(event) =>
+                      updateField("area", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Formed</span>
+                  <Input
+                    value={values.formed}
+                    onChange={(event) =>
+                      updateField("formed", event.target.value)
+                    }
+                    placeholder="1998"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Ended</span>
+                  <Input
+                    value={values.ended}
+                    onChange={(event) =>
+                      updateField("ended", event.target.value)
+                    }
+                    placeholder="optional"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="text-muted-foreground">Type</span>
+                  <select
+                    value={values.artist_type}
+                    onChange={(event) =>
+                      updateField("artist_type", event.target.value)
+                    }
+                    className="h-10 rounded-md border border-white/10 bg-black/25 px-3 text-sm text-white"
+                  >
+                    <option value="">Not specified</option>
+                    <option value="Group">Group</option>
+                    <option value="Person">Person</option>
+                    <option value="Character">Character</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-white/75">
+                  External links
+                </h3>
+                <p className="mt-1 text-xs text-white/40">
+                  One per line as label=https://…
+                </p>
+              </div>
+              <Textarea
+                aria-label="External URLs"
+                value={values.urls}
+                onChange={(event) => updateField("urls", event.target.value)}
+                rows={4}
+                placeholder="official=https://example.com"
               />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Bandcamp URL</span>
-              <Input
-                value={values.bandcamp_url}
-                onChange={(event) =>
-                  updateField("bandcamp_url", event.target.value)
-                }
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Country</span>
-              <Input
-                value={values.country}
-                onChange={(event) => updateField("country", event.target.value)}
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Area</span>
-              <Input
-                value={values.area}
-                onChange={(event) => updateField("area", event.target.value)}
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Formed</span>
-              <Input
-                value={values.formed}
-                onChange={(event) => updateField("formed", event.target.value)}
-                placeholder="1998"
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Ended</span>
-              <Input
-                value={values.ended}
-                onChange={(event) => updateField("ended", event.target.value)}
-                placeholder="optional"
-              />
-            </label>
-            <label className="grid gap-2 text-sm">
-              <span className="text-muted-foreground">Type</span>
-              <Input
-                value={values.artist_type}
-                onChange={(event) =>
-                  updateField("artist_type", event.target.value)
-                }
-                placeholder="Group, Person..."
-              />
-            </label>
+            </section>
           </div>
 
-          <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">
-              External URLs, one per line as label=url
-            </span>
-            <Textarea
-              value={values.urls}
-              onChange={(event) => updateField("urls", event.target.value)}
-              rows={4}
-              placeholder="official=https://example.com"
-            />
-          </label>
-        </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button type="button" onClick={save} disabled={saving}>
-            {saving ? (
-              <RefreshCw size={14} className="mr-2 animate-spin" />
-            ) : null}
-            Save metadata
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => closeEditor(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={save} disabled={saving}>
+              {saving ? (
+                <RefreshCw size={14} className="mr-2 animate-spin" />
+              ) : null}
+              Save metadata
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ArtistBioResearchDialog
+        open={researchOpen}
+        onOpenChange={setResearchOpen}
+        artist={artist}
+        currentBio={values.bio}
+        onApply={(bio) => updateField("bio", bio)}
+      />
+    </>
   );
 }

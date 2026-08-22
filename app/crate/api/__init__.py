@@ -425,6 +425,7 @@ def create_app() -> FastAPI:
     from crate.api.media_access import router as media_access_router
     from crate.api.browse import router as browse_router
     from crate.api.tags import router as tags_router
+    from crate.api.artist_research import router as artist_research_router
     from crate.api.scanner import router as scanner_router
     from crate.api.matcher import router as matcher_router
     from crate.api.duplicates import router as duplicates_router
@@ -522,6 +523,7 @@ def create_app() -> FastAPI:
     app.include_router(internal_federation_router)
     app.include_router(federation_remote_router)
     app.include_router(catalog_router)
+    app.include_router(artist_research_router)
     app.include_router(browse_router)
     app.include_router(tags_router)
     app.include_router(organizer_router)

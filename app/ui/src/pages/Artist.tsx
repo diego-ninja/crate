@@ -8,6 +8,7 @@ import {
 } from "@/hooks/use-artist-data";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
 import { ArtistMetadataEditor } from "@/components/artist/ArtistMetadataEditor";
+import { ArtistBioResearchDialog } from "@/components/artist/ArtistBioResearchDialog";
 import { ArtistRepairDialog } from "@/components/artist/ArtistRepairDialog";
 import { ArtistDiscographySection } from "@/components/artist/ArtistDiscographySection";
 import { ArtistAboutSection } from "@/components/artist/ArtistAboutSection";
@@ -282,6 +283,7 @@ export function Artist() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
+  const [showBioResearch, setShowBioResearch] = useState(false);
   const [showMergeArtist, setShowMergeArtist] = useState(false);
   const [mergingArtist, setMergingArtist] = useState(false);
   const [metadataAction, setMetadataAction] =
@@ -422,7 +424,10 @@ export function Artist() {
     return a.name.localeCompare(b.name);
   });
 
-  const bioText = enrichment?.lastfm?.bio ?? "";
+  const bioText =
+    data.bio !== null && data.bio !== undefined
+      ? data.bio
+      : enrichment?.lastfm?.bio ?? "";
   const mb = enrichment?.musicbrainz;
   const spotify = enrichment?.spotify;
   const lastfm = enrichment?.lastfm;
@@ -465,6 +470,22 @@ export function Artist() {
       setEnriching(false);
       toast.error("Failed to start enrichment");
     }
+  }
+
+  async function applyBioResearchProposal(proposal: string) {
+    const endpoint = artistActionApiPath(
+      { artistId: data?.id, artistEntityUid: data?.entity_uid },
+      "metadata",
+    );
+    if (!endpoint) throw new Error("Artist reference missing");
+    const queued = await api<{ task_id: string }>(endpoint, "PUT", {
+      bio: proposal,
+    });
+    const task = await waitForTask(queued.task_id, 60000);
+    if (task.status !== "completed") {
+      throw new Error(task.error || "Failed to save biography");
+    }
+    refetch();
   }
 
   async function analyzeArtist() {
@@ -704,6 +725,8 @@ export function Artist() {
             spotify={spotify}
             externalLinks={externalLinks}
             enrichmentLoading={enrichmentLoading}
+            canResearchBio={canEditMetadata}
+            onResearchBio={() => setShowBioResearch(true)}
           />
         )}
 
@@ -854,6 +877,13 @@ export function Artist() {
         onOpenChange={setShowMetadataEditor}
         artist={data}
         onSaved={refetch}
+      />
+      <ArtistBioResearchDialog
+        open={showBioResearch}
+        onOpenChange={setShowBioResearch}
+        artist={data}
+        currentBio={bioText}
+        onApply={applyBioResearchProposal}
       />
       <MergeArtistDialog
         open={showMergeArtist}

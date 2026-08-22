@@ -490,6 +490,83 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
     return {"reset": name, "enrichment": result}
 
 
+def _handle_normalize_artist_bios(task_id: str, params: dict, config: dict) -> dict:
+    """Clean legacy biography text in small, resumable database batches."""
+    del config
+    from crate.api.cache_events import broadcast_invalidation
+    from crate.db.jobs.artist_bio import normalize_artist_bios_batch
+
+    cursor = 0
+    batch_size = max(1, min(int(params.get("batch_size") or 100), 500))
+    totals = {
+        "scanned": 0,
+        "changed": 0,
+        "already_clean": 0,
+        "locked": 0,
+        "empty_after_cleaning": 0,
+        "batches": 0,
+    }
+    progress = TaskProgress(phase="normalizing bios", phase_count=1, total=0)
+    while True:
+        batch = normalize_artist_bios_batch(after_id=cursor, limit=batch_size)
+        totals["batches"] += 1
+        for key in (
+            "scanned",
+            "changed",
+            "already_clean",
+            "locked",
+            "empty_after_cleaning",
+        ):
+            totals[key] += int(batch.get(key) or 0)
+        cursor = int(batch.get("last_id") or cursor)
+        progress.done = totals["scanned"]
+        progress.item = f"{totals['scanned']} artists scanned"
+        emit_progress(task_id, progress)
+        if not batch.get("has_more"):
+            break
+    if totals["changed"]:
+        broadcast_invalidation("artist_bio", "library", "home", "global_catalog")
+    emit_task_event(task_id, "info", {"message": "Artist bios normalized", **totals})
+    return totals
+
+
+def _handle_research_artist_bio(task_id: str, params: dict, config: dict) -> dict:
+    del config
+    from crate.artist_bio_research import research_artist_bio
+    from crate.db.repositories.library import (
+        get_library_artist,
+        get_library_artist_by_entity_uid,
+        get_library_artist_by_id,
+    )
+
+    artist = None
+    if params.get("artist_id") is not None:
+        artist = get_library_artist_by_id(int(params["artist_id"]))
+    if artist is None and params.get("artist_entity_uid"):
+        artist = get_library_artist_by_entity_uid(str(params["artist_entity_uid"]))
+    if artist is None and params.get("artist_name"):
+        artist = get_library_artist(str(params["artist_name"]))
+    if artist is None:
+        return {"error": "Artist not found"}
+
+    progress = TaskProgress(phase="researching artist bio", phase_count=1, total=1)
+
+    def report(message: str) -> None:
+        progress.item = message
+        emit_progress(task_id, progress)
+
+    result = research_artist_bio(
+        artist,
+        language=str(params.get("language") or "English"),
+        progress=report,
+    )
+    progress.done = 1
+    progress.item = "Research complete"
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(task_id, "info", {"message": "Artist bio research complete"})
+    return result
+
+
 def _emit_lyrics_track_event(task_id: str, data: dict) -> None:
     if data.get("event") != "track_done":
         return
@@ -1803,6 +1880,8 @@ ENRICHMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "enrich_artists": _handle_enrich_artists,
     "sync_lyrics": _handle_sync_lyrics,
     "reset_enrichment": _handle_reset_enrichment,
+    "normalize_artist_bios": _handle_normalize_artist_bios,
+    "research_artist_bio": _handle_research_artist_bio,
     "enrich_mbids": _handle_enrich_mbids,
     "process_new_content": _handle_process_new_content,
     "compute_completeness": _handle_compute_completeness,

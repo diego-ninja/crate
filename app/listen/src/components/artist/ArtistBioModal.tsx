@@ -16,6 +16,7 @@ import {
   GenrePillRow,
   type GenreProfileItem,
 } from "@crate/ui/domain/genres/GenrePill";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 import { api } from "@/lib/api";
 import { CrateImage } from "@/components/artwork/CrateImage";
 import { openExternalUrl } from "@/lib/external-links";
@@ -107,7 +108,6 @@ export function ArtistBioModal({
   const playcount = artistInfo?.playcount ?? 0;
   const spotifyFollowers = enrichment?.spotify?.followers ?? 0;
   const spotifyPopularity = enrichment?.spotify?.popularity ?? 0;
-  const displayBio = bioExpanded ? bio : bio.slice(0, 500);
   const genreItems: GenreProfileItem[] =
     artist.genre_profile && artist.genre_profile.length > 0
       ? artist.genre_profile
@@ -220,9 +220,8 @@ export function ArtistBioModal({
         {/* Bio */}
         {bio && (
           <div>
-            <p className="whitespace-pre-line text-sm leading-7 text-white/70 sm:text-[15px]">
-              {displayBio}
-              {!bioExpanded && bio.length > 500 && "..."}
+            <p className="text-sm leading-7 text-white/70 sm:text-[15px]">
+              <ArtistBioText text={bio} maxChars={500} expanded={bioExpanded} />
             </p>
             {bio.length > 500 && (
               <button

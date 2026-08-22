@@ -620,6 +620,8 @@ _HANDLER_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "process_new_content",
             "compute_completeness",
             "refresh_probable_setlist",
+            "normalize_artist_bios",
+            "research_artist_bio",
         ),
     ),
     (
