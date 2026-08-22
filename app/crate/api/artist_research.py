@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -38,7 +40,9 @@ class ArtistBioResearchRequest(BaseModel):
     language: str = Field(default="English", min_length=2, max_length=40)
 
 
-def _queue_research(request: Request, artist: dict, body: ArtistBioResearchRequest):
+def _queue_research(
+    request: Request, artist: Mapping[str, object], body: ArtistBioResearchRequest
+):
     require_permission(request, "library.metadata.write")
     identity = str(artist.get("entity_uid") or artist.get("id") or artist.get("name"))
     dedup_key = f"artist-bio-research:{identity}"

@@ -92,7 +92,9 @@ def _clean_excerpt(value: str, *, max_chars: int = MAX_EXCERPT_CHARS) -> str:
     return value[:max_chars]
 
 
-def _get_json(url: str, *, params: dict[str, object] | None = None) -> dict | None:
+def _get_json(
+    url: str, *, params: Mapping[str, str | int] | None = None
+) -> dict | None:
     try:
         response = requests.get(
             url,
