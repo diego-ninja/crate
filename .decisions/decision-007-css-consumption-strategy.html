@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 7: CSS consumption strategy — Listen Design System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    .back-link { display: block; max-width: 1200px; margin: 0 auto 1rem; color: #475569; text-decoration: none; font-size: .85rem; } .back-link:hover { color: #2563eb; }
+    header { text-align: center; margin: 0 auto 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; } .decision-number { font-size: .75rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; } header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -.02em; margin-top: .25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .5rem; background: #e0f2fe; color: #0369a1; } .decision-description { font-size: 1rem; color: #475569; margin: .75rem auto 0; max-width: 760px; line-height: 1.7; } .instruction { margin-top: 1rem; font-size: .85rem; background: #eff6ff; color: #1d4ed8; padding: .6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; } .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); border: 2px solid #e2e8f0; display: flex; flex-direction: column; position: relative; } .option-card:hover { border-color: #6366f1; } .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .card-header { padding: 1rem 1.25rem .75rem; border-bottom: 1px solid #f1f5f9; } .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; } .option-label { font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; } .option-a .option-label { color: #7c3aed; } .option-b .option-label { color: #0891b2; } .option-c .option-label { color: #059669; } .option-d .option-label { color: #dc2626; } .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; } .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; } .chosen-badge { display: none; background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; } .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .visual-preview { min-height: 178px; padding: 1.25rem; display: flex; align-items: center; justify-content: center; background: #0a0a0f; } .option-summary { padding: 1rem 1.25rem; color: #475569; font-size: .9rem; flex: 1; } .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 1.25rem 1.25rem; font-size: .8rem; } .verdict h3 { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; } .pros h3 { color: #047857; } .cons h3 { color: #b91c1c; } .verdict ul { padding-left: 1rem; color: #64748b; } .card-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: .75rem 1.25rem; } .tell-claude { color: #475569; font-size: .75rem; }
+    .css-preview { width: 100%; max-width: 315px; padding: 13px; border-radius: 9px; background: #0f172a; border: 1px solid #334155; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; } .css-preview .selector { color: #67e8f9; } .css-preview .value { color: #86efac; } .css-preview .comment { color: #94a3b8; }
+    .inline-preview { width: 100%; max-width: 315px; padding: 13px; border-radius: 9px; background: #111821; border: 1px solid #334155; color: #cbd5e1; font-size: 10px; } .inline-preview .button { display: inline-block; padding: 7px 9px; margin-top: 9px; border-radius: 6px; background: #06b6d4; color: #082f49; } .inline-preview .warning { margin-top: 10px; color: #fcd34d; }
+    .module-preview { width: 100%; max-width: 315px; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; } .module-preview div { padding: 14px 8px; border-radius: 7px; border: 1px solid #334155; background: #17212b; color: #cbd5e1; text-align: center; } .module-preview .local { border-color: #059669; background: #194331; color: #bbf7d0; }
+    .js-preview { width: 100%; max-width: 315px; padding: 13px; border-radius: 9px; background: #0f172a; border: 1px solid #334155; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; } .js-preview .code { color: #c4b5fd; } .js-preview .danger { color: #fca5a5; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 2rem; } .comparison-section h2 { font-size: 1.25rem; color: #0f172a; margin-bottom: 1rem; } .comparison-table-wrapper { overflow-x: auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; } .comparison-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .8rem; } .comparison-table th, .comparison-table td { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; } .comparison-table th { background: #f8fafc; color: #334155; font-size: .75rem; } .comparison-table td:first-child { font-weight: 600; color: #475569; } .col-a { background: #ecfeff; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; color: #64748b; font-size: .8rem; padding-bottom: 2rem; } @media (max-width: 760px) { body { padding: 1rem; } .options-grid { grid-template-columns: 1fr; gap: 1rem; } .verdict { grid-template-columns: 1fr; } header h1 { font-size: 1.35rem; } }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">← Todas las decisiones</a>
+  <header>
+    <span class="decision-number">Decision 7 of 8</span>
+    <h1>CSS consumption strategy</h1>
+    <span class="category-badge">Technical</span>
+    <p class="decision-description">La limpieza no consiste solo en declarar tokens: también importa cómo los consume cada componente. Listen ya mezcla Tailwind, CSS global, variables parcialmente alineadas e inline styles. Necesitamos una regla clara que permita layouts calculados, canvas y artwork dinámico sin convertir cada caso visual en un escape hatch permanente.</p>
+    <p class="instruction">Dime: <strong>“Option A”</strong> · <strong>“Option A but [cambio]”</strong> · <strong>“more options”</strong></p>
+  </header>
+
+  <main class="options-grid">
+    <article class="option-card option-a chosen">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div><h2 class="option-title">CSS variables + Tailwind</h2></div>
+      <div class="visual-preview"><div class="css-preview"><div><span class="selector">.player-bar</span> {</div><div>&nbsp;&nbsp;color: <span class="value">var(--text-primary)</span>;</div><div>&nbsp;&nbsp;background: <span class="value">var(--surface-panel)</span>;</div><div>}</div><div class="comment">// dynamic geometry stays inline</div></div></div>
+      <div class="option-summary">Usar CSS custom properties como runtime de tokens y utilities Tailwind semánticas como API de consumo. Los estilos compartidos y estados complejos viven en CSS; inline queda reservado a valores calculados —por ejemplo ancho de seekbar, coordenadas, gradients derivados o estilos del canvas— con una regla revisable. Es la opción más alineada con el stack actual.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Tailwind ya es parte del proyecto.</li><li>Se necesitan themes runtime.</li><li>Hay efectos calculados legítimos.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Hay que nombrar utilities semánticas.</li><li>Inline requiere allowlist clara.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option A”</code></div>
+    </article>
+
+    <article class="option-card option-b">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"></div></div><h2 class="option-title">Inline-first runtime styles</h2></div>
+      <div class="visual-preview"><div class="inline-preview"><span class="button">dynamic button</span><div class="warning">styles resolved in React</div></div></div>
+      <div class="option-summary">Resolver la mayoría de valores visuales en objetos de estilo React y dejar CSS para layout global. Simplifica algunos casos dinámicos, pero hace más difícil inspeccionar themes, aumenta rerenders potenciales y favorece que cada componente invente su propia semántica.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>La UI es muy dinámica.</li><li>El runtime calcula casi todo.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Peor cacheabilidad y legibilidad.</li><li>Más difícil aplicar skins globales.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option B”</code></div>
+    </article>
+
+    <article class="option-card option-c">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"></div></div><h2 class="option-title">CSS Modules per feature</h2></div>
+      <div class="visual-preview"><div class="module-preview"><div class="local">Player.module.css</div><div>local scope<br><br>tokens</div></div></div>
+      <div class="option-summary">Mover cada feature a CSS Modules para encapsular clases y reducir colisiones. Puede mejorar ownership local, pero añade una convención paralela a Tailwind y no resuelve por sí misma la semántica de tokens, el runtime de skins ni los estilos globales de superficies.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Hay mucho CSS feature-local.</li><li>Se necesita aislamiento fuerte.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Duplica formas de estilizar.</li><li>Transición costosa en el stack actual.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option C”</code></div>
+    </article>
+
+    <article class="option-card option-d">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"></div></div><h2 class="option-title">CSS-in-JS engine</h2></div>
+      <div class="visual-preview"><div class="js-preview"><div><span class="code">const style = css({</span></div><div>&nbsp;&nbsp;color: token(<span class="code">“accent”</span>),</div><div>&nbsp;&nbsp;...props</div><div><span class="code">})</span></div><div class="danger">runtime styles everywhere</div></div></div>
+      <div class="option-summary">Introducir un motor CSS-in-JS para expresar tokens, variantes y estados desde React. Es potente, pero innecesario para el objetivo: añade runtime, complejidad de SSR/build y otra API de estilos que conviviría con Tailwind y CSS existente.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>El runtime styling es requisito central.</li><li>El stack ya está basado en ello.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Más coste y superficie técnica.</li><li>No encaja con la dirección actual.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option D”</code></div>
+    </article>
+  </main>
+
+  <section class="comparison-section"><h2>How They Compare</h2><div class="comparison-table-wrapper"><table class="comparison-table">
+    <thead><tr><th>Dimension</th><th class="col-a">Option A</th><th>Option B</th><th>Option C</th><th>Option D</th></tr></thead>
+    <tbody>
+      <tr><td>Compatibilidad con stack</td><td class="col-a">Muy alta</td><td>Media</td><td>Media-baja</td><td>Baja</td></tr>
+      <tr><td>Themes runtime</td><td class="col-a">Natural vía variables</td><td>Natural pero disperso</td><td>Posible</td><td>Potente</td></tr>
+      <tr><td>Inline styles</td><td class="col-a">Solo dinámicos y allowlisted</td><td>Principal</td><td>Excepcional</td><td>Generados por runtime</td></tr>
+      <tr><td>Performance y debug</td><td class="col-a">Predecible</td><td>Variable</td><td>Predecible</td><td>Más complejo</td></tr>
+      <tr><td>Coste de migración</td><td class="col-a">Controlado</td><td>Medio</td><td>Alto</td><td>Muy alto</td></tr>
+      <tr><td>Recomendación</td><td class="col-a">Base recomendada</td><td>Solo casos concretos</td><td>Solo si cambia el stack</td><td>No recomendado</td></tr>
+    </tbody>
+  </table></div></section>
+  <div class="page-footer"><p>Decisión elegida: Option A. La siguiente decisión fija la migración y los quality gates.</p></div>
+</body>
+</html>

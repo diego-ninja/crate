@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 4: Default parity — Listen Design System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    .back-link { display: block; max-width: 1200px; margin: 0 auto 1rem; color: #475569; text-decoration: none; font-size: .85rem; } .back-link:hover { color: #2563eb; }
+    header { text-align: center; margin: 0 auto 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; }
+    .decision-number { font-size: .75rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; } header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -.02em; margin-top: .25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .5rem; background: #fce7f3; color: #be185d; }
+    .decision-description { font-size: 1rem; color: #475569; margin: .75rem auto 0; max-width: 760px; line-height: 1.7; } .instruction { margin-top: 1rem; font-size: .85rem; background: #eff6ff; color: #1d4ed8; padding: .6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; } .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); border: 2px solid #e2e8f0; display: flex; flex-direction: column; position: relative; } .option-card:hover { border-color: #6366f1; } .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .card-header { padding: 1rem 1.25rem .75rem; border-bottom: 1px solid #f1f5f9; } .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; } .option-label { font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; } .option-a .option-label { color: #7c3aed; } .option-b .option-label { color: #0891b2; } .option-c .option-label { color: #059669; } .option-d .option-label { color: #dc2626; } .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; } .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; } .visual-preview { min-height: 178px; padding: 1.25rem; display: flex; align-items: center; justify-content: center; background: #0a0a0f; } .option-summary { padding: 1rem 1.25rem; color: #475569; font-size: .9rem; flex: 1; } .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 1.25rem 1.25rem; font-size: .8rem; } .verdict h3 { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; } .pros h3 { color: #047857; } .cons h3 { color: #b91c1c; } .verdict ul { padding-left: 1rem; color: #64748b; }
+    .chosen-badge { display: none; background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; } .option-card.chosen .chosen-badge { display: inline-block; } .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .card-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: .75rem 1.25rem; } .tell-claude { color: #475569; font-size: .75rem; }
+    .chosen-badge { display: none; background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; } .option-card.chosen .chosen-badge { display: inline-block; }
+    .screen-preview { width: 100%; max-width: 315px; padding: 10px; border: 1px solid #334155; border-radius: 10px; background: #111821; color: #f1f5f9; } .screen-preview .bar { height: 10px; width: 56%; border-radius: 99px; background: #06b6d4; margin-bottom: 12px; } .screen-preview .row { height: 28px; border-radius: 6px; border: 1px solid #26313c; background: #17212b; margin-top: 6px; } .screen-preview .row.accent { border-color: #0891b2; background: #14303a; }
+    .diff-preview { width: 100%; max-width: 315px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; padding: 13px; border-radius: 9px; background: #0f172a; border: 1px solid #334155; color: #cbd5e1; } .diff-preview .old { color: #fca5a5; } .diff-preview .new { color: #86efac; } .diff-preview .note { margin-top: 8px; color: #94a3b8; }
+    .redesign-preview { width: 100%; max-width: 315px; display: grid; grid-template-columns: 55px 1fr; gap: 7px; color: #cbd5e1; font-size: 9px; } .redesign-preview div { min-height: 76px; padding: 8px; border-radius: 7px; background: #17212b; border: 1px solid #334155; } .redesign-preview .main { background: #14303a; border-color: #0891b2; }
+    .legacy-preview { width: 100%; max-width: 315px; padding: 13px; border-radius: 10px; background: #111821; color: #cbd5e1; font-size: 10px; } .legacy-preview .dot { display: inline-block; width: 11px; height: 11px; margin: 2px 4px 2px 0; border-radius: 50%; background: #06b6d4; } .legacy-preview .dot.alt { background: #1da0c3; } .legacy-preview .dot.other { background: #0891b2; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 2rem; } .comparison-section h2 { font-size: 1.25rem; color: #0f172a; margin-bottom: 1rem; } .comparison-table-wrapper { overflow-x: auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; } .comparison-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .8rem; } .comparison-table th, .comparison-table td { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; } .comparison-table th { background: #f8fafc; color: #334155; font-size: .75rem; } .comparison-table td:first-child { font-weight: 600; color: #475569; } .col-b { background: #fdf2f8; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; color: #64748b; font-size: .8rem; padding-bottom: 2rem; } @media (max-width: 760px) { body { padding: 1rem; } .options-grid { grid-template-columns: 1fr; gap: 1rem; } .verdict { grid-template-columns: 1fr; } header h1 { font-size: 1.35rem; } }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">← Todas las decisiones</a>
+  <header>
+    <span class="decision-number">Decision 4 of 8</span>
+    <h1>Default parity</h1>
+    <span class="category-badge">Visual</span>
+    <p class="decision-description">El aspecto actual de Listen debe convertirse en el theme default, pero el estado actual contiene colores equivalentes con nombres distintos, opacidades repetidas y decisiones accidentales de componentes. Esta decisión fija si la migración debe conservar cada detalle existente o preservar la identidad y la experiencia mientras normaliza la implementación. El objetivo es que los cambios intencionados sean visibles y los cambios accidentales sean detectables.</p>
+    <p class="instruction">Dime: <strong>“Option B”</strong> · <strong>“Option A but [cambio]”</strong> · <strong>“more options”</strong></p>
+  </header>
+
+  <main class="options-grid">
+    <article class="option-card option-a">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"></div></div><h2 class="option-title">Pixel freeze</h2></div>
+      <div class="visual-preview"><div class="screen-preview"><div class="bar"></div><div class="row"></div><div class="row"></div><div class="row accent"></div></div></div>
+      <div class="option-summary">Congelar visualmente cada pantalla y no aceptar diferencias apreciables durante la migración. Todo valor actual se convierte en token aunque esté duplicado. Es útil si hay snapshots visuales fiables, pero puede perpetuar decisiones inconsistentes y hacer que el nuevo contrato sea innecesariamente grande.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>La paridad pixel-perfect es requisito.</li><li>Hay una suite visual madura.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Conserva accidentalmente el drift.</li><li>Complica la taxonomía de tokens.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option A”</code></div>
+    </article>
+
+    <article class="option-card option-b chosen">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div><h2 class="option-title">Perceptual parity</h2></div>
+      <div class="visual-preview"><div class="diff-preview"><div class="old">- #1da0c3 / #0891b2 / #06b6d4</div><div class="new">+ --color-accent-action</div><div class="note">same intent · one contract · tested contrast</div></div></div>
+      <div class="option-summary">Preservar la identidad, jerarquía, densidad y sensación del Listen actual, pero consolidar valores equivalentes bajo tokens semánticos. Se permiten pequeños cambios de implementación si mejoran contraste, consistencia o responsive; cualquier diferencia visual deliberada queda documentada. Es el equilibrio adecuado para obtener un default reconocible y código limpio.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>El default debe sentirse igual.</li><li>Se quiere eliminar duplicación real.</li><li>La QA visual puede validar intención.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Hay que definir tolerancias visuales.</li><li>Requiere revisión de pantallas clave.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option B”</code></div>
+    </article>
+
+    <article class="option-card option-c">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"></div></div><h2 class="option-title">Redesign during cleanup</h2></div>
+      <div class="visual-preview"><div class="redesign-preview"><div>new nav</div><div class="main">new cards<br><br>new player<br><br>new density</div></div></div>
+      <div class="option-summary">Aprovechar la migración para rediseñar el default en paralelo. Permite corregir problemas visuales de raíz, pero mezcla la definición del sistema con decisiones de producto y hace imposible saber si una regresión viene del refactor o del rediseño. Aumenta mucho el alcance.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Existe un rediseño aprobado.</li><li>Se acepta cambiar experiencia.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Scope y QA se multiplican.</li><li>Se pierde el baseline actual.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option C”</code></div>
+    </article>
+
+    <article class="option-card option-d">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"></div></div><h2 class="option-title">Legacy layering</h2></div>
+      <div class="visual-preview"><div class="legacy-preview"><span class="dot"></span><span class="dot alt"></span><span class="dot other"></span><p>legacy values remain as fallback</p></div></div>
+      <div class="option-summary">Añadir themes y tokens por encima de la implementación actual, dejando la mayoría de hardcodes como fallback. Reduce el riesgo de la primera migración, pero mantiene dos fuentes de verdad y permite que nuevas pantallas sigan copiando el legado.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Hay una ventana de cambio mínima.</li><li>Se necesita un puente temporal.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>El drift no desaparece.</li><li>El puente se vuelve permanente.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option D”</code></div>
+    </article>
+  </main>
+
+  <section class="comparison-section"><h2>How They Compare</h2><div class="comparison-table-wrapper"><table class="comparison-table">
+    <thead><tr><th>Dimension</th><th>Option A</th><th class="col-b">Option B</th><th>Option C</th><th>Option D</th></tr></thead>
+    <tbody>
+      <tr><td>Fidelidad al default</td><td>Pixel exacta</td><td class="col-b">Perceptual e intencionada</td><td>Se redefine</td><td>Actual con capas</td></tr>
+      <tr><td>Eliminación de drift</td><td>Baja</td><td class="col-b">Alta</td><td>Alta, pero mezclada</td><td>Baja</td></tr>
+      <tr><td>Complejidad de tokens</td><td>Alta</td><td class="col-b">Controlada</td><td>Alta</td><td>Duplicada</td></tr>
+      <tr><td>Riesgo de scope</td><td>Medio</td><td class="col-b">Controlado</td><td>Muy alto</td><td>Bajo al inicio</td></tr>
+      <tr><td>QA necesaria</td><td>Muy alta</td><td class="col-b">Alta en pantallas clave</td><td>Muy alta</td><td>Media</td></tr>
+      <tr><td>Recomendación</td><td>Solo con snapshots maduros</td><td class="col-b">Base recomendada</td><td>Iniciativa separada</td><td>Puente temporal</td></tr>
+    </tbody>
+  </table></div></section>
+  <div class="page-footer"><p>Decisión elegida: Option B. La siguiente decisión fija cómo protegeremos el contrato de tokens.</p></div>
+</body>
+</html>
