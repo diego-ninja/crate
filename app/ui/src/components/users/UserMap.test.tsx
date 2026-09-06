@@ -39,7 +39,8 @@ vi.mock("react-leaflet", () => ({
   }),
 }));
 
-import { UserMap, groupMapUsers, type MapUser } from "./UserMap";
+import { UserMap } from "./UserMap";
+import { groupMapUsers, type MapUser } from "./user-map-utils";
 
 const users: MapUser[] = [
   {

@@ -677,6 +677,543 @@ function authModeSummary(
   return "No sign-in method configured";
 }
 
+interface UsersViewModel {
+  users: UserRecord[];
+  counts: { total: number; online: number; listening: number; devices: number };
+  canCreateUsers: boolean;
+  canViewUserMap: boolean;
+  canDeleteUsers: boolean;
+  addOpen: boolean;
+  setAddOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  inviteOpen: boolean;
+  setInviteOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  deleteTarget: UserRecord | null;
+  setDeleteTarget: React.Dispatch<React.SetStateAction<UserRecord | null>>;
+  detailTarget: UserRecord | null;
+  setDetailTarget: React.Dispatch<React.SetStateAction<UserRecord | null>>;
+  query: string;
+  setQuery: React.Dispatch<React.SetStateAction<string>>;
+  filter: UserFilter;
+  setFilter: React.Dispatch<React.SetStateAction<UserFilter>>;
+  page: number;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+  setInspectParam: (userId: number | null) => void;
+  openUserDetail: (user: UserRecord) => void;
+  inspectMapUser: (userId: number) => void;
+  fetchUsers: () => Promise<void>;
+  handleDelete: () => Promise<void>;
+  showingStart: number;
+  showingEnd: number;
+  filteredUsers: UserRecord[];
+  paginatedUsers: UserRecord[];
+  pageCount: number;
+  canManageStatus: boolean;
+  canManagePasswords: boolean;
+  canManageSessions: boolean;
+  canAssignRoles: boolean;
+}
+
+function UsersHeader({ model }: { model: UsersViewModel }) {
+  const { counts, canCreateUsers, setAddOpen, setInviteOpen } = model;
+  return (
+    <section className="rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+              <UserRound size={22} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-white">
+                Users
+              </h1>
+              <p className="text-sm text-white/55">
+                Presence, linked identities, active devices and recent listening
+                activity across the system.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <CrateChip icon={UserRound}>{counts.total} total users</CrateChip>
+            <CrateChip
+              icon={Activity}
+              className={
+                counts.online > 0
+                  ? "border-green-500/25 bg-green-500/10 text-green-300"
+                  : undefined
+              }
+            >
+              {counts.online} active now
+            </CrateChip>
+            <CrateChip
+              icon={Headphones}
+              className={
+                counts.listening > 0
+                  ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+                  : undefined
+              }
+            >
+              {counts.listening} listening
+            </CrateChip>
+            <CrateChip icon={Monitor}>
+              {counts.devices} active devices
+            </CrateChip>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {canCreateUsers ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setInviteOpen(true)}
+              >
+                <Send size={16} className="mr-2" />
+                Invite user
+              </Button>
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Plus size={16} className="mr-2" />
+                Add user
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function UsersMapSection({ model }: { model: UsersViewModel }) {
+  const { canViewUserMap, inspectMapUser } = model;
+  return (
+    <>
+      {canViewUserMap ? (
+        <Suspense fallback={null}>
+          <UserMap onInspectUser={(user) => inspectMapUser(user.id)} />
+        </Suspense>
+      ) : null}
+    </>
+  );
+}
+
+function UsersDirectory({ model }: { model: UsersViewModel }) {
+  const {
+    users,
+    canDeleteUsers,
+    setDeleteTarget,
+    query,
+    setQuery,
+    filter,
+    setFilter,
+    page,
+    setPage,
+    openUserDetail,
+    showingStart,
+    showingEnd,
+    filteredUsers,
+    paginatedUsers,
+    pageCount,
+  } = model;
+  return (
+    <Card className="border-white/10 bg-panel-surface shadow-[0_24px_70px_rgba(0,0,0,0.2)]">
+      <CardContent className="space-y-4 pt-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full max-w-md">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+            />
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search users..."
+              className="pl-10"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: "all", label: "All", count: users.length },
+              {
+                key: "online",
+                label: "Active",
+                count: users.filter((user) => user.online_now).length,
+              },
+              {
+                key: "listening",
+                label: "Listening",
+                count: users.filter((user) => user.listening_now).length,
+              },
+              {
+                key: "admins",
+                label: "Admins",
+                count: users.filter((user) =>
+                  rolesForUser(user).some(
+                    (role) => role === "admin" || role === "owner",
+                  ),
+                ).length,
+              },
+              {
+                key: "suspended",
+                label: "Suspended",
+                count: users.filter((user) => userStatus(user) === "suspended")
+                  .length,
+              },
+              {
+                key: "deleted",
+                label: "Deleted",
+                count: users.filter((user) => userStatus(user) === "deleted")
+                  .length,
+              },
+              {
+                key: "inactive",
+                label: "Inactive",
+                count: users.filter(
+                  (user) => userActivityStatus(user) === "inactive",
+                ).length,
+              },
+            ].map((item) => (
+              <CratePill
+                key={item.key}
+                active={filter === item.key}
+                onClick={() => {
+                  setFilter(item.key as UserFilter);
+                  setPage(1);
+                }}
+              >
+                {item.label} {item.count}
+              </CratePill>
+            ))}
+          </div>
+        </div>
+
+        <div className="text-sm text-white/45">
+          Showing {showingStart}-{showingEnd} of {filteredUsers.length} users
+        </div>
+
+        <div className="space-y-3">
+          {paginatedUsers.map((user) => (
+            <UserDirectoryCard
+              key={user.id}
+              user={user}
+              canDeleteUsers={canDeleteUsers}
+              onInspect={openUserDetail}
+              onDelete={setDeleteTarget}
+            />
+          ))}
+
+          {filteredUsers.length === 0 ? (
+            <div className="rounded-md border border-dashed border-white/10 bg-black/15 px-6 py-10 text-center text-sm text-white/45">
+              No users match the current search or filter.
+            </div>
+          ) : null}
+        </div>
+
+        {filteredUsers.length > 0 && pageCount > 1 ? (
+          <div className="flex items-center justify-between gap-3 border-t border-white/8 pt-4">
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label="Previous page"
+              disabled={page === 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft size={15} className="mr-1" />
+              Previous
+            </Button>
+            <span className="text-xs text-white/45">
+              Page {page} of {pageCount}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label="Next page"
+              disabled={page === pageCount}
+              onClick={() =>
+                setPage((current) => Math.min(pageCount, current + 1))
+              }
+            >
+              Next
+              <ChevronRight size={15} className="ml-1" />
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface UserDirectoryCardProps {
+  user: UserRecord;
+  canDeleteUsers: boolean;
+  onInspect: (user: UserRecord) => void;
+  onDelete: (user: UserRecord) => void;
+}
+
+function UserDirectoryCard({
+  user,
+  canDeleteUsers,
+  onInspect,
+  onDelete,
+}: UserDirectoryCardProps) {
+  return (
+    <div className="rounded-md border border-white/8 bg-black/15 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1 space-y-3">
+          <UserDirectoryIdentity user={user} />
+          <UserDirectoryActivity user={user} />
+        </div>
+        <UserDirectoryCardActions
+          user={user}
+          canDeleteUsers={canDeleteUsers}
+          onInspect={onInspect}
+          onDelete={onDelete}
+        />
+      </div>
+    </div>
+  );
+}
+
+function UserDirectoryIdentity({ user }: { user: UserRecord }) {
+  return (
+    <>
+      <div className="flex items-start gap-3">
+        <UserAvatar user={user} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              {user.name || user.email}
+            </h2>
+            {rolesForUser(user).map((role) => (
+              <Badge
+                key={role}
+                variant={
+                  role === "admin" || role === "owner" ? "default" : "secondary"
+                }
+              >
+                {roleLabel(role)}
+              </Badge>
+            ))}
+            <Badge
+              variant="outline"
+              className={statusBadgeClass(userStatus(user))}
+            >
+              {statusLabel(userStatus(user))}
+            </Badge>
+            {userActivityStatus(user) !== "active" ? (
+              <Badge
+                variant="outline"
+                className={activityBadgeClass(userActivityStatus(user))}
+              >
+                {activityLabel(userActivityStatus(user))}
+              </Badge>
+            ) : null}
+            {user.username ? (
+              <Badge variant="outline">@{user.username}</Badge>
+            ) : null}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-sm text-white/45">
+            <Mail size={13} />
+            <span className="truncate">{user.email}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {(user.connected_accounts || []).map((account) => (
+          <CrateChip
+            key={`${user.id}-${account.provider}`}
+            className="text-[11px]"
+          >
+            {account.provider}
+            {account.external_username ? ` · ${account.external_username}` : ""}
+          </CrateChip>
+        ))}
+        {(user.connected_accounts || []).length === 0 ? (
+          <CrateChip className="text-[11px] text-white/45">
+            No linked providers
+          </CrateChip>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function UserDirectoryActivity({ user }: { user: UserRecord }) {
+  return (
+    <>
+      <UserPresence user={user} />
+      {user.listening_now && user.current_track ? (
+        <CurrentTrackLine track={user.current_track} />
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <UserMetric
+          label="Presence"
+          value={
+            (user.active_devices ?? 0) > 0
+              ? `${user.active_devices} active device${
+                  (user.active_devices ?? 0) === 1 ? "" : "s"
+                }`
+              : user.last_seen_at
+                ? `Seen ${formatRelativeTimestamp(user.last_seen_at)}`
+                : "No activity yet"
+          }
+        />
+        <UserMetric
+          label="Playback"
+          value={
+            user.current_track?.title
+              ? `${user.current_track.title}${
+                  user.current_track.artist
+                    ? ` · ${user.current_track.artist}`
+                    : ""
+                }`
+              : user.last_played_at
+                ? `Last play ${formatRelativeTimestamp(user.last_played_at)}`
+                : "No play signal"
+          }
+        />
+        <UserMetric label="Identity" value={authModeSummary(user)} />
+      </div>
+    </>
+  );
+}
+
+function UserMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-white/8 bg-black/15 p-3">
+      <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
+        {label}
+      </div>
+      <div className="mt-1 text-sm text-white/78">{value}</div>
+    </div>
+  );
+}
+
+function UserDirectoryCardActions({
+  user,
+  canDeleteUsers,
+  onInspect,
+  onDelete,
+}: UserDirectoryCardProps) {
+  return (
+    <div className="flex min-w-[220px] flex-col gap-3 xl:items-end">
+      <div className="grid grid-cols-2 gap-3 text-sm text-white/45 xl:text-right">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
+            Last seen
+          </div>
+          <div className="mt-1 text-white/75">
+            {formatRelativeTimestamp(user.last_seen_at)}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
+            Last login
+          </div>
+          <div className="mt-1 text-white/75">
+            {formatRelativeTimestamp(user.last_login)}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-2 xl:justify-end">
+        <Button variant="outline" size="sm" onClick={() => onInspect(user)}>
+          <Info size={14} className="mr-2" />
+          Inspect
+        </Button>
+        {canDeleteUsers ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/25 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+            onClick={() => onDelete(user)}
+            disabled={userStatus(user) === "deleted"}
+          >
+            <Trash2 size={14} className="mr-2" />
+            Delete
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+function UsersDialogs({ model }: { model: UsersViewModel }) {
+  const {
+    canCreateUsers,
+    addOpen,
+    setAddOpen,
+    inviteOpen,
+    setInviteOpen,
+    deleteTarget,
+    setDeleteTarget,
+    detailTarget,
+    setDetailTarget,
+    setInspectParam,
+    fetchUsers,
+    handleDelete,
+    canManageStatus,
+    canManagePasswords,
+    canManageSessions,
+    canAssignRoles,
+  } = model;
+  return (
+    <>
+      <AddUserDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSuccess={fetchUsers}
+        canAssignRoles={canAssignRoles}
+      />
+      {canCreateUsers ? (
+        <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      ) : null}
+
+      <UserDetailDialog
+        user={detailTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailTarget(null);
+            setInspectParam(null);
+          }
+        }}
+        onSuccess={fetchUsers}
+        canManageStatus={canManageStatus}
+        canManagePasswords={canManagePasswords}
+        canManageSessions={canManageSessions}
+        canAssignRoles={canAssignRoles}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Delete user"
+        description={`Soft-delete ${
+          deleteTarget?.name || deleteTarget?.email
+        }? Open sessions will be revoked and owned contributions may be queued for cleanup.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDelete}
+      />
+    </>
+  );
+}
+
+function UsersView({ model }: { model: UsersViewModel }) {
+  return (
+    <div className="space-y-6">
+      <UsersHeader model={model} />
+      <UsersMapSection model={model} />
+      <UsersDirectory model={model} />
+      <UsersDialogs model={model} />
+    </div>
+  );
+}
 export function Users() {
   const { user: currentUser, hasCapability } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -838,407 +1375,43 @@ export function Users() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
-                <UserRound size={22} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white">
-                  Users
-                </h1>
-                <p className="text-sm text-white/55">
-                  Presence, linked identities, active devices and recent
-                  listening activity across the system.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <CrateChip icon={UserRound}>{counts.total} total users</CrateChip>
-              <CrateChip
-                icon={Activity}
-                className={
-                  counts.online > 0
-                    ? "border-green-500/25 bg-green-500/10 text-green-300"
-                    : undefined
-                }
-              >
-                {counts.online} active now
-              </CrateChip>
-              <CrateChip
-                icon={Headphones}
-                className={
-                  counts.listening > 0
-                    ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
-                    : undefined
-                }
-              >
-                {counts.listening} listening
-              </CrateChip>
-              <CrateChip icon={Monitor}>
-                {counts.devices} active devices
-              </CrateChip>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {canCreateUsers ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  <Send size={16} className="mr-2" />
-                  Invite user
-                </Button>
-                <Button size="sm" onClick={() => setAddOpen(true)}>
-                  <Plus size={16} className="mr-2" />
-                  Add user
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      {canViewUserMap ? (
-        <Suspense fallback={null}>
-          <UserMap onInspectUser={(user) => inspectMapUser(user.id)} />
-        </Suspense>
-      ) : null}
-
-      <Card className="border-white/10 bg-panel-surface shadow-[0_24px_70px_rgba(0,0,0,0.2)]">
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full max-w-md">
-              <Search
-                size={14}
-                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
-              />
-              <Input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search users..."
-                className="pl-10"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { key: "all", label: "All", count: users.length },
-                {
-                  key: "online",
-                  label: "Active",
-                  count: users.filter((user) => user.online_now).length,
-                },
-                {
-                  key: "listening",
-                  label: "Listening",
-                  count: users.filter((user) => user.listening_now).length,
-                },
-                {
-                  key: "admins",
-                  label: "Admins",
-                  count: users.filter((user) =>
-                    rolesForUser(user).some(
-                      (role) => role === "admin" || role === "owner",
-                    ),
-                  ).length,
-                },
-                {
-                  key: "suspended",
-                  label: "Suspended",
-                  count: users.filter(
-                    (user) => userStatus(user) === "suspended",
-                  ).length,
-                },
-                {
-                  key: "deleted",
-                  label: "Deleted",
-                  count: users.filter((user) => userStatus(user) === "deleted")
-                    .length,
-                },
-                {
-                  key: "inactive",
-                  label: "Inactive",
-                  count: users.filter(
-                    (user) => userActivityStatus(user) === "inactive",
-                  ).length,
-                },
-              ].map((item) => (
-                <CratePill
-                  key={item.key}
-                  active={filter === item.key}
-                  onClick={() => {
-                    setFilter(item.key as UserFilter);
-                    setPage(1);
-                  }}
-                >
-                  {item.label} {item.count}
-                </CratePill>
-              ))}
-            </div>
-          </div>
-
-          <div className="text-sm text-white/45">
-            Showing {showingStart}-{showingEnd} of {filteredUsers.length} users
-          </div>
-
-          <div className="space-y-3">
-            {paginatedUsers.map((user) => (
-              <div
-                key={user.id}
-                className="rounded-md border border-white/8 bg-black/15 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]"
-              >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div className="flex items-start gap-3">
-                      <UserAvatar user={user} size="md" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-lg font-semibold tracking-tight text-white">
-                            {user.name || user.email}
-                          </h2>
-                          {rolesForUser(user).map((role) => (
-                            <Badge
-                              key={role}
-                              variant={
-                                role === "admin" || role === "owner"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
-                              {roleLabel(role)}
-                            </Badge>
-                          ))}
-                          <Badge
-                            variant="outline"
-                            className={statusBadgeClass(userStatus(user))}
-                          >
-                            {statusLabel(userStatus(user))}
-                          </Badge>
-                          {userActivityStatus(user) !== "active" ? (
-                            <Badge
-                              variant="outline"
-                              className={activityBadgeClass(
-                                userActivityStatus(user),
-                              )}
-                            >
-                              {activityLabel(userActivityStatus(user))}
-                            </Badge>
-                          ) : null}
-                          {user.username ? (
-                            <Badge variant="outline">@{user.username}</Badge>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 text-sm text-white/45">
-                          <Mail size={13} />
-                          <span className="truncate">{user.email}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <UserPresence user={user} />
-
-                    {user.listening_now && user.current_track ? (
-                      <CurrentTrackLine track={user.current_track} />
-                    ) : null}
-
-                    <div className="flex flex-wrap gap-2">
-                      {(user.connected_accounts || []).map((account) => (
-                        <CrateChip
-                          key={`${user.id}-${account.provider}`}
-                          className="text-[11px]"
-                        >
-                          {account.provider}
-                          {account.external_username
-                            ? ` · ${account.external_username}`
-                            : ""}
-                        </CrateChip>
-                      ))}
-                      {(user.connected_accounts || []).length === 0 ? (
-                        <CrateChip className="text-[11px] text-white/45">
-                          No linked providers
-                        </CrateChip>
-                      ) : null}
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
-                          Presence
-                        </div>
-                        <div className="mt-1 text-sm text-white/78">
-                          {(user.active_devices ?? 0) > 0
-                            ? `${user.active_devices} active device${
-                                (user.active_devices ?? 0) === 1 ? "" : "s"
-                              }`
-                            : user.last_seen_at
-                              ? `Seen ${formatRelativeTimestamp(
-                                  user.last_seen_at,
-                                )}`
-                              : "No activity yet"}
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
-                          Playback
-                        </div>
-                        <div className="mt-1 text-sm text-white/78">
-                          {user.current_track?.title
-                            ? `${user.current_track.title}${
-                                user.current_track.artist
-                                  ? ` · ${user.current_track.artist}`
-                                  : ""
-                              }`
-                            : user.last_played_at
-                              ? `Last play ${formatRelativeTimestamp(
-                                  user.last_played_at,
-                                )}`
-                              : "No play signal"}
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
-                          Identity
-                        </div>
-                        <div className="mt-1 text-sm text-white/78">
-                          {authModeSummary(user)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex min-w-[220px] flex-col gap-3 xl:items-end">
-                    <div className="grid grid-cols-2 gap-3 text-sm text-white/45 xl:text-right">
-                      <div>
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
-                          Last seen
-                        </div>
-                        <div className="mt-1 text-white/75">
-                          {formatRelativeTimestamp(user.last_seen_at)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">
-                          Last login
-                        </div>
-                        <div className="mt-1 text-white/75">
-                          {formatRelativeTimestamp(user.last_login)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 xl:justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openUserDetail(user)}
-                      >
-                        <Info size={14} className="mr-2" />
-                        Inspect
-                      </Button>
-                      {canDeleteUsers ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-red-500/25 text-red-300 hover:bg-red-500/10 hover:text-red-200"
-                          onClick={() => setDeleteTarget(user)}
-                          disabled={userStatus(user) === "deleted"}
-                        >
-                          <Trash2 size={14} className="mr-2" />
-                          Delete
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {filteredUsers.length === 0 ? (
-              <div className="rounded-md border border-dashed border-white/10 bg-black/15 px-6 py-10 text-center text-sm text-white/45">
-                No users match the current search or filter.
-              </div>
-            ) : null}
-          </div>
-
-          {filteredUsers.length > 0 && pageCount > 1 ? (
-            <div className="flex items-center justify-between gap-3 border-t border-white/8 pt-4">
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label="Previous page"
-                disabled={page === 1}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-              >
-                <ChevronLeft size={15} className="mr-1" />
-                Previous
-              </Button>
-              <span className="text-xs text-white/45">
-                Page {page} of {pageCount}
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                aria-label="Next page"
-                disabled={page === pageCount}
-                onClick={() =>
-                  setPage((current) => Math.min(pageCount, current + 1))
-                }
-              >
-                Next
-                <ChevronRight size={15} className="ml-1" />
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <AddUserDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        onSuccess={fetchUsers}
-        canAssignRoles={canAssignRoles}
-      />
-      {canCreateUsers ? (
-        <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
-      ) : null}
-
-      <UserDetailDialog
-        user={detailTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDetailTarget(null);
-            setInspectParam(null);
-          }
-        }}
-        onSuccess={fetchUsers}
-        canManageStatus={canManageStatus}
-        canManagePasswords={canManagePasswords}
-        canManageSessions={canManageSessions}
-        canAssignRoles={canAssignRoles}
-      />
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        title="Delete user"
-        description={`Soft-delete ${
-          deleteTarget?.name || deleteTarget?.email
-        }? Open sessions will be revoked and owned contributions may be queued for cleanup.`}
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleDelete}
-      />
-    </div>
+    <UsersView
+      model={{
+        users,
+        counts,
+        canCreateUsers,
+        canViewUserMap,
+        canDeleteUsers,
+        addOpen,
+        setAddOpen,
+        inviteOpen,
+        setInviteOpen,
+        deleteTarget,
+        setDeleteTarget,
+        detailTarget,
+        setDetailTarget,
+        query,
+        setQuery,
+        filter,
+        setFilter,
+        page,
+        setPage,
+        setInspectParam,
+        openUserDetail,
+        inspectMapUser,
+        fetchUsers,
+        handleDelete,
+        showingStart,
+        showingEnd,
+        filteredUsers,
+        paginatedUsers,
+        pageCount,
+        canManageStatus,
+        canManagePasswords,
+        canManageSessions,
+        canAssignRoles,
+      }}
+    />
   );
 }
 
@@ -1278,6 +1451,9 @@ function UserDetailDialog({
     try {
       const data = await api<UserDetail>(`/api/auth/users/${userId}`);
       setDetail(data);
+      setRoleDraft(rolesForUser(data));
+      setStatusDraft(userStatus(data));
+      setStatusReason(data.status_reason ?? "");
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Failed to load user detail",
@@ -1297,19 +1473,6 @@ function UserDetailDialog({
     setSessionFilter("active");
     void fetchDetail(user.id);
   }, [open, user]);
-
-  useEffect(() => {
-    if (detail) {
-      setRoleDraft(rolesForUser(detail));
-    }
-  }, [detail]);
-
-  useEffect(() => {
-    if (detail?.status) {
-      setStatusDraft(userStatus(detail));
-      setStatusReason(detail.status_reason ?? "");
-    }
-  }, [detail]);
 
   async function handleRoleSave() {
     if (
@@ -1448,6 +1611,37 @@ function UserDetailDialog({
     0,
   );
 
+  const detailViewModel: UserDetailViewModel | null = detail
+    ? {
+        detail,
+        canAssignRoles,
+        roleDraft,
+        setRoleDraft,
+        roleSaving,
+        handleRoleSave,
+        canManageStatus,
+        statusDraft,
+        setStatusDraft,
+        statusSaving,
+        handleStatusSave,
+        statusReason,
+        setStatusReason,
+        canManagePasswords,
+        setPasswordDialogOpen,
+        sessionStatusCounts,
+        sessionSourceSummary,
+        staleOpenCount,
+        canManageSessions,
+        revokingAll,
+        handleRevokeAll,
+        sessionFilter,
+        setSessionFilter,
+        visibleSessions,
+        hiddenSessionsCount,
+        revokingId,
+        handleRevokeSession,
+      }
+    : null;
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1464,518 +1658,8 @@ function UserDetailDialog({
             <div className="flex items-center justify-center py-12 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
-          ) : detail ? (
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
-                <Card className="border-white/10 bg-panel-surface">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start gap-4">
-                      <UserAvatar user={detail} size="md" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-xl font-semibold tracking-tight text-white">
-                            {detail.name || detail.email}
-                          </h3>
-                          {rolesForUser(detail).map((role) => (
-                            <Badge
-                              key={role}
-                              variant={
-                                role === "admin" || role === "owner"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
-                              {roleLabel(role)}
-                            </Badge>
-                          ))}
-                          <Badge
-                            variant="outline"
-                            className={statusBadgeClass(userStatus(detail))}
-                          >
-                            {statusLabel(userStatus(detail))}
-                          </Badge>
-                          {userActivityStatus(detail) !== "active" ? (
-                            <Badge
-                              variant="outline"
-                              className={activityBadgeClass(
-                                userActivityStatus(detail),
-                              )}
-                            >
-                              {activityLabel(userActivityStatus(detail))}
-                            </Badge>
-                          ) : null}
-                          {detail.username ? (
-                            <Badge variant="outline">@{detail.username}</Badge>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 text-sm text-white/45">
-                          {detail.email}
-                        </div>
-                      </div>
-                    </div>
-                    {detail.bio ? (
-                      <p className="mt-4 text-sm leading-relaxed text-white/58">
-                        {detail.bio}
-                      </p>
-                    ) : null}
-                    <div className="mt-4 rounded-md border border-white/8 bg-black/15 p-3">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                        Roles
-                      </div>
-                      {canAssignRoles ? (
-                        <div className="mt-3 space-y-3">
-                          <RolePicker
-                            value={roleDraft}
-                            onChange={setRoleDraft}
-                            disabled={roleSaving}
-                          />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              roleSaving ||
-                              sameRoleSet(roleDraft, rolesForUser(detail))
-                            }
-                            onClick={handleRoleSave}
-                          >
-                            {roleSaving ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              "Save roles"
-                            )}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
-                          {rolesForUser(detail).map((role) => (
-                            <CrateChip key={role}>{roleLabel(role)}</CrateChip>
-                          ))}
-                        </div>
-                      )}
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {(detail.capabilities || [])
-                          .slice(0, 8)
-                          .map((capability) => (
-                            <CrateChip
-                              key={capability}
-                              className="text-[10px] text-white/55"
-                            >
-                              {capability}
-                            </CrateChip>
-                          ))}
-                        {(detail.capabilities?.length ?? 0) > 8 ? (
-                          <CrateChip className="text-[10px] text-white/40">
-                            +{(detail.capabilities?.length ?? 0) - 8} more
-                          </CrateChip>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="mt-4 rounded-md border border-white/8 bg-black/15 p-3">
-                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-white/30">
-                        <ShieldCheck size={13} />
-                        Account status
-                      </div>
-                      {canManageStatus ? (
-                        <div className="mt-3 space-y-3">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <AdminSelect
-                              value={statusDraft}
-                              onChange={setStatusDraft}
-                              options={STATUS_OPTIONS}
-                              placeholder="Account status"
-                              allowClear={false}
-                              disabled={statusSaving}
-                              triggerClassName="h-11 w-full max-w-none sm:w-48"
-                              menuClassName="w-[220px]"
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={
-                                statusSaving ||
-                                statusDraft === userStatus(detail)
-                              }
-                              onClick={handleStatusSave}
-                            >
-                              {statusSaving ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                "Save status"
-                              )}
-                            </Button>
-                          </div>
-                          <Input
-                            value={statusReason}
-                            onChange={(event) =>
-                              setStatusReason(event.target.value)
-                            }
-                            placeholder="Reason for suspension/deletion"
-                          />
-                          {statusDraft !== "active" ? (
-                            <p className="text-xs text-amber-200/75">
-                              Saving this status revokes open sessions and
-                              blocks future login/refresh attempts.
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-sm text-white/70">
-                          {statusLabel(userStatus(detail))}
-                        </div>
-                      )}
-                      {detail.status_reason ? (
-                        <div className="mt-3 text-xs text-white/42">
-                          Reason: {detail.status_reason}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Created
-                        </div>
-                        <div className="mt-1 text-sm text-white/75">
-                          {formatSessionTimestamp(detail.created_at)}
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Last login
-                        </div>
-                        <div className="mt-1 text-sm text-white/75">
-                          {formatSessionTimestamp(detail.last_login)}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-white/10 bg-panel-surface">
-                  <CardHeader>
-                    <CardTitle className="text-base text-white">
-                      Presence
-                    </CardTitle>
-                    <CardDescription>
-                      Real activity, not just open tokens.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <UserPresence user={detail} />
-                    <div className="grid gap-3">
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Last seen
-                        </div>
-                        <div className="mt-1 text-sm text-white/75">
-                          {formatSessionTimestamp(detail.last_seen_at)}
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Last play event
-                        </div>
-                        <div className="mt-1 text-sm text-white/75">
-                          {formatSessionTimestamp(detail.last_played_at)}
-                        </div>
-                      </div>
-                    </div>
-                    {detail.current_track ? (
-                      <div className="rounded-md border border-cyan-400/15 bg-cyan-400/8 p-3">
-                        <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-cyan-100/70">
-                          {detail.listening_now
-                            ? "Currently playing"
-                            : "Latest track"}
-                        </div>
-                        <CurrentTrackLine track={detail.current_track} />
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-white/10 bg-panel-surface">
-                  <CardHeader>
-                    <CardTitle className="text-base text-white">
-                      Access & session footprint
-                    </CardTitle>
-                    <CardDescription>
-                      Linked identity plus the real shape of the user’s device
-                      history.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex flex-wrap gap-2">
-                      {(detail.connected_accounts || []).length > 0 ? (
-                        (detail.connected_accounts || []).map((account) => (
-                          <CrateChip
-                            key={`${detail.id}-${account.provider}`}
-                            className="text-[11px]"
-                          >
-                            {account.provider}
-                            {account.external_username
-                              ? ` · ${account.external_username}`
-                              : ""}
-                          </CrateChip>
-                        ))
-                      ) : (
-                        <CrateChip className="text-[11px] text-white/45">
-                          No linked providers
-                        </CrateChip>
-                      )}
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Active footprint
-                        </div>
-                        <div className="mt-1 text-lg font-semibold text-white">
-                          {detail.active_devices ?? 0} device
-                          {(detail.active_devices ?? 0) === 1 ? "" : "s"}
-                        </div>
-                        <div className="mt-1 text-xs text-white/38">
-                          {detail.active_sessions ?? 0} active session token
-                          {(detail.active_sessions ?? 0) === 1 ? "" : "s"}
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Historical tokens
-                        </div>
-                        <div className="mt-1 text-lg font-semibold text-white">
-                          {detail.sessions.length}
-                        </div>
-                        <div className="mt-1 text-xs text-white/38">
-                          {sessionStatusCounts.history} stale/history ·{" "}
-                          {sessionStatusCounts.revoked} revoked
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                        Security
-                      </div>
-                      <div className="mt-1 text-sm text-white/78">
-                        {authModeSummary(detail)}
-                      </div>
-                      {canManagePasswords ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setPasswordDialogOpen(true)}
-                          >
-                            <Key size={14} className="mr-2" />
-                            {detail.has_password
-                              ? "Reset password"
-                              : "Set password"}
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                    {sessionSourceSummary.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
-                          Top clients
-                        </div>
-                        <div className="space-y-2">
-                          {sessionSourceSummary.slice(0, 4).map((source) => (
-                            <div
-                              key={source.key}
-                              className="rounded-md border border-white/8 bg-black/15 p-3"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium text-white">
-                                    {source.label}
-                                  </div>
-                                  <div className="mt-1 text-xs text-white/38">
-                                    {source.app_id || "web"} · last seen{" "}
-                                    {formatRelativeTimestamp(
-                                      source.last_seen_at,
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {source.online + source.connected > 0 ? (
-                                    <CrateChip className="border-green-500/25 bg-green-500/10 text-green-300 text-[11px]">
-                                      {source.online + source.connected} active
-                                    </CrateChip>
-                                  ) : null}
-                                  {source.recent > 0 ? (
-                                    <CrateChip className="text-[11px]">
-                                      {source.recent} recent
-                                    </CrateChip>
-                                  ) : null}
-                                  {source.history > 0 ? (
-                                    <CrateChip className="text-[11px] text-white/55">
-                                      {source.history} history
-                                    </CrateChip>
-                                  ) : null}
-                                  {source.revoked > 0 ? (
-                                    <CrateChip className="text-[11px] text-white/45">
-                                      {source.revoked} revoked
-                                    </CrateChip>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {staleOpenCount > 0 ? (
-                      <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100/80">
-                        {staleOpenCount} open session
-                        {staleOpenCount === 1 ? "" : "s"} look stale or
-                        historical. They remain valid records, but they are not
-                        counted as active devices anymore.
-                      </div>
-                    ) : null}
-                    {canManageSessions ? (
-                      <div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleRevokeAll}
-                          disabled={revokingAll || detail.sessions.length === 0}
-                        >
-                          {revokingAll ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : null}
-                          Revoke all sessions
-                        </Button>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="border-white/10 bg-panel-surface">
-                <CardHeader>
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <CardTitle className="text-base text-white">
-                        Sessions
-                      </CardTitle>
-                      <CardDescription>
-                        `Active` shows only real live sessions, `Recent` keeps
-                        the last few days, and `All` exposes full history.
-                      </CardDescription>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <CratePill
-                        active={sessionFilter === "active"}
-                        onClick={() => setSessionFilter("active")}
-                      >
-                        Active
-                      </CratePill>
-                      <CratePill
-                        active={sessionFilter === "recent"}
-                        onClick={() => setSessionFilter("recent")}
-                      >
-                        Recent
-                      </CratePill>
-                      <CratePill
-                        active={sessionFilter === "all"}
-                        onClick={() => setSessionFilter("all")}
-                      >
-                        All history
-                      </CratePill>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="text-sm text-white/45">
-                    Showing {visibleSessions.length} of {detail.sessions.length}{" "}
-                    recorded sessions
-                  </div>
-                  {sessionFilter !== "all" && hiddenSessionsCount > 0 ? (
-                    <div className="rounded-md border border-white/8 bg-black/15 px-4 py-3 text-sm text-white/55">
-                      {hiddenSessionsCount} historical or stale session
-                      {hiddenSessionsCount === 1 ? "" : "s"} hidden to keep the
-                      view focused on real devices and recent sign-ins.
-                    </div>
-                  ) : null}
-
-                  {visibleSessions.length > 0 ? (
-                    visibleSessions.map((session) => {
-                      const status = getSessionStatus(session);
-                      const metaLine = sessionMetaLine(session);
-                      return (
-                        <div
-                          key={session.id}
-                          className="flex flex-col gap-3 rounded-md border border-white/8 bg-black/15 p-4 lg:flex-row lg:items-start lg:justify-between"
-                        >
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-sm font-medium text-white">
-                                {sessionDisplayName(session)}
-                              </div>
-                              <Badge className={status.className}>
-                                {status.label}
-                              </Badge>
-                              <CrateChip className="text-[11px]">
-                                {session.app_id || "web"}
-                              </CrateChip>
-                            </div>
-                            <div className="flex flex-wrap gap-4 text-sm text-white/45">
-                              <span>
-                                Seen{" "}
-                                {formatRelativeTimestamp(
-                                  session.last_seen_at || session.created_at,
-                                )}
-                              </span>
-                              <span>
-                                Created{" "}
-                                {formatRelativeTimestamp(session.created_at)}
-                              </span>
-                              <span>IP {session.last_seen_ip || "—"}</span>
-                            </div>
-                            {metaLine ? (
-                              <div className="text-xs text-white/28">
-                                {metaLine}
-                              </div>
-                            ) : null}
-                            {session.device_brand || session.device_model ? (
-                              <div className="text-xs text-white/36">
-                                {[session.device_brand, session.device_model]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </div>
-                            ) : null}
-                            <div className="text-xs font-mono text-white/20">
-                              {session.id}
-                            </div>
-                          </div>
-                          {canManageSessions ? (
-                            <div className="flex shrink-0 gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  !!session.revoked_at ||
-                                  revokingId === session.id
-                                }
-                                onClick={() => handleRevokeSession(session.id)}
-                              >
-                                {revokingId === session.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  "Revoke"
-                                )}
-                              </Button>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-md border border-dashed border-white/10 bg-black/15 px-6 py-10 text-center text-sm text-white/45">
-                      No sessions match the current visibility filter.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+          ) : detailViewModel ? (
+            <UserDetailContent model={detailViewModel} />
           ) : null}
         </DialogContent>
       </Dialog>
@@ -1994,6 +1678,643 @@ function UserDetailDialog({
         />
       ) : null}
     </>
+  );
+}
+interface UserDetailViewModel {
+  detail: UserDetail;
+  canAssignRoles: boolean;
+  roleDraft: string[];
+  setRoleDraft: React.Dispatch<React.SetStateAction<string[]>>;
+  roleSaving: boolean;
+  handleRoleSave: () => Promise<void>;
+  canManageStatus: boolean;
+  statusDraft: string;
+  setStatusDraft: React.Dispatch<React.SetStateAction<string>>;
+  statusSaving: boolean;
+  handleStatusSave: () => Promise<void>;
+  statusReason: string;
+  setStatusReason: React.Dispatch<React.SetStateAction<string>>;
+  canManagePasswords: boolean;
+  setPasswordDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  sessionStatusCounts: {
+    connected: number;
+    recent: number;
+    history: number;
+    revoked: number;
+  };
+  sessionSourceSummary: SessionSourceSummary[];
+  staleOpenCount: number;
+  canManageSessions: boolean;
+  revokingAll: boolean;
+  handleRevokeAll: () => Promise<void>;
+  sessionFilter: SessionFilter;
+  setSessionFilter: React.Dispatch<React.SetStateAction<SessionFilter>>;
+  visibleSessions: UserSession[];
+  hiddenSessionsCount: number;
+  revokingId: string | null;
+  handleRevokeSession: (sessionId: string) => Promise<void>;
+}
+
+function UserDetailContent({ model }: { model: UserDetailViewModel }) {
+  return (
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <UserIdentityCard model={model} />
+        <UserPresenceCard model={model} />
+        <UserAccessCard model={model} />
+      </div>
+      <UserSessionsCard model={model} />
+    </div>
+  );
+}
+
+function UserIdentityCard({ model }: { model: UserDetailViewModel }) {
+  return (
+    <Card className="border-white/10 bg-panel-surface">
+      <CardContent className="pt-6">
+        <UserIdentitySummary model={model} />
+        <UserRolesSection model={model} />
+        <UserStatusSection model={model} />
+        <UserAccountDates model={model} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserIdentitySummary({ model }: { model: UserDetailViewModel }) {
+  const { detail } = model;
+  return (
+    <>
+      <div className="flex items-start gap-4">
+        <UserAvatar user={detail} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-xl font-semibold tracking-tight text-white">
+              {detail.name || detail.email}
+            </h3>
+            {rolesForUser(detail).map((role) => (
+              <Badge
+                key={role}
+                variant={
+                  role === "admin" || role === "owner" ? "default" : "secondary"
+                }
+              >
+                {roleLabel(role)}
+              </Badge>
+            ))}
+            <Badge
+              variant="outline"
+              className={statusBadgeClass(userStatus(detail))}
+            >
+              {statusLabel(userStatus(detail))}
+            </Badge>
+            {userActivityStatus(detail) !== "active" ? (
+              <Badge
+                variant="outline"
+                className={activityBadgeClass(userActivityStatus(detail))}
+              >
+                {activityLabel(userActivityStatus(detail))}
+              </Badge>
+            ) : null}
+            {detail.username ? (
+              <Badge variant="outline">@{detail.username}</Badge>
+            ) : null}
+          </div>
+          <div className="mt-1 text-sm text-white/45">{detail.email}</div>
+        </div>
+      </div>
+
+      {detail.bio ? (
+        <p className="mt-4 text-sm leading-relaxed text-white/58">
+          {detail.bio}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function UserRolesSection({ model }: { model: UserDetailViewModel }) {
+  const {
+    detail,
+    canAssignRoles,
+    roleDraft,
+    setRoleDraft,
+    roleSaving,
+    handleRoleSave,
+  } = model;
+  return (
+    <div className="mt-4 rounded-md border border-white/8 bg-black/15 p-3">
+      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+        Roles
+      </div>
+      {canAssignRoles ? (
+        <div className="mt-3 space-y-3">
+          <RolePicker
+            value={roleDraft}
+            onChange={setRoleDraft}
+            disabled={roleSaving}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              roleSaving || sameRoleSet(roleDraft, rolesForUser(detail))
+            }
+            onClick={handleRoleSave}
+          >
+            {roleSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Save roles"
+            )}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
+          {rolesForUser(detail).map((role) => (
+            <CrateChip key={role}>{roleLabel(role)}</CrateChip>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {(detail.capabilities || []).slice(0, 8).map((capability) => (
+          <CrateChip key={capability} className="text-[10px] text-white/55">
+            {capability}
+          </CrateChip>
+        ))}
+        {(detail.capabilities?.length ?? 0) > 8 ? (
+          <CrateChip className="text-[10px] text-white/40">
+            +{(detail.capabilities?.length ?? 0) - 8} more
+          </CrateChip>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function UserStatusSection({ model }: { model: UserDetailViewModel }) {
+  const {
+    detail,
+    canManageStatus,
+    statusDraft,
+    setStatusDraft,
+    statusSaving,
+    handleStatusSave,
+    statusReason,
+    setStatusReason,
+  } = model;
+  return (
+    <div className="mt-4 rounded-md border border-white/8 bg-black/15 p-3">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-white/30">
+        <ShieldCheck size={13} />
+        Account status
+      </div>
+      {canManageStatus ? (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <AdminSelect
+              value={statusDraft}
+              onChange={setStatusDraft}
+              options={STATUS_OPTIONS}
+              placeholder="Account status"
+              allowClear={false}
+              disabled={statusSaving}
+              triggerClassName="h-11 w-full max-w-none sm:w-48"
+              menuClassName="w-[220px]"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={statusSaving || statusDraft === userStatus(detail)}
+              onClick={handleStatusSave}
+            >
+              {statusSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Save status"
+              )}
+            </Button>
+          </div>
+          <Input
+            value={statusReason}
+            onChange={(event) => setStatusReason(event.target.value)}
+            placeholder="Reason for suspension/deletion"
+          />
+          {statusDraft !== "active" ? (
+            <p className="text-xs text-amber-200/75">
+              Saving this status revokes open sessions and blocks future
+              login/refresh attempts.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-2 text-sm text-white/70">
+          {statusLabel(userStatus(detail))}
+        </div>
+      )}
+      {detail.status_reason ? (
+        <div className="mt-3 text-xs text-white/42">
+          Reason: {detail.status_reason}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function UserAccountDates({ model }: { model: UserDetailViewModel }) {
+  const { detail } = model;
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border border-white/8 bg-black/15 p-3">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+          Created
+        </div>
+        <div className="mt-1 text-sm text-white/75">
+          {formatSessionTimestamp(detail.created_at)}
+        </div>
+      </div>
+      <div className="rounded-md border border-white/8 bg-black/15 p-3">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+          Last login
+        </div>
+        <div className="mt-1 text-sm text-white/75">
+          {formatSessionTimestamp(detail.last_login)}
+        </div>
+      </div>
+    </div>
+  );
+}
+function UserPresenceCard({ model }: { model: UserDetailViewModel }) {
+  const { detail } = model;
+  return (
+    <Card className="border-white/10 bg-panel-surface">
+      <CardHeader>
+        <CardTitle className="text-base text-white">Presence</CardTitle>
+        <CardDescription>Real activity, not just open tokens.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <UserPresence user={detail} />
+        <div className="grid gap-3">
+          <div className="rounded-md border border-white/8 bg-black/15 p-3">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+              Last seen
+            </div>
+            <div className="mt-1 text-sm text-white/75">
+              {formatSessionTimestamp(detail.last_seen_at)}
+            </div>
+          </div>
+          <div className="rounded-md border border-white/8 bg-black/15 p-3">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+              Last play event
+            </div>
+            <div className="mt-1 text-sm text-white/75">
+              {formatSessionTimestamp(detail.last_played_at)}
+            </div>
+          </div>
+        </div>
+        {detail.current_track ? (
+          <div className="rounded-md border border-cyan-400/15 bg-cyan-400/8 p-3">
+            <div className="mb-1 text-[11px] uppercase tracking-[0.12em] text-cyan-100/70">
+              {detail.listening_now ? "Currently playing" : "Latest track"}
+            </div>
+            <CurrentTrackLine track={detail.current_track} />
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserAccessCard({ model }: { model: UserDetailViewModel }) {
+  return (
+    <Card className="border-white/10 bg-panel-surface">
+      <CardHeader>
+        <CardTitle className="text-base text-white">
+          Access & session footprint
+        </CardTitle>
+        <CardDescription>
+          Linked identity plus the real shape of the user’s device history.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <UserLinkedAccounts model={model} />
+        <UserAccessMetrics model={model} />
+        <UserSecuritySummary model={model} />
+        <UserClientSummary model={model} />
+        <UserStaleSessions model={model} />
+        <UserRevokeAllSessions model={model} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserLinkedAccounts({ model }: { model: UserDetailViewModel }) {
+  const { detail } = model;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(detail.connected_accounts || []).length > 0 ? (
+        (detail.connected_accounts || []).map((account) => (
+          <CrateChip
+            key={`${detail.id}-${account.provider}`}
+            className="text-[11px]"
+          >
+            {account.provider}
+            {account.external_username ? ` · ${account.external_username}` : ""}
+          </CrateChip>
+        ))
+      ) : (
+        <CrateChip className="text-[11px] text-white/45">
+          No linked providers
+        </CrateChip>
+      )}
+    </div>
+  );
+}
+
+function UserAccessMetrics({ model }: { model: UserDetailViewModel }) {
+  const { detail, sessionStatusCounts } = model;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border border-white/8 bg-black/15 p-3">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+          Active footprint
+        </div>
+        <div className="mt-1 text-lg font-semibold text-white">
+          {detail.active_devices ?? 0} device
+          {(detail.active_devices ?? 0) === 1 ? "" : "s"}
+        </div>
+        <div className="mt-1 text-xs text-white/38">
+          {detail.active_sessions ?? 0} active session token
+          {(detail.active_sessions ?? 0) === 1 ? "" : "s"}
+        </div>
+      </div>
+      <div className="rounded-md border border-white/8 bg-black/15 p-3">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+          Historical tokens
+        </div>
+        <div className="mt-1 text-lg font-semibold text-white">
+          {detail.sessions.length}
+        </div>
+        <div className="mt-1 text-xs text-white/38">
+          {sessionStatusCounts.history} stale/history ·{" "}
+          {sessionStatusCounts.revoked} revoked
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserSecuritySummary({ model }: { model: UserDetailViewModel }) {
+  const { detail, canManagePasswords, setPasswordDialogOpen } = model;
+  return (
+    <div className="rounded-md border border-white/8 bg-black/15 p-3">
+      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+        Security
+      </div>
+      <div className="mt-1 text-sm text-white/78">
+        {authModeSummary(detail)}
+      </div>
+      {canManagePasswords ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPasswordDialogOpen(true)}
+          >
+            <Key size={14} className="mr-2" />
+            {detail.has_password ? "Reset password" : "Set password"}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function UserClientSummary({ model }: { model: UserDetailViewModel }) {
+  const { sessionSourceSummary } = model;
+  return (
+    <>
+      {sessionSourceSummary.length > 0 ? (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">
+            Top clients
+          </div>
+          <div className="space-y-2">
+            {sessionSourceSummary.slice(0, 4).map((source) => (
+              <div
+                key={source.key}
+                className="rounded-md border border-white/8 bg-black/15 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-white">
+                      {source.label}
+                    </div>
+                    <div className="mt-1 text-xs text-white/38">
+                      {source.app_id || "web"} · last seen{" "}
+                      {formatRelativeTimestamp(source.last_seen_at)}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {source.online + source.connected > 0 ? (
+                      <CrateChip className="border-green-500/25 bg-green-500/10 text-green-300 text-[11px]">
+                        {source.online + source.connected} active
+                      </CrateChip>
+                    ) : null}
+                    {source.recent > 0 ? (
+                      <CrateChip className="text-[11px]">
+                        {source.recent} recent
+                      </CrateChip>
+                    ) : null}
+                    {source.history > 0 ? (
+                      <CrateChip className="text-[11px] text-white/55">
+                        {source.history} history
+                      </CrateChip>
+                    ) : null}
+                    {source.revoked > 0 ? (
+                      <CrateChip className="text-[11px] text-white/45">
+                        {source.revoked} revoked
+                      </CrateChip>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function UserStaleSessions({ model }: { model: UserDetailViewModel }) {
+  const { staleOpenCount } = model;
+  return (
+    <>
+      {staleOpenCount > 0 ? (
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100/80">
+          {staleOpenCount} open session
+          {staleOpenCount === 1 ? "" : "s"} look stale or historical. They
+          remain valid records, but they are not counted as active devices
+          anymore.
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function UserRevokeAllSessions({ model }: { model: UserDetailViewModel }) {
+  const { detail, canManageSessions, revokingAll, handleRevokeAll } = model;
+  return (
+    <>
+      {canManageSessions ? (
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRevokeAll}
+            disabled={revokingAll || detail.sessions.length === 0}
+          >
+            {revokingAll ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Revoke all sessions
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+function UserSessionsCard({ model }: { model: UserDetailViewModel }) {
+  const {
+    detail,
+    sessionFilter,
+    setSessionFilter,
+    visibleSessions,
+    hiddenSessionsCount,
+    canManageSessions,
+    revokingId,
+    handleRevokeSession,
+  } = model;
+  return (
+    <Card className="border-white/10 bg-panel-surface">
+      <CardHeader>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle className="text-base text-white">Sessions</CardTitle>
+            <CardDescription>
+              `Active` shows only real live sessions, `Recent` keeps the last
+              few days, and `All` exposes full history.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <CratePill
+              active={sessionFilter === "active"}
+              onClick={() => setSessionFilter("active")}
+            >
+              Active
+            </CratePill>
+            <CratePill
+              active={sessionFilter === "recent"}
+              onClick={() => setSessionFilter("recent")}
+            >
+              Recent
+            </CratePill>
+            <CratePill
+              active={sessionFilter === "all"}
+              onClick={() => setSessionFilter("all")}
+            >
+              All history
+            </CratePill>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="text-sm text-white/45">
+          Showing {visibleSessions.length} of {detail.sessions.length} recorded
+          sessions
+        </div>
+        {sessionFilter !== "all" && hiddenSessionsCount > 0 ? (
+          <div className="rounded-md border border-white/8 bg-black/15 px-4 py-3 text-sm text-white/55">
+            {hiddenSessionsCount} historical or stale session
+            {hiddenSessionsCount === 1 ? "" : "s"} hidden to keep the view
+            focused on real devices and recent sign-ins.
+          </div>
+        ) : null}
+
+        {visibleSessions.length > 0 ? (
+          visibleSessions.map((session) => {
+            const status = getSessionStatus(session);
+            const metaLine = sessionMetaLine(session);
+            return (
+              <div
+                key={session.id}
+                className="flex flex-col gap-3 rounded-md border border-white/8 bg-black/15 p-4 lg:flex-row lg:items-start lg:justify-between"
+              >
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-medium text-white">
+                      {sessionDisplayName(session)}
+                    </div>
+                    <Badge className={status.className}>{status.label}</Badge>
+                    <CrateChip className="text-[11px]">
+                      {session.app_id || "web"}
+                    </CrateChip>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-sm text-white/45">
+                    <span>
+                      Seen{" "}
+                      {formatRelativeTimestamp(
+                        session.last_seen_at || session.created_at,
+                      )}
+                    </span>
+                    <span>
+                      Created {formatRelativeTimestamp(session.created_at)}
+                    </span>
+                    <span>IP {session.last_seen_ip || "—"}</span>
+                  </div>
+                  {metaLine ? (
+                    <div className="text-xs text-white/28">{metaLine}</div>
+                  ) : null}
+                  {session.device_brand || session.device_model ? (
+                    <div className="text-xs text-white/36">
+                      {[session.device_brand, session.device_model]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  ) : null}
+                  <div className="text-xs font-mono text-white/20">
+                    {session.id}
+                  </div>
+                </div>
+                {canManageSessions ? (
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        !!session.revoked_at || revokingId === session.id
+                      }
+                      onClick={() => handleRevokeSession(session.id)}
+                    >
+                      {revokingId === session.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        "Revoke"
+                      )}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-md border border-dashed border-white/10 bg-black/15 px-6 py-10 text-center text-sm text-white/45">
+            No sessions match the current visibility filter.
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

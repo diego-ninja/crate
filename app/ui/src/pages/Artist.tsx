@@ -222,9 +222,350 @@ export function MergeArtistDialog({
   );
 }
 
+interface ArtistTabContentProps {
+  activeTab: TabKey;
+  artistName: string;
+  data: ArtistData;
+  sortedAlbums: ArtistData["albums"];
+  bioText: string;
+  onToggleBioExpanded: () => void;
+  topTracks: ReturnType<typeof useTopTracks>;
+  mb: EnrichmentData["musicbrainz"];
+  activeMembersCount: number;
+  lastfm: EnrichmentData["lastfm"];
+  spotify: EnrichmentData["spotify"];
+  setlistData: EnrichmentData["setlist"];
+  externalLinks: ReturnType<typeof buildExternalLinks>;
+  flags: {
+    bioExpanded: boolean;
+    enrichmentLoading: boolean;
+    canResearchBio: boolean;
+    showMissing: boolean;
+    downloadingDiscog: boolean;
+    canDownloadTidal: boolean;
+    canEditMetadata: boolean;
+  };
+  onResearchBio: () => void;
+  missingAlbums: { title: string; first_release_date: string; type: string }[];
+  tidalMissing: {
+    url: string;
+    title: string;
+    year: string;
+    tracks: number;
+    cover: string | null;
+    quality: string;
+  }[];
+  sort: string;
+  onToggleShowMissing: () => void;
+  onSortChange: (sort: string) => void;
+  onDownloadDiscography: () => void;
+  allTrackTitles: {
+    title: string;
+    album: string;
+    path: string;
+    album_id?: number;
+    album_slug?: string;
+  }[];
+  onTrackTitlesLoaded: (
+    titles: {
+      title: string;
+      album: string;
+      path: string;
+      album_id?: number;
+      album_slug?: string;
+    }[],
+  ) => void;
+  upcomingShows: ArtistShowEvent[];
+  mergedSimilar: ReturnType<typeof buildMergedSimilarArtists>;
+}
+
+function ArtistTabContent({
+  activeTab,
+  artistName,
+  data,
+  sortedAlbums,
+  bioText,
+  onToggleBioExpanded,
+  topTracks,
+  mb,
+  activeMembersCount,
+  lastfm,
+  spotify,
+  setlistData,
+  externalLinks,
+  flags,
+  onResearchBio,
+  missingAlbums,
+  tidalMissing,
+  sort,
+  onToggleShowMissing,
+  onSortChange,
+  onDownloadDiscography,
+  allTrackTitles,
+  onTrackTitlesLoaded,
+  upcomingShows,
+  mergedSimilar,
+}: ArtistTabContentProps) {
+  const {
+    bioExpanded,
+    enrichmentLoading,
+    canResearchBio,
+    showMissing,
+    downloadingDiscog,
+    canDownloadTidal,
+    canEditMetadata,
+  } = flags;
+  return (
+    <div className="mx-auto w-full max-w-[1480px] px-4 pb-12 pt-6 md:px-8">
+      {activeTab === "overview" ? (
+        <ArtistOverviewSection
+          bioText={bioText}
+          bioExpanded={bioExpanded}
+          onToggleBioExpanded={onToggleBioExpanded}
+          topTracks={topTracks}
+          musicbrainz={mb}
+          activeMembersCount={activeMembersCount}
+          lastfm={lastfm}
+          spotify={spotify}
+          externalLinks={externalLinks}
+          enrichmentLoading={enrichmentLoading}
+          canResearchBio={canResearchBio}
+          onResearchBio={onResearchBio}
+        />
+      ) : null}
+      {activeTab === "top-tracks" ? (
+        <div className="max-w-4xl">
+          <ArtistTopTracksSection
+            topTracks={topTracks}
+            spotifyTopTracks={spotify?.top_tracks}
+          />
+        </div>
+      ) : null}
+      {activeTab === "discography" ? (
+        <ArtistDiscographySection
+          artistName={artistName}
+          artistId={data.id}
+          artistEntityUid={data.entity_uid}
+          artistSlug={data.slug}
+          albums={data.albums}
+          sortedAlbums={sortedAlbums}
+          missingAlbums={missingAlbums}
+          tidalMissing={tidalMissing}
+          showMissing={showMissing}
+          sort={sort}
+          downloadingDiscog={downloadingDiscog}
+          canDownloadTidal={canDownloadTidal}
+          onToggleShowMissing={onToggleShowMissing}
+          onSortChange={onSortChange}
+          onDownloadDiscography={onDownloadDiscography}
+        />
+      ) : null}
+      {activeTab === "setlist" ? (
+        <ArtistSetlistSection
+          artistName={artistName}
+          artistId={data.id}
+          artistEntityUid={data.entity_uid}
+          setlistData={setlistData}
+          allTrackTitles={allTrackTitles}
+          onTrackTitlesLoaded={onTrackTitlesLoaded}
+        />
+      ) : null}
+      {activeTab === "shows" ? (
+        <ArtistShowsSection
+          artistName={artistName}
+          artistId={data.id}
+          artistSlug={data.slug}
+          shows={upcomingShows}
+        />
+      ) : null}
+      {activeTab === "similar" ? (
+        <ArtistSimilarSection
+          artistName={artistName}
+          artistId={data.id}
+          artistEntityUid={data.entity_uid}
+          artists={mergedSimilar}
+        />
+      ) : null}
+      {activeTab === "stats" ? (
+        <ArtistStatsSection
+          artistName={artistName}
+          artistId={data.id}
+          artistEntityUid={data.entity_uid}
+        />
+      ) : null}
+      {activeTab === "artwork" && data.id != null ? (
+        <ArtistArtworkSection
+          artistId={data.id}
+          artistEntityUid={data.entity_uid}
+          artistName={artistName}
+          genres={data.genres}
+          imageVersion={data.updated_at}
+          canEdit={canEditMetadata}
+        />
+      ) : null}
+      {activeTab === "about" ? (
+        <ArtistAboutSection
+          bioText={bioText}
+          bioExpanded={bioExpanded}
+          onToggleBioExpanded={onToggleBioExpanded}
+          musicbrainz={mb}
+          lastfm={lastfm}
+          spotify={spotify}
+          externalLinks={externalLinks}
+          albumCount={data.albums.length}
+          totalTracks={
+            data.total_tracks ??
+            data.albums.reduce((sum, album) => sum + album.tracks, 0)
+          }
+          totalSizeMb={
+            data.total_size_mb ??
+            data.albums.reduce((sum, album) => sum + album.size_mb, 0)
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface ArtistPageDialogsProps {
+  data: ArtistData;
+  artistName: string;
+  state: {
+    showDeleteConfirm: boolean;
+    showRepairDialog: boolean;
+    showMetadataEditor: boolean;
+    showBioResearch: boolean;
+    showMergeArtist: boolean;
+    mergingArtist: boolean;
+  };
+  onDeleteDialogChange: (open: boolean) => void;
+  onDelete: () => Promise<void>;
+  onRepairDialogChange: (open: boolean) => void;
+  setIssueCountOverride: (value: number | null) => void;
+  onMetadataEditorChange: (open: boolean) => void;
+  onSaved: () => void;
+  onBioResearchChange: (open: boolean) => void;
+  bioText: string;
+  onApplyBioResearch: (proposal: string) => Promise<void>;
+  onMergeArtistChange: (open: boolean) => void;
+  onMergeArtist: (artist: ArtistSearchResult) => void;
+}
+
+function ArtistPageDialogs({
+  data,
+  artistName,
+  state,
+  onDeleteDialogChange,
+  onDelete,
+  onRepairDialogChange,
+  setIssueCountOverride,
+  onMetadataEditorChange,
+  onSaved,
+  onBioResearchChange,
+  bioText,
+  onApplyBioResearch,
+  onMergeArtistChange,
+  onMergeArtist,
+}: ArtistPageDialogsProps) {
+  const {
+    showDeleteConfirm,
+    showRepairDialog,
+    showMetadataEditor,
+    showBioResearch,
+    showMergeArtist,
+    mergingArtist,
+  } = state;
+  return (
+    <>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={onDeleteDialogChange}
+        title={`Delete ${data.name}?`}
+        description={`This will permanently delete ${data.name} and all their albums/tracks from the database AND the filesystem. This action cannot be undone.`}
+        confirmLabel="Delete Artist"
+        variant="destructive"
+        onConfirm={onDelete}
+      />
+      <ArtistRepairDialog
+        open={showRepairDialog}
+        onOpenChange={onRepairDialogChange}
+        artistName={artistName}
+        artistId={data.id}
+        artistEntityUid={data.entity_uid}
+        onIssueCountChange={setIssueCountOverride}
+      />
+      <ArtistMetadataEditor
+        open={showMetadataEditor}
+        onOpenChange={onMetadataEditorChange}
+        artist={data}
+        onSaved={onSaved}
+      />
+      <ArtistBioResearchDialog
+        open={showBioResearch}
+        onOpenChange={onBioResearchChange}
+        artist={data}
+        currentBio={bioText}
+        onApply={onApplyBioResearch}
+      />
+      <MergeArtistDialog
+        open={showMergeArtist}
+        currentArtistId={data.id}
+        currentArtistName={data.name}
+        busy={mergingArtist}
+        onOpenChange={onMergeArtistChange}
+        onMerge={onMergeArtist}
+      />
+    </>
+  );
+}
+
+async function deleteArtist(data: ArtistData) {
+  try {
+    const endpoint = artistManagementApiPath(
+      { artistId: data.id, artistEntityUid: data.entity_uid },
+      "delete",
+    );
+    if (!endpoint) throw new Error("artist reference missing");
+    await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
+    toast.success(`Deletion queued for ${data.name}`, {
+      description: "The worker will delete the artist in the background.",
+    });
+    window.location.href = "/browse";
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Failed to queue artist deletion";
+    toast.error(message);
+  }
+}
+
 // ── Main Component ──
 
-export function Artist() {
+type ArtistMissingAlbum = {
+  title: string;
+  first_release_date: string;
+  type: string;
+};
+
+type ArtistTidalAlbum = {
+  url: string;
+  title: string;
+  year: string;
+  tracks: number;
+  cover: string | null;
+  quality: string;
+};
+
+type ArtistTrackTitle = {
+  title: string;
+  album: string;
+  path: string;
+  album_id?: number;
+  album_slug?: string;
+};
+
+function useArtistPageData() {
   const { artistId: artistIdParam, artistSlug } = useParams<{
     artistId?: string;
     artistSlug?: string;
@@ -237,60 +578,9 @@ export function Artist() {
       artistSlug,
     }) || null,
   );
-  const [sort, setSort] = useState("name");
-  const [photoLoaded, setPhotoLoaded] = useState(false);
-  const [photoError, setPhotoError] = useState(false);
-  const [photoCacheBust, setPhotoCacheBust] = useState("");
-  const [bgCacheBust, setBgCacheBust] = useState("");
-  const [bgLoaded, setBgLoaded] = useState(false);
-  // Data fetching hooks (replace manual useEffect + useState)
   const topTracks = useTopTracks(data?.id, data?.entity_uid);
-  const [enriching, setEnriching] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [showMissing, setShowMissing] = useState(true);
-  const [upcomingShows, setUpcomingShows] = useState<ArtistShowEvent[]>([]);
-  const [showsLoaded, setShowsLoaded] = useState(false);
-  const [missingAlbums, setMissingAlbums] = useState<
-    { title: string; first_release_date: string; type: string }[]
-  >([]);
-  const [missingLoaded, setMissingLoaded] = useState(false);
-  const [tidalMissing, setTidalMissing] = useState<
-    {
-      url: string;
-      title: string;
-      year: string;
-      tracks: number;
-      cover: string | null;
-      quality: string;
-    }[]
-  >([]);
-  const [tidalMissingLoaded, setTidalMissingLoaded] = useState(false);
-  const [downloadingDiscog, setDownloadingDiscog] = useState(false);
-  const [creatingCorePlaylist, setCreatingCorePlaylist] = useState(false);
-  const [allTrackTitles, setAllTrackTitles] = useState<
-    {
-      title: string;
-      album: string;
-      path: string;
-      album_id?: number;
-      album_slug?: string;
-    }[]
-  >([]);
-  const [bioExpanded, setBioExpanded] = useState(false);
   const { enrichment: fetchedEnrichment, loading: enrichmentLoading } =
     useArtistEnrichment(data?.id, data?.entity_uid);
-  const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showRepairDialog, setShowRepairDialog] = useState(false);
-  const [showMetadataEditor, setShowMetadataEditor] = useState(false);
-  const [showBioResearch, setShowBioResearch] = useState(false);
-  const [showMergeArtist, setShowMergeArtist] = useState(false);
-  const [mergingArtist, setMergingArtist] = useState(false);
-  const [metadataAction, setMetadataAction] =
-    useState<ArtistMetadataAction>(null);
-  const [issueCountOverride, setIssueCountOverride] = useState<number | null>(
-    null,
-  );
   const { isAdmin, hasCapability } = useAuth();
   const canEditMetadata = hasCapability("library.metadata.write");
   const canRepairArtist = hasCapability("library.repair.run");
@@ -318,12 +608,113 @@ export function Artist() {
     });
   }, [artistId, data?.slug, data?.name, navigate]);
 
-  // Sync enrichment from hook (can be overridden by manual enrich)
-  useEffect(() => {
-    if (fetchedEnrichment) setEnrichment(fetchedEnrichment as EnrichmentData);
-  }, [fetchedEnrichment]);
+  return {
+    data,
+    loading,
+    refetch,
+    navigate,
+    topTracks,
+    fetchedEnrichment,
+    enrichmentLoading,
+    isAdmin,
+    canEditMetadata,
+    canRepairArtist,
+    canCreatePlaylists,
+    canDownloadTidal,
+    canDeleteArtist,
+    canMergeArtist,
+    rawIssueCount,
+    repairPlanSummary,
+  };
+}
 
-  // Fetch upcoming shows
+function useArtistPageUiState() {
+  const [sort, setSort] = useState("name");
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
+  const [photoCacheBust, setPhotoCacheBust] = useState("");
+  const [bgCacheBust, setBgCacheBust] = useState("");
+  const [bgLoaded, setBgLoaded] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [showMissing, setShowMissing] = useState(true);
+  const [downloadingDiscog, setDownloadingDiscog] = useState(false);
+  const [creatingCorePlaylist, setCreatingCorePlaylist] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
+  const [showMetadataEditor, setShowMetadataEditor] = useState(false);
+  const [showBioResearch, setShowBioResearch] = useState(false);
+  const [showMergeArtist, setShowMergeArtist] = useState(false);
+  const [mergingArtist, setMergingArtist] = useState(false);
+  const [metadataAction, setMetadataAction] =
+    useState<ArtistMetadataAction>(null);
+  const [issueCountOverride, setIssueCountOverride] = useState<number | null>(
+    null,
+  );
+
+  return {
+    sort,
+    setSort,
+    photoLoaded,
+    setPhotoLoaded,
+    photoError,
+    setPhotoError,
+    photoCacheBust,
+    setPhotoCacheBust,
+    bgCacheBust,
+    setBgCacheBust,
+    bgLoaded,
+    setBgLoaded,
+    enriching,
+    setEnriching,
+    activeTab,
+    setActiveTab,
+    showMissing,
+    setShowMissing,
+    downloadingDiscog,
+    setDownloadingDiscog,
+    creatingCorePlaylist,
+    setCreatingCorePlaylist,
+    bioExpanded,
+    setBioExpanded,
+    enrichment,
+    setEnrichment,
+    showDeleteConfirm,
+    setShowDeleteConfirm,
+    showRepairDialog,
+    setShowRepairDialog,
+    showMetadataEditor,
+    setShowMetadataEditor,
+    showBioResearch,
+    setShowBioResearch,
+    showMergeArtist,
+    setShowMergeArtist,
+    mergingArtist,
+    setMergingArtist,
+    metadataAction,
+    setMetadataAction,
+    issueCountOverride,
+    setIssueCountOverride,
+  };
+}
+
+function useArtistPageAuxiliaryData({
+  data,
+  activeTab,
+}: {
+  data: ArtistData | null;
+  activeTab: TabKey;
+}) {
+  const [upcomingShows, setUpcomingShows] = useState<ArtistShowEvent[]>([]);
+  const [showsLoaded, setShowsLoaded] = useState(false);
+  const [missingAlbums, setMissingAlbums] = useState<ArtistMissingAlbum[]>([]);
+  const [missingLoaded, setMissingLoaded] = useState(false);
+  const [tidalMissing, setTidalMissing] = useState<ArtistTidalAlbum[]>([]);
+  const [tidalMissingLoaded, setTidalMissingLoaded] = useState(false);
+  const [allTrackTitles, setAllTrackTitles] = useState<ArtistTrackTitle[]>([]);
+
   useEffect(() => {
     const endpoint = artistActionApiPath(
       { artistId: data?.id, artistEntityUid: data?.entity_uid },
@@ -331,37 +722,28 @@ export function Artist() {
     );
     if (!endpoint || showsLoaded) return;
     api<{ events: ArtistShowEvent[]; configured: boolean }>(endpoint)
-      .then((d) => {
-        setUpcomingShows(d.events || []);
+      .then((payload) => {
+        setUpcomingShows(payload.events || []);
         setShowsLoaded(true);
       })
       .catch(() => setShowsLoaded(true));
   }, [data?.entity_uid, data?.id, showsLoaded]);
 
-  // Fetch all track titles for setlist matching (lazy)
   useEffect(() => {
     const endpoint = artistActionApiPath(
       { artistId: data?.id, artistEntityUid: data?.entity_uid },
       "track-titles",
     );
-    if (!endpoint || activeTab !== "setlist" || allTrackTitles.length > 0)
+    if (!endpoint || activeTab !== "setlist" || allTrackTitles.length > 0) {
       return;
-    api<
-      {
-        title: string;
-        album: string;
-        path: string;
-        album_id?: number;
-        album_slug?: string;
-      }[]
-    >(endpoint)
-      .then((d) => {
-        if (Array.isArray(d)) setAllTrackTitles(d);
+    }
+    api<ArtistTrackTitle[]>(endpoint)
+      .then((payload) => {
+        if (Array.isArray(payload)) setAllTrackTitles(payload);
       })
       .catch(() => {});
   }, [data?.entity_uid, data?.id, activeTab, allTrackTitles.length]);
 
-  // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
     const endpoint = artistActionApiPath(
       { artistId: data?.id, artistEntityUid: data?.entity_uid },
@@ -369,14 +751,11 @@ export function Artist() {
     );
     if (!endpoint || activeTab !== "discography" || missingLoaded) return;
     let cancelled = false;
-    api<{
-      missing: { title: string; first_release_date: string; type: string }[];
-    }>(endpoint)
-      .then((d) => {
-        if (!cancelled) {
-          setMissingAlbums(d.missing ?? []);
-          setMissingLoaded(true);
-        }
+    api<{ missing: ArtistMissingAlbum[] }>(endpoint)
+      .then((payload) => {
+        if (cancelled) return;
+        setMissingAlbums(payload.missing ?? []);
+        setMissingLoaded(true);
       })
       .catch(() => {
         if (!cancelled) setMissingLoaded(true);
@@ -386,62 +765,60 @@ export function Artist() {
     };
   }, [data?.entity_uid, data?.id, activeTab, missingLoaded]);
 
-  // Fetch Tidal missing albums (lazy, on discography tab)
   useEffect(() => {
     const endpoint = tidalMissingArtistApiPath({
       artistId: data?.id,
       artistEntityUid: data?.entity_uid,
     });
     if (!endpoint || activeTab !== "discography" || tidalMissingLoaded) return;
-    api<{ albums: typeof tidalMissing; authenticated: boolean }>(endpoint)
-      .then((d) => {
-        if (d.albums) setTidalMissing(d.albums);
+    api<{ albums: ArtistTidalAlbum[]; authenticated: boolean }>(endpoint)
+      .then((payload) => {
+        if (payload.albums) setTidalMissing(payload.albums);
         setTidalMissingLoaded(true);
       })
       .catch(() => setTidalMissingLoaded(true));
   }, [data?.entity_uid, data?.id, activeTab, tidalMissingLoaded]);
 
-  if (loading) return <ArtistLoadingState />;
+  return {
+    upcomingShows,
+    missingAlbums,
+    tidalMissing,
+    setTidalMissing,
+    allTrackTitles,
+    setAllTrackTitles,
+  };
+}
 
-  if (!data)
-    return (
-      <div className="text-center py-12 text-muted-foreground">Not found</div>
-    );
+type ArtistPageDataState = ReturnType<typeof useArtistPageData>;
+type ArtistPageUiState = ReturnType<typeof useArtistPageUiState>;
+type ArtistPageAuxiliaryState = ReturnType<typeof useArtistPageAuxiliaryData>;
 
-  const artistName = data.name;
-  const totalTracks =
-    data.total_tracks ?? data.albums.reduce((s, a) => s + a.tracks, 0);
-  const totalSize =
-    data.total_size_mb ?? data.albums.reduce((s, a) => s + a.size_mb, 0);
-  const letter = artistName.charAt(0).toUpperCase();
-  const issueCount =
-    issueCountOverride ?? repairPlanSummary?.total ?? rawIssueCount;
-  const showRepairAction = canRepairArtist && issueCount > 0;
-
-  const sortedAlbums = [...data.albums].sort((a, b) => {
-    if (sort === "year") return (b.year || "").localeCompare(a.year || "");
-    if (sort === "tracks") return b.tracks - a.tracks;
-    return a.name.localeCompare(b.name);
-  });
-
-  const bioText =
-    data.bio !== null && data.bio !== undefined
-      ? data.bio
-      : enrichment?.lastfm?.bio ?? "";
-  const mb = enrichment?.musicbrainz;
-  const spotify = enrichment?.spotify;
-  const lastfm = enrichment?.lastfm;
-  const setlistData = enrichment?.setlist;
-  const allTags = buildArtistTags(data.genres, enrichment);
-
-  const mergedSimilar = buildMergedSimilarArtists(enrichment);
-  const externalLinks = buildExternalLinks(enrichment);
-  const tabs = buildArtistTabs(upcomingShows.length);
-  const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
-  const popularityScore =
-    data.popularity_score != null
-      ? Math.round(data.popularity_score * 100)
-      : computePopularityScore(spotify?.popularity, lastfm?.listeners);
+function useArtistPageActions({
+  data,
+  navigate,
+  refetch,
+  tidalMissing,
+  setEnriching,
+  setShowRepairDialog,
+  setDownloadingDiscog,
+  setTidalMissing,
+  setCreatingCorePlaylist,
+  setMetadataAction,
+  setMergingArtist,
+  setShowMergeArtist,
+}: Pick<ArtistPageDataState, "data" | "navigate" | "refetch"> &
+  Pick<
+    ArtistPageUiState,
+    | "setEnriching"
+    | "setShowRepairDialog"
+    | "setDownloadingDiscog"
+    | "setCreatingCorePlaylist"
+    | "setMetadataAction"
+    | "setMergingArtist"
+    | "setShowMergeArtist"
+  > &
+  Pick<ArtistPageAuxiliaryState, "tidalMissing" | "setTidalMissing">) {
+  const artistName = data?.name ?? "";
 
   async function enrichArtist() {
     setEnriching(true);
@@ -504,7 +881,7 @@ export function Artist() {
     }
   }
 
-  async function repairArtist() {
+  function repairArtist() {
     setShowRepairDialog(true);
   }
 
@@ -624,6 +1001,281 @@ export function Artist() {
     }
   }
 
+  return {
+    enrichArtist,
+    applyBioResearchProposal,
+    analyzeArtist,
+    repairArtist,
+    downloadMissingDiscography,
+    createArtistCorePlaylist,
+    queueArtistMetadataAction,
+    mergeArtistInto,
+  };
+}
+
+function useArtistPageModel() {
+  const dataState = useArtistPageData();
+  const uiState = useArtistPageUiState();
+  useEffect(() => {
+    if (dataState.fetchedEnrichment) {
+      uiState.setEnrichment(dataState.fetchedEnrichment as EnrichmentData);
+    }
+  }, [dataState.fetchedEnrichment, uiState.setEnrichment]);
+  const auxiliaryState = useArtistPageAuxiliaryData({
+    data: dataState.data,
+    activeTab: uiState.activeTab,
+  });
+  const actionState = useArtistPageActions({
+    data: dataState.data,
+    navigate: dataState.navigate,
+    refetch: dataState.refetch,
+    tidalMissing: auxiliaryState.tidalMissing,
+    setEnriching: uiState.setEnriching,
+    setShowRepairDialog: uiState.setShowRepairDialog,
+    setDownloadingDiscog: uiState.setDownloadingDiscog,
+    setTidalMissing: auxiliaryState.setTidalMissing,
+    setCreatingCorePlaylist: uiState.setCreatingCorePlaylist,
+    setMetadataAction: uiState.setMetadataAction,
+    setMergingArtist: uiState.setMergingArtist,
+    setShowMergeArtist: uiState.setShowMergeArtist,
+  });
+
+  if (dataState.loading) return { loading: true as const, data: null };
+  if (!dataState.data) return { loading: false as const, data: null };
+
+  const {
+    data,
+    topTracks,
+    enrichmentLoading,
+    isAdmin,
+    canEditMetadata,
+    canRepairArtist,
+    canCreatePlaylists,
+    canDownloadTidal,
+    canDeleteArtist,
+    canMergeArtist,
+    rawIssueCount,
+    repairPlanSummary,
+    refetch,
+  } = dataState;
+  const {
+    sort,
+    photoLoaded,
+    photoError,
+    photoCacheBust,
+    bgCacheBust,
+    bgLoaded,
+    enriching,
+    activeTab,
+    showMissing,
+    downloadingDiscog,
+    creatingCorePlaylist,
+    bioExpanded,
+    enrichment,
+    showDeleteConfirm,
+    showRepairDialog,
+    showMetadataEditor,
+    showBioResearch,
+    showMergeArtist,
+    mergingArtist,
+    metadataAction,
+  } = uiState;
+  const { upcomingShows, missingAlbums, tidalMissing, allTrackTitles } =
+    auxiliaryState;
+
+  const artistName = data.name;
+  const totalTracks =
+    data.total_tracks ??
+    data.albums.reduce((sum, album) => sum + album.tracks, 0);
+  const totalSize =
+    data.total_size_mb ??
+    data.albums.reduce((sum, album) => sum + album.size_mb, 0);
+  const letter = artistName.charAt(0).toUpperCase();
+  const issueCount =
+    uiState.issueCountOverride ?? repairPlanSummary?.total ?? rawIssueCount;
+  const showRepairAction = canRepairArtist && issueCount > 0;
+  const sortedAlbums = [...data.albums].sort((a, b) => {
+    if (sort === "year") return (b.year || "").localeCompare(a.year || "");
+    if (sort === "tracks") return b.tracks - a.tracks;
+    return a.name.localeCompare(b.name);
+  });
+  const bioText =
+    data.bio !== null && data.bio !== undefined
+      ? data.bio
+      : enrichment?.lastfm?.bio ?? "";
+  const mb = enrichment?.musicbrainz;
+  const spotify = enrichment?.spotify;
+  const lastfm = enrichment?.lastfm;
+  const setlistData = enrichment?.setlist;
+  const allTags = buildArtistTags(data.genres, enrichment);
+  const mergedSimilar = buildMergedSimilarArtists(enrichment);
+  const externalLinks = buildExternalLinks(enrichment);
+  const tabs = buildArtistTabs(upcomingShows.length);
+  const activeMembers = mb?.members?.filter((member) => !member.end) ?? [];
+  const popularityScore =
+    data.popularity_score != null
+      ? Math.round(data.popularity_score * 100)
+      : computePopularityScore(spotify?.popularity, lastfm?.listeners);
+
+  return {
+    loading: false as const,
+    data,
+    artistName,
+    totalTracks,
+    totalSize,
+    letter,
+    issueCount,
+    showRepairAction,
+    sortedAlbums,
+    bioText,
+    mb,
+    spotify,
+    lastfm,
+    setlistData,
+    allTags,
+    mergedSimilar,
+    tabs,
+    activeMembers,
+    popularityScore,
+    topTracks,
+    externalLinks,
+    upcomingShows,
+    missingAlbums,
+    tidalMissing,
+    allTrackTitles,
+    showMissing,
+    downloadingDiscog,
+    sort,
+    activeTab,
+    bioExpanded,
+    enrichmentLoading,
+    canDownloadTidal,
+    canEditMetadata,
+    canCreatePlaylists,
+    canRepairArtist,
+    canDeleteArtist,
+    canMergeArtist,
+    isAdmin,
+    enriching,
+    creatingCorePlaylist,
+    photoLoaded,
+    photoError,
+    photoCacheBust,
+    bgCacheBust,
+    bgLoaded,
+    metadataAction,
+    showDeleteConfirm,
+    showRepairDialog,
+    showMetadataEditor,
+    showBioResearch,
+    showMergeArtist,
+    mergingArtist,
+    setBgLoaded: uiState.setBgLoaded,
+    setBgCacheBust: uiState.setBgCacheBust,
+    setPhotoLoaded: uiState.setPhotoLoaded,
+    setPhotoError: uiState.setPhotoError,
+    setPhotoCacheBust: uiState.setPhotoCacheBust,
+    setActiveTab: uiState.setActiveTab,
+    setBioExpanded: uiState.setBioExpanded,
+    setShowMissing: uiState.setShowMissing,
+    setSort: uiState.setSort,
+    setAllTrackTitles: auxiliaryState.setAllTrackTitles,
+    setShowDeleteConfirm: uiState.setShowDeleteConfirm,
+    setShowRepairDialog: uiState.setShowRepairDialog,
+    setShowMetadataEditor: uiState.setShowMetadataEditor,
+    setShowBioResearch: uiState.setShowBioResearch,
+    setShowMergeArtist: uiState.setShowMergeArtist,
+    setIssueCountOverride: uiState.setIssueCountOverride,
+    refetch,
+    enrichArtist: actionState.enrichArtist,
+    analyzeArtist: actionState.analyzeArtist,
+    createArtistCorePlaylist: actionState.createArtistCorePlaylist,
+    repairArtist: actionState.repairArtist,
+    downloadMissingDiscography: actionState.downloadMissingDiscography,
+    queueArtistMetadataAction: actionState.queueArtistMetadataAction,
+    applyBioResearchProposal: actionState.applyBioResearchProposal,
+    mergeArtistInto: actionState.mergeArtistInto,
+  };
+}
+function ArtistPageView({ model }: { model: ArtistPageReadyModel }) {
+  const {
+    data,
+    artistName,
+    totalTracks,
+    totalSize,
+    letter,
+    issueCount,
+    showRepairAction,
+    sortedAlbums,
+    bioText,
+    mb,
+    spotify,
+    lastfm,
+    setlistData,
+    allTags,
+    mergedSimilar,
+    tabs,
+    activeMembers,
+    popularityScore,
+    topTracks,
+    externalLinks,
+    upcomingShows,
+    missingAlbums,
+    tidalMissing,
+    allTrackTitles,
+    showMissing,
+    downloadingDiscog,
+    sort,
+    activeTab,
+    bioExpanded,
+    enrichmentLoading,
+    canDownloadTidal,
+    canEditMetadata,
+    canCreatePlaylists,
+    canRepairArtist,
+    canDeleteArtist,
+    canMergeArtist,
+    isAdmin,
+    enriching,
+    creatingCorePlaylist,
+    photoLoaded,
+    photoError,
+    photoCacheBust,
+    bgCacheBust,
+    bgLoaded,
+    metadataAction,
+    showDeleteConfirm,
+    showRepairDialog,
+    showMetadataEditor,
+    showBioResearch,
+    showMergeArtist,
+    mergingArtist,
+    setBgLoaded,
+    setBgCacheBust,
+    setPhotoLoaded,
+    setPhotoError,
+    setPhotoCacheBust,
+    setActiveTab,
+    setBioExpanded,
+    setShowMissing,
+    setSort,
+    setAllTrackTitles,
+    setShowDeleteConfirm,
+    setShowRepairDialog,
+    setShowMetadataEditor,
+    setShowBioResearch,
+    setShowMergeArtist,
+    setIssueCountOverride,
+    refetch,
+    enrichArtist,
+    analyzeArtist,
+    createArtistCorePlaylist,
+    repairArtist,
+    downloadMissingDiscography,
+    queueArtistMetadataAction,
+    applyBioResearchProposal,
+    mergeArtistInto,
+  } = model;
   return (
     <div className="-mt-16 md:-mt-[6.5rem]">
       <ArtistHeroSection
@@ -672,227 +1324,104 @@ export function Artist() {
           setPhotoLoaded(false);
           setPhotoCacheBust(String(Date.now()));
         }}
-        onEnrich={() => {
-          void enrichArtist();
-        }}
-        onAnalyze={() => {
-          void analyzeArtist();
-        }}
+        onEnrich={() => void enrichArtist()}
+        onAnalyze={() => void analyzeArtist()}
         corePlaylistCreating={creatingCorePlaylist}
         onCreateCorePlaylist={
           canCreatePlaylists && totalTracks > 0
-            ? () => {
-                void createArtistCorePlaylist();
-              }
+            ? () => void createArtistCorePlaylist()
             : undefined
         }
-        onRepair={() => {
-          void repairArtist();
-        }}
+        onRepair={() => void repairArtist()}
         onEditMetadata={() => setShowMetadataEditor(true)}
         metadataAction={metadataAction}
-        onSyncLyrics={() => {
-          void queueArtistMetadataAction("lyrics");
-        }}
-        onWritePortableMetadata={() => {
-          void queueArtistMetadataAction("portable");
-        }}
-        onExportRichMetadata={() => {
-          void queueArtistMetadataAction("export");
-        }}
+        onSyncLyrics={() => void queueArtistMetadataAction("lyrics")}
+        onWritePortableMetadata={() =>
+          void queueArtistMetadataAction("portable")
+        }
+        onExportRichMetadata={() => void queueArtistMetadataAction("export")}
         onDelete={() => setShowDeleteConfirm(true)}
         onMerge={() => setShowMergeArtist(true)}
       />
-
       <ArtistTabsNav
         tabs={tabs}
         activeTab={activeTab}
         onChange={setActiveTab}
       />
-
-      {/* ═══ CONTENT ═══ */}
-      <div className="mx-auto w-full max-w-[1480px] px-4 pb-12 pt-6 md:px-8">
-        {/* ── Overview Tab ── */}
-        {activeTab === "overview" && (
-          <ArtistOverviewSection
-            bioText={bioText}
-            bioExpanded={bioExpanded}
-            onToggleBioExpanded={() => setBioExpanded(!bioExpanded)}
-            topTracks={topTracks}
-            musicbrainz={mb}
-            activeMembersCount={activeMembers.length}
-            lastfm={lastfm}
-            spotify={spotify}
-            externalLinks={externalLinks}
-            enrichmentLoading={enrichmentLoading}
-            canResearchBio={canEditMetadata}
-            onResearchBio={() => setShowBioResearch(true)}
-          />
-        )}
-
-        {/* ── Top Tracks Tab ── */}
-        {activeTab === "top-tracks" && (
-          <div className="max-w-4xl">
-            <ArtistTopTracksSection
-              topTracks={topTracks}
-              spotifyTopTracks={spotify?.top_tracks}
-            />
-          </div>
-        )}
-
-        {/* ── Discography Tab ── */}
-        {activeTab === "discography" && (
-          <ArtistDiscographySection
-            artistName={artistName}
-            artistId={data.id}
-            artistEntityUid={data.entity_uid}
-            artistSlug={data.slug}
-            albums={data.albums}
-            sortedAlbums={sortedAlbums}
-            missingAlbums={missingAlbums}
-            tidalMissing={tidalMissing}
-            showMissing={showMissing}
-            sort={sort}
-            downloadingDiscog={downloadingDiscog}
-            canDownloadTidal={canDownloadTidal}
-            onToggleShowMissing={() => setShowMissing(!showMissing)}
-            onSortChange={setSort}
-            onDownloadDiscography={() => {
-              void downloadMissingDiscography();
-            }}
-          />
-        )}
-
-        {/* ── Probable Setlist Tab ── */}
-        {activeTab === "setlist" && (
-          <ArtistSetlistSection
-            artistName={artistName}
-            artistId={data.id}
-            artistEntityUid={data.entity_uid}
-            setlistData={setlistData}
-            allTrackTitles={allTrackTitles}
-            onTrackTitlesLoaded={setAllTrackTitles}
-          />
-        )}
-
-        {/* ── Shows Tab ── */}
-        {activeTab === "shows" && (
-          <ArtistShowsSection
-            artistName={artistName}
-            artistId={data.id}
-            artistSlug={data.slug}
-            shows={upcomingShows}
-          />
-        )}
-
-        {/* ── Similar Artists Tab ── */}
-        {activeTab === "similar" && (
-          <ArtistSimilarSection
-            artistName={artistName}
-            artistId={data.id}
-            artistEntityUid={data.entity_uid}
-            artists={mergedSimilar}
-          />
-        )}
-
-        {/* ── Stats Tab ── */}
-        {activeTab === "stats" && (
-          <ArtistStatsSection
-            artistName={artistName}
-            artistId={data.id}
-            artistEntityUid={data.entity_uid}
-          />
-        )}
-
-        {activeTab === "artwork" && data.id != null && (
-          <ArtistArtworkSection
-            artistId={data.id}
-            artistEntityUid={data.entity_uid}
-            artistName={artistName}
-            genres={data.genres}
-            imageVersion={data.updated_at}
-            canEdit={canEditMetadata}
-          />
-        )}
-
-        {/* ── About Tab ── */}
-        {activeTab === "about" && (
-          <ArtistAboutSection
-            bioText={bioText}
-            bioExpanded={bioExpanded}
-            onToggleBioExpanded={() => setBioExpanded(!bioExpanded)}
-            musicbrainz={mb}
-            lastfm={lastfm}
-            spotify={spotify}
-            externalLinks={externalLinks}
-            albumCount={data.albums.length}
-            totalTracks={totalTracks}
-            totalSizeMb={totalSize}
-          />
-        )}
-      </div>
-
-      {/* Delete Artist Confirmation */}
-      <ConfirmDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title={`Delete ${data?.name ?? "artist"}?`}
-        description={`This will permanently delete ${
-          data?.name ?? "this artist"
-        } and all their albums/tracks from the database AND the filesystem. This action cannot be undone.`}
-        confirmLabel="Delete Artist"
-        variant="destructive"
-        onConfirm={async () => {
-          try {
-            const endpoint = artistManagementApiPath(
-              { artistId: data?.id, artistEntityUid: data?.entity_uid },
-              "delete",
-            );
-            if (!endpoint) throw new Error("artist reference missing");
-            await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
-            toast.success(`Deletion queued for ${data!.name}`, {
-              description:
-                "The worker will delete the artist in the background.",
-            });
-            window.location.href = "/browse";
-          } catch (error) {
-            const message =
-              error instanceof Error && error.message
-                ? error.message
-                : "Failed to queue artist deletion";
-            toast.error(message);
-          }
-        }}
-      />
-      <ArtistRepairDialog
-        open={showRepairDialog}
-        onOpenChange={setShowRepairDialog}
+      <ArtistTabContent
+        activeTab={activeTab}
         artistName={artistName}
-        artistId={data.id}
-        artistEntityUid={data.entity_uid}
-        onIssueCountChange={setIssueCountOverride}
+        data={data}
+        sortedAlbums={sortedAlbums}
+        bioText={bioText}
+        onToggleBioExpanded={() => setBioExpanded(!bioExpanded)}
+        topTracks={topTracks}
+        mb={mb}
+        activeMembersCount={activeMembers.length}
+        lastfm={lastfm}
+        spotify={spotify}
+        setlistData={setlistData}
+        externalLinks={externalLinks}
+        flags={{
+          bioExpanded,
+          enrichmentLoading,
+          canResearchBio: canEditMetadata,
+          showMissing,
+          downloadingDiscog,
+          canDownloadTidal,
+          canEditMetadata,
+        }}
+        onResearchBio={() => setShowBioResearch(true)}
+        missingAlbums={missingAlbums}
+        tidalMissing={tidalMissing}
+        sort={sort}
+        onToggleShowMissing={() => setShowMissing(!showMissing)}
+        onSortChange={setSort}
+        onDownloadDiscography={() => void downloadMissingDiscography()}
+        allTrackTitles={allTrackTitles}
+        onTrackTitlesLoaded={setAllTrackTitles}
+        upcomingShows={upcomingShows}
+        mergedSimilar={mergedSimilar}
       />
-      <ArtistMetadataEditor
-        open={showMetadataEditor}
-        onOpenChange={setShowMetadataEditor}
-        artist={data}
+      <ArtistPageDialogs
+        data={data}
+        artistName={artistName}
+        state={{
+          showDeleteConfirm,
+          showRepairDialog,
+          showMetadataEditor,
+          showBioResearch,
+          showMergeArtist,
+          mergingArtist,
+        }}
+        onDeleteDialogChange={setShowDeleteConfirm}
+        onDelete={() => deleteArtist(data)}
+        onRepairDialogChange={setShowRepairDialog}
+        setIssueCountOverride={setIssueCountOverride}
+        onMetadataEditorChange={setShowMetadataEditor}
         onSaved={refetch}
-      />
-      <ArtistBioResearchDialog
-        open={showBioResearch}
-        onOpenChange={setShowBioResearch}
-        artist={data}
-        currentBio={bioText}
-        onApply={applyBioResearchProposal}
-      />
-      <MergeArtistDialog
-        open={showMergeArtist}
-        currentArtistId={data.id}
-        currentArtistName={data.name}
-        busy={mergingArtist}
-        onOpenChange={setShowMergeArtist}
-        onMerge={(artist) => void mergeArtistInto(artist)}
+        onBioResearchChange={setShowBioResearch}
+        bioText={bioText}
+        onApplyBioResearch={applyBioResearchProposal}
+        onMergeArtistChange={setShowMergeArtist}
+        onMergeArtist={(artist) => void mergeArtistInto(artist)}
       />
     </div>
   );
+}
+
+type ArtistPageReadyModel = Extract<
+  ReturnType<typeof useArtistPageModel>,
+  { data: ArtistData }
+>;
+
+export function Artist() {
+  const model = useArtistPageModel();
+  if (model.loading) return <ArtistLoadingState />;
+  if (!model.data) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">Not found</div>
+    );
+  }
+  return <ArtistPageView model={model} />;
 }

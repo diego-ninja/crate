@@ -305,6 +305,291 @@ function PopularityRow({
   );
 }
 
+interface DiscoverViewProps {
+  navigate: (to: string) => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  recomputing: boolean;
+  completenessTaskId: string | null;
+  checking: boolean;
+  refreshAll: () => void;
+  recomputeCompleteness: () => Promise<void>;
+  checkReleases: () => Promise<void>;
+  summary: {
+    totalArtists: number;
+    incompleteArtists: number;
+    detectedReleases: number;
+    opportunityArtists: number;
+  };
+  opportunityArtists: ArtistCompleteness[];
+  detectedReleases: Release[];
+  genreOpportunities: InsightsData["top_genres"];
+  trendingArtists: InsightsData["popularity"];
+  momentumAlbums: InsightsData["top_albums"];
+}
+
+function DiscoverView({
+  navigate,
+  search,
+  onSearchChange,
+  recomputing,
+  completenessTaskId,
+  checking,
+  refreshAll,
+  recomputeCompleteness,
+  checkReleases,
+  summary,
+  opportunityArtists,
+  detectedReleases,
+  genreOpportunities,
+  trendingArtists,
+  momentumAlbums,
+}: DiscoverViewProps) {
+  return (
+    <div className="space-y-6">
+      <OpsPageHero
+        icon={Compass}
+        title="Discovery"
+        description="A workspace for finding what to import next: incomplete artist catalogues, fresh releases, momentum signals and genres worth expanding."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={refreshAll}
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={recomputeCompleteness}
+              disabled={recomputing || completenessTaskId !== null}
+            >
+              {recomputing || completenessTaskId !== null ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <BarChart3 size={14} />
+              )}
+              {recomputing || completenessTaskId !== null
+                ? "Recomputing..."
+                : "Recompute gaps"}
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={checkReleases}
+              disabled={checking}
+            >
+              {checking ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              Check releases
+            </Button>
+          </>
+        }
+      >
+        <CratePill active icon={Compass}>
+          {summary.opportunityArtists} acquisition targets
+        </CratePill>
+        <CratePill icon={Sparkles}>
+          {summary.detectedReleases} detected releases
+        </CratePill>
+        <CratePill icon={Search}>
+          {summary.incompleteArtists} incomplete artists
+        </CratePill>
+        <CratePill icon={TrendingUp}>
+          {trendingArtists.length} momentum signals
+        </CratePill>
+      </OpsPageHero>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <OpsStatTile
+          icon={Search}
+          label="Acquisition targets"
+          value={summary.opportunityArtists.toLocaleString()}
+          caption="Artists with missing catalogue worth filling"
+          tone={summary.opportunityArtists > 0 ? "primary" : "default"}
+        />
+        <OpsStatTile
+          icon={Sparkles}
+          label="Detected releases"
+          value={summary.detectedReleases.toLocaleString()}
+          caption="Albums already found by the radar"
+          tone={summary.detectedReleases > 0 ? "success" : "default"}
+        />
+        <OpsStatTile
+          icon={Compass}
+          label="Incomplete artists"
+          value={summary.incompleteArtists.toLocaleString()}
+          caption={`${summary.totalArtists.toLocaleString()} artists scanned for catalogue gaps`}
+          tone={summary.incompleteArtists > 0 ? "warning" : "default"}
+        />
+        <OpsStatTile
+          icon={TrendingUp}
+          label="Trend signals"
+          value={(
+            trendingArtists.length + momentumAlbums.length
+          ).toLocaleString()}
+          caption="Popularity and momentum slices from the library orbit"
+        />
+      </div>
+
+      <OpsPanel
+        icon={Search}
+        title="Search workspace"
+        description="Narrow all discovery panels at once by artist, album or missing-release title."
+      >
+        <div className="relative">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30"
+          />
+          <Input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search artists, releases or missing albums..."
+            className="pl-9"
+          />
+        </div>
+      </OpsPanel>
+
+      <OpsPanel
+        icon={Download}
+        title="Acquisition opportunities"
+        description="Artists with enough listener weight and enough missing catalogue to justify a download or curation pass."
+      >
+        {opportunityArtists.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {opportunityArtists.slice(0, 8).map((artist) => (
+              <OpportunityCard key={artist.artist} artist={artist} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-12 text-center text-sm text-white/35">
+            No acquisition opportunities match the current filter.
+          </div>
+        )}
+      </OpsPanel>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <OpsPanel
+          icon={Sparkles}
+          title="Release radar"
+          description="Freshly detected albums from your orbit that may deserve immediate acquisition."
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate("/new-releases")}
+            >
+              <ExternalLink size={14} />
+              Open full radar
+            </Button>
+          }
+        >
+          {detectedReleases.length > 0 ? (
+            <div className="space-y-2">
+              {detectedReleases.slice(0, 8).map((release) => (
+                <ReleaseRadarRow key={release.id} release={release} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
+              No detected releases available right now.
+            </div>
+          )}
+        </OpsPanel>
+
+        <OpsPanel
+          icon={BarChart3}
+          title="Genres to expand"
+          description="Top genres in your library, useful for spotting where a discovery sweep would most naturally fit."
+        >
+          {genreOpportunities.length > 0 ? (
+            <div className="space-y-2">
+              {genreOpportunities.map((genre) => (
+                <PopularityRow
+                  key={genre.genre}
+                  label={genre.genre}
+                  value={`${genre.artists} artists`}
+                  secondary={`${genre.albums} albums`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
+              Genre expansion data is not available yet.
+            </div>
+          )}
+        </OpsPanel>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <OpsPanel
+          icon={TrendingUp}
+          title="Artist momentum"
+          description="Popularity leaders in your orbit. Not discovery by itself, but a strong hint for what deserves deeper acquisition."
+        >
+          {trendingArtists.length > 0 ? (
+            <div className="space-y-2">
+              {trendingArtists.map((artist) => (
+                <PopularityRow
+                  key={artist.artist}
+                  label={artist.artist}
+                  value={`${artist.popularity || 0}%`}
+                  secondary={
+                    artist.listeners
+                      ? `${formatCompact(artist.listeners)} listeners`
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
+              No momentum data available yet.
+            </div>
+          )}
+        </OpsPanel>
+
+        <OpsPanel
+          icon={Disc3}
+          title="Album momentum"
+          description="Albums already resonating in your world. Handy for deciding which artists deserve more catalogue depth."
+        >
+          {momentumAlbums.length > 0 ? (
+            <div className="space-y-2">
+              {momentumAlbums.map((album) => (
+                <PopularityRow
+                  key={`${album.artist}-${album.album}`}
+                  label={`${album.artist} · ${album.album}`}
+                  value={
+                    album.listeners
+                      ? formatCompact(album.listeners)
+                      : `${album.popularity || 0}%`
+                  }
+                  secondary={album.year || undefined}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
+              No album momentum data available yet.
+            </div>
+          )}
+        </OpsPanel>
+      </div>
+    </div>
+  );
+}
+
 export function Discover() {
   const navigate = useNavigate();
   const { pollTask } = useTaskPoll();
@@ -489,246 +774,22 @@ export function Discover() {
   }
 
   return (
-    <div className="space-y-6">
-      <OpsPageHero
-        icon={Compass}
-        title="Discovery"
-        description="A workspace for finding what to import next: incomplete artist catalogues, fresh releases, momentum signals and genres worth expanding."
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={refreshAll}
-            >
-              <RefreshCw size={14} />
-              Refresh
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={recomputeCompleteness}
-              disabled={recomputing || completenessTaskId !== null}
-            >
-              {recomputing || completenessTaskId !== null ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <BarChart3 size={14} />
-              )}
-              {recomputing || completenessTaskId !== null
-                ? "Recomputing..."
-                : "Recompute gaps"}
-            </Button>
-            <Button
-              size="sm"
-              className="gap-2"
-              onClick={checkReleases}
-              disabled={checking}
-            >
-              {checking ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Sparkles size={14} />
-              )}
-              Check releases
-            </Button>
-          </>
-        }
-      >
-        <CratePill active icon={Compass}>
-          {summary.opportunityArtists} acquisition targets
-        </CratePill>
-        <CratePill icon={Sparkles}>
-          {summary.detectedReleases} detected releases
-        </CratePill>
-        <CratePill icon={Search}>
-          {summary.incompleteArtists} incomplete artists
-        </CratePill>
-        <CratePill icon={TrendingUp}>
-          {trendingArtists.length} momentum signals
-        </CratePill>
-      </OpsPageHero>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <OpsStatTile
-          icon={Search}
-          label="Acquisition targets"
-          value={summary.opportunityArtists.toLocaleString()}
-          caption="Artists with missing catalogue worth filling"
-          tone={summary.opportunityArtists > 0 ? "primary" : "default"}
-        />
-        <OpsStatTile
-          icon={Sparkles}
-          label="Detected releases"
-          value={summary.detectedReleases.toLocaleString()}
-          caption="Albums already found by the radar"
-          tone={summary.detectedReleases > 0 ? "success" : "default"}
-        />
-        <OpsStatTile
-          icon={Compass}
-          label="Incomplete artists"
-          value={summary.incompleteArtists.toLocaleString()}
-          caption={`${summary.totalArtists.toLocaleString()} artists scanned for catalogue gaps`}
-          tone={summary.incompleteArtists > 0 ? "warning" : "default"}
-        />
-        <OpsStatTile
-          icon={TrendingUp}
-          label="Trend signals"
-          value={(
-            trendingArtists.length + momentumAlbums.length
-          ).toLocaleString()}
-          caption="Popularity and momentum slices from the library orbit"
-        />
-      </div>
-
-      <OpsPanel
-        icon={Search}
-        title="Search workspace"
-        description="Narrow all discovery panels at once by artist, album or missing-release title."
-      >
-        <div className="relative">
-          <Search
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30"
-          />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search artists, releases or missing albums..."
-            className="pl-9"
-          />
-        </div>
-      </OpsPanel>
-
-      <OpsPanel
-        icon={Download}
-        title="Acquisition opportunities"
-        description="Artists with enough listener weight and enough missing catalogue to justify a download or curation pass."
-      >
-        {opportunityArtists.length > 0 ? (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {opportunityArtists.slice(0, 8).map((artist) => (
-              <OpportunityCard key={artist.artist} artist={artist} />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-12 text-center text-sm text-white/35">
-            No acquisition opportunities match the current filter.
-          </div>
-        )}
-      </OpsPanel>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <OpsPanel
-          icon={Sparkles}
-          title="Release radar"
-          description="Freshly detected albums from your orbit that may deserve immediate acquisition."
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => navigate("/new-releases")}
-            >
-              <ExternalLink size={14} />
-              Open full radar
-            </Button>
-          }
-        >
-          {detectedReleases.length > 0 ? (
-            <div className="space-y-2">
-              {detectedReleases.slice(0, 8).map((release) => (
-                <ReleaseRadarRow key={release.id} release={release} />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
-              No detected releases available right now.
-            </div>
-          )}
-        </OpsPanel>
-
-        <OpsPanel
-          icon={BarChart3}
-          title="Genres to expand"
-          description="Top genres in your library, useful for spotting where a discovery sweep would most naturally fit."
-        >
-          {genreOpportunities.length > 0 ? (
-            <div className="space-y-2">
-              {genreOpportunities.map((genre) => (
-                <PopularityRow
-                  key={genre.genre}
-                  label={genre.genre}
-                  value={`${genre.artists} artists`}
-                  secondary={`${genre.albums} albums`}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
-              Genre expansion data is not available yet.
-            </div>
-          )}
-        </OpsPanel>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <OpsPanel
-          icon={TrendingUp}
-          title="Artist momentum"
-          description="Popularity leaders in your orbit. Not discovery by itself, but a strong hint for what deserves deeper acquisition."
-        >
-          {trendingArtists.length > 0 ? (
-            <div className="space-y-2">
-              {trendingArtists.map((artist) => (
-                <PopularityRow
-                  key={artist.artist}
-                  label={artist.artist}
-                  value={`${artist.popularity || 0}%`}
-                  secondary={
-                    artist.listeners
-                      ? `${formatCompact(artist.listeners)} listeners`
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
-              No momentum data available yet.
-            </div>
-          )}
-        </OpsPanel>
-
-        <OpsPanel
-          icon={Disc3}
-          title="Album momentum"
-          description="Albums already resonating in your world. Handy for deciding which artists deserve more catalogue depth."
-        >
-          {momentumAlbums.length > 0 ? (
-            <div className="space-y-2">
-              {momentumAlbums.map((album) => (
-                <PopularityRow
-                  key={`${album.artist}-${album.album}`}
-                  label={`${album.artist} · ${album.album}`}
-                  value={
-                    album.listeners
-                      ? formatCompact(album.listeners)
-                      : `${album.popularity || 0}%`
-                  }
-                  secondary={album.year || undefined}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-10 text-center text-sm text-white/35">
-              No album momentum data available yet.
-            </div>
-          )}
-        </OpsPanel>
-      </div>
-    </div>
+    <DiscoverView
+      navigate={navigate}
+      search={search}
+      onSearchChange={setSearch}
+      recomputing={recomputing}
+      completenessTaskId={completenessTaskId}
+      checking={checking}
+      refreshAll={() => void refreshAll()}
+      recomputeCompleteness={recomputeCompleteness}
+      checkReleases={checkReleases}
+      summary={summary}
+      opportunityArtists={opportunityArtists}
+      detectedReleases={detectedReleases}
+      genreOpportunities={genreOpportunities}
+      trendingArtists={trendingArtists}
+      momentumAlbums={momentumAlbums}
+    />
   );
 }

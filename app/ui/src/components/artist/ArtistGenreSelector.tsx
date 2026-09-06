@@ -25,7 +25,7 @@ interface TaxonomyTreeResponse {
   nodes: TaxonomyNode[];
 }
 
-export function filterTaxonomyNodes(
+function filterTaxonomyNodes(
   nodes: TaxonomyNode[],
   search: string,
 ): TaxonomyNode[] {
@@ -55,12 +55,15 @@ export function ArtistGenreSelector({
   const { data, loading, error } = useApi<TaxonomyTreeResponse>(
     open ? "/api/genres/taxonomy/tree" : null,
   );
-  const nodes = data?.nodes ?? [];
   const filteredNodes = useMemo(
-    () => filterTaxonomyNodes(nodes, search),
-    [nodes, search],
+    () => filterTaxonomyNodes(data?.nodes ?? [], search),
+    [data?.nodes, search],
   );
-  const labels = new Map(nodes.map((node) => [node.slug, node.name]));
+  const labels = useMemo(
+    () => new Map((data?.nodes ?? []).map((node) => [node.slug, node.name])),
+    [data?.nodes],
+  );
+  const selectedGenres = useMemo(() => new Set(value), [value]);
 
   function toggle(slug: string) {
     onChange(
@@ -133,7 +136,7 @@ export function ArtistGenreSelector({
             </p>
           ) : filteredNodes.length ? (
             filteredNodes.map((node) => {
-              const selected = value.includes(node.slug);
+              const selected = selectedGenres.has(node.slug);
               return (
                 <button
                   key={node.slug}

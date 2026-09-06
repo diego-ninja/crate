@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +43,136 @@ interface ArtistBioResearchDialogProps {
   onApply: (bio: string) => Promise<void> | void;
 }
 
+function ResearchResultContent({
+  result,
+  currentBio,
+  proposal,
+  onProposalChange,
+}: {
+  result: ResearchResult;
+  currentBio: string;
+  proposal: string;
+  onProposalChange: (proposal: string) => void;
+}) {
+  const reviewNotes = [...(result.conflicts ?? []), ...(result.warnings ?? [])];
+
+  return (
+    <>
+      <p className="text-xs text-white/40">
+        Current library bio:{" "}
+        {currentBio.trim() ? `${currentBio.trim().length} characters` : "empty"}
+      </p>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
+        <label className="grid gap-2 text-sm">
+          <span className="font-medium text-white/75">Proposed biography</span>
+          <Textarea
+            value={proposal}
+            onChange={(event) => onProposalChange(event.target.value)}
+            rows={12}
+            className="min-h-64 resize-y leading-relaxed"
+          />
+        </label>
+        <div className="space-y-3">
+          <div>
+            <p className="mb-2 text-sm font-medium text-white/75">
+              Evidence used
+            </p>
+            <div className="space-y-2">
+              {(result.sources ?? []).map((source) => (
+                <a
+                  key={source.id}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="block rounded-md border border-white/10 bg-black/20 p-3 transition-colors hover:border-primary/40"
+                >
+                  <span className="flex items-center gap-2 text-xs font-medium text-primary">
+                    {source.title} <ExternalLink size={11} />
+                  </span>
+                  <span className="mt-1 block line-clamp-3 text-xs leading-relaxed text-white/45">
+                    {source.excerpt}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+          {reviewNotes.length > 0 ? (
+            <div className="rounded-md border border-amber-400/20 bg-amber-500/5 p-3 text-xs text-amber-100/75">
+              <p className="mb-1 font-medium text-amber-200">Review notes</p>
+              {reviewNotes.map((note) => (
+                <p key={note} className="mt-1">
+                  {note}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <p className="text-xs text-white/35">
+        Model: {result.model || "configured provider"}. Existing biography was
+        supplied as context only; claims should be checked against the linked
+        sources.
+      </p>
+    </>
+  );
+}
+
+function ResearchDialogBody({
+  artistName,
+  currentBio,
+  loading,
+  error,
+  result,
+  proposal,
+  onProposalChange,
+  onRetry,
+}: {
+  artistName: string;
+  currentBio: string;
+  loading: boolean;
+  error: string | null;
+  result: ResearchResult | null;
+  proposal: string;
+  onProposalChange: (proposal: string) => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+      {loading ? (
+        <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-5 text-sm text-white/70">
+          <Loader2 className="animate-spin text-primary" size={18} />
+          Searching MusicBrainz, Wikipedia, Last.fm and official pages, then
+          consolidating evidence…
+        </div>
+      ) : null}
+      {error ? (
+        <div className="flex items-start gap-3 rounded-lg border border-red-400/25 bg-red-500/5 p-4 text-sm text-red-200">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <div className="space-y-2">
+            <p>{error}</p>
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              <RefreshCw size={14} className="mr-2" /> Retry research
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {result ? (
+        <ResearchResultContent
+          result={result}
+          currentBio={currentBio}
+          proposal={proposal}
+          onProposalChange={onProposalChange}
+        />
+      ) : null}
+      {!loading && !result && !error ? (
+        <p className="text-sm text-white/45">
+          Preparing research for {artistName}…
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ArtistBioResearchDialog({
   open,
   onOpenChange,
@@ -56,16 +186,9 @@ export function ArtistBioResearchDialog({
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [proposal, setProposal] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
+  async function runResearch() {
     setResult(null);
     setProposal("");
-    setError(null);
-    void runResearch();
-    // The dialog is intentionally a fresh research run each time it opens.
-  }, [open, artist.id, artist.entity_uid]);
-
-  async function runResearch() {
     setLoading(true);
     setError(null);
     try {
@@ -117,7 +240,10 @@ export function ArtistBioResearchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(86vh,860px)] max-w-4xl overflow-hidden">
+      <DialogContent
+        className="max-h-[min(86vh,860px)] max-w-4xl overflow-hidden"
+        onOpenAutoFocus={() => void runResearch()}
+      >
         <DialogHeader>
           <DialogTitle>Research biography with AI</DialogTitle>
           <DialogDescription>
@@ -125,107 +251,16 @@ export function ArtistBioResearchDialog({
             proposal for {artist.name}. Nothing is saved until you apply it.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
-          {loading ? (
-            <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-5 text-sm text-white/70">
-              <Loader2 className="animate-spin text-primary" size={18} />
-              Searching MusicBrainz, Wikipedia, Last.fm and official pages, then
-              consolidating evidence…
-            </div>
-          ) : null}
-
-          {error ? (
-            <div className="flex items-start gap-3 rounded-lg border border-red-400/25 bg-red-500/5 p-4 text-sm text-red-200">
-              <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-              <div className="space-y-2">
-                <p>{error}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void runResearch()}
-                >
-                  <RefreshCw size={14} className="mr-2" /> Retry research
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {result ? (
-            <>
-              <p className="text-xs text-white/40">
-                Current library bio:{" "}
-                {currentBio.trim()
-                  ? `${currentBio.trim().length} characters`
-                  : "empty"}
-              </p>
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)]">
-                <label className="grid gap-2 text-sm">
-                  <span className="font-medium text-white/75">
-                    Proposed biography
-                  </span>
-                  <Textarea
-                    value={proposal}
-                    onChange={(event) => setProposal(event.target.value)}
-                    rows={12}
-                    className="min-h-64 resize-y leading-relaxed"
-                  />
-                </label>
-                <div className="space-y-3">
-                  <div>
-                    <p className="mb-2 text-sm font-medium text-white/75">
-                      Evidence used
-                    </p>
-                    <div className="space-y-2">
-                      {(result.sources ?? []).map((source) => (
-                        <a
-                          key={source.id}
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer nofollow"
-                          className="block rounded-md border border-white/10 bg-black/20 p-3 transition-colors hover:border-primary/40"
-                        >
-                          <span className="flex items-center gap-2 text-xs font-medium text-primary">
-                            {source.title} <ExternalLink size={11} />
-                          </span>
-                          <span className="mt-1 block line-clamp-3 text-xs leading-relaxed text-white/45">
-                            {source.excerpt}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                  {result.conflicts?.length || result.warnings?.length ? (
-                    <div className="rounded-md border border-amber-400/20 bg-amber-500/5 p-3 text-xs text-amber-100/75">
-                      <p className="mb-1 font-medium text-amber-200">
-                        Review notes
-                      </p>
-                      {[
-                        ...(result.conflicts ?? []),
-                        ...(result.warnings ?? []),
-                      ].map((note) => (
-                        <p key={note} className="mt-1">
-                          {note}
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <p className="text-xs text-white/35">
-                Model: {result.model || "configured provider"}. Existing
-                biography was supplied as context only; claims should be checked
-                against the linked sources.
-              </p>
-            </>
-          ) : null}
-          {!loading && !result && !error ? (
-            <p className="text-sm text-white/45">
-              Preparing research for {artist.name}…
-            </p>
-          ) : null}
-        </div>
-
+        <ResearchDialogBody
+          artistName={artist.name}
+          currentBio={currentBio}
+          loading={loading}
+          error={error}
+          result={result}
+          proposal={proposal}
+          onProposalChange={setProposal}
+          onRetry={() => void runResearch()}
+        />
         <DialogFooter>
           <Button
             variant="outline"

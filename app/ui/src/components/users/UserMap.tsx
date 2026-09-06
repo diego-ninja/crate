@@ -11,80 +11,11 @@ import {
 } from "lucide-react";
 
 import { useApi } from "@/hooks/use-api";
-
-export interface MapTrack {
-  title?: string | null;
-  artist?: string | null;
-  album?: string | null;
-}
-
-export interface MapUser {
-  id: number;
-  name: string;
-  email: string;
-  username?: string | null;
-  avatar: string | null;
-  city: string | null;
-  country: string | null;
-  country_code?: string | null;
-  latitude: number;
-  longitude: number;
-  role?: string | null;
-  status?: string | null;
-  created_at?: string | null;
-  last_login?: string | null;
-  last_seen_at?: string | null;
-  last_activity_at?: string | null;
-  activity_status?: "active" | "inactive" | "never_active" | string;
-  active_sessions?: number;
-  active_devices?: number;
-  online: boolean;
-  listening_now?: boolean;
-  last_played_at?: string | null;
-  current_track?: MapTrack | null;
-  now_playing: MapTrack | null;
-}
-
-export interface MapUserGroup {
-  key: string;
-  latitude: number;
-  longitude: number;
-  users: MapUser[];
-}
-
-export function groupMapUsers(users: MapUser[]): MapUserGroup[] {
-  const grouped = new Map<string, MapUser[]>();
-
-  for (const user of users) {
-    if (
-      !Number.isFinite(user.latitude) ||
-      !Number.isFinite(user.longitude) ||
-      user.latitude < -90 ||
-      user.latitude > 90 ||
-      user.longitude < -180 ||
-      user.longitude > 180
-    ) {
-      continue;
-    }
-
-    const key = `${user.latitude.toFixed(5)}:${user.longitude.toFixed(5)}`;
-    const group = grouped.get(key);
-    if (group) group.push(user);
-    else grouped.set(key, [user]);
-  }
-
-  return Array.from(grouped.entries())
-    .map(([key, groupUsers]) => ({
-      key,
-      latitude: groupUsers[0]!.latitude,
-      longitude: groupUsers[0]!.longitude,
-      users: [...groupUsers].sort((left, right) => left.id - right.id),
-    }))
-    .sort(
-      (left, right) =>
-        left.latitude - right.latitude || left.longitude - right.longitude,
-    );
-}
+import {
+  groupMapUsers,
+  type MapUser,
+  type MapUserGroup,
+} from "./user-map-utils";
 
 function markerIcon(group: MapUserGroup): L.DivIcon {
   const primaryUser = group.users[0]!;
@@ -272,8 +203,9 @@ export function UserMap({
   const { data, loading } = useApi<{ users: MapUser[] }>(
     "/api/admin/users/map",
   );
-  const users = data?.users ?? [];
-  const groups = useMemo(() => groupMapUsers(users), [users]);
+  const userRows = data?.users;
+  const users = userRows ?? [];
+  const groups = useMemo(() => groupMapUsers(userRows ?? []), [userRows]);
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
@@ -353,8 +285,8 @@ export function UserMap({
         </MapContainer>
 
         {selectedGroup && selectedUser ? (
-          <div
-            role="dialog"
+          <dialog
+            open
             aria-label="User map details"
             className="absolute right-3 top-3 z-[1000] max-h-[calc(100%-24px)] w-[min(360px,calc(100%-24px))] overflow-y-auto rounded-md border border-white/12 bg-[#11111f]/95 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl"
           >
@@ -411,7 +343,7 @@ export function UserMap({
             <div className="mt-3">
               <UserDetails user={selectedUser} onInspectUser={onInspectUser} />
             </div>
-          </div>
+          </dialog>
         ) : null}
       </div>
     </section>
