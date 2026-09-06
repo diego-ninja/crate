@@ -84,6 +84,64 @@ class TestShowsShared:
         assert result[0]["lastfm_attendance"] == 500
         assert "Support Act" in result[0]["lineup"]
 
+    def test_dedupe_show_rows_merges_setlist_without_time_with_ticketmaster(self):
+        from crate.db.queries.shows_shared import dedupe_show_rows
+
+        shows = [
+            {
+                "external_id": "tm-1",
+                "artist_name": "Test Artist",
+                "date": date(2026, 8, 23),
+                "local_time": "20:00",
+                "venue": "Venue",
+                "city": "Madrid",
+                "country_code": "ES",
+                "source": "ticketmaster",
+                "url": "https://ticketmaster.test/event",
+                "lineup": ["Test Artist"],
+            },
+            {
+                "external_id": "setlistfm:event-1",
+                "artist_name": "Test Artist",
+                "date": date(2026, 8, 23),
+                "local_time": None,
+                "venue": "Venue",
+                "city": "Madrid",
+                "country_code": "ES",
+                "source": "setlistfm",
+                "url": "https://www.setlist.fm/setlist/event-1",
+                "lineup": ["Test Artist"],
+            },
+        ]
+
+        result = dedupe_show_rows(shows)
+
+        assert len(result) == 1
+        assert result[0]["source"] == "both"
+        assert result[0]["local_time"] == "20:00"
+        assert result[0]["url"] == "https://ticketmaster.test/event"
+
+    def test_dedupe_show_rows_keeps_two_known_times_separate(self):
+        from crate.db.queries.shows_shared import dedupe_show_rows
+
+        base = {
+            "artist_name": "Test Artist",
+            "date": date(2026, 8, 23),
+            "venue": "Venue",
+            "city": "Madrid",
+            "country_code": "ES",
+            "source": "setlistfm",
+        }
+
+        result = dedupe_show_rows(
+            [
+                {**base, "local_time": "18:00"},
+                {**base, "local_time": "21:00"},
+            ]
+        )
+
+        assert len(result) == 2
+
     def test_dedupe_show_rows_empty(self):
         from crate.db.queries.shows_shared import dedupe_show_rows
 
