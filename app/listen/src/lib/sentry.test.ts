@@ -19,10 +19,13 @@ describe("Listen Sentry setup", () => {
     vi.clearAllMocks();
   });
 
-  it("initializes tracing for web and desktop", () => {
+  it("initializes tracing asynchronously for web and desktop", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://public@example.test/2");
 
-    initSentry();
+    const initialization = initSentry();
+
+    expect(initialization).toBeInstanceOf(Promise);
+    await initialization;
 
     expect(init).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -32,9 +35,9 @@ describe("Listen Sentry setup", () => {
     );
   });
 
-  it("clears the stable user id on logout", () => {
-    setSentryUser("listen-user");
-    setSentryUser(null);
+  it("clears the stable user id on logout", async () => {
+    await setSentryUser("listen-user");
+    await setSentryUser(null);
 
     expect(setUser).toHaveBeenNthCalledWith(1, { id: "listen-user" });
     expect(setUser).toHaveBeenNthCalledWith(2, null);
