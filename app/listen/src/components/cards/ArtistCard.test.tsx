@@ -64,6 +64,35 @@ beforeEach(() => {
 });
 
 describe("ArtistCard", () => {
+  it("keeps hover actions anchored to the circular artwork", () => {
+    mockPointerEnvironment(true);
+
+    renderWithListenProviders(
+      <ArtistCard name="Dredg" artistId={1} artistSlug="dredg" />,
+    );
+
+    const followButton = screen.getByRole("button", { name: "Follow Dredg" });
+
+    expect(followButton.closest("[data-artwork-state]")).toBeInTheDocument();
+  });
+
+  it("does not add inline actions to external artist links", () => {
+    mockPointerEnvironment(true);
+
+    renderWithListenProviders(
+      <ArtistCard
+        name="Dredg"
+        artistId={1}
+        href="https://www.last.fm/music/Dredg"
+        external
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Follow Dredg" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders responsive WebP candidates for generated artist photos", () => {
     renderWithListenProviders(
       <ArtistCard name="High Vis" artistId={9} layout="grid" />,

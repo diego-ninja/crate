@@ -95,6 +95,21 @@ class TestHomeCatalog:
         assert "Genre Map Artist" in genre_map
         assert "post-punk" in genre_map["Genre Map Artist"]
 
+    def test_get_artist_genre_profiles_map_with_data(self, pg_db):
+        from crate.db.queries.home_catalog import get_artist_genre_profiles_map
+
+        pg_db.upsert_artist({"name": "Genre Profile Artist"})
+        pg_db.set_artist_genres(
+            "Genre Profile Artist",
+            [("hip-hop", 1.0, "test"), ("rap", 0.88, "test")],
+        )
+
+        profile_map = get_artist_genre_profiles_map(["Genre Profile Artist"])
+
+        assert profile_map["Genre Profile Artist"][0]["name"] == "hip-hop"
+        assert profile_map["Genre Profile Artist"][0]["percent"] == 100
+        assert profile_map["Genre Profile Artist"][1]["percent"] == 88
+
     def test_get_library_artist_by_id_not_found(self, pg_db):
         from crate.db.queries.home_catalog import get_library_artist_by_id
 

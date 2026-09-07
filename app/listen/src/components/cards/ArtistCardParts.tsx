@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CRATE_ICON_SIZE, Loader2, Play } from "@crate/ui/icons";
 import { FollowHeartButton } from "@crate/ui/primitives/FollowHeartButton";
@@ -283,6 +283,7 @@ export function ArtistCardArtwork({
   fillGrid,
   imageTone,
   monogram,
+  children,
 }: {
   photoArtwork: ArtworkSource | null;
   name: string;
@@ -291,6 +292,7 @@ export function ArtistCardArtwork({
   fillGrid: boolean;
   imageTone: "normal" | "muted";
   monogram: string;
+  children?: ReactNode;
 }) {
   return (
     <ArtworkSurface
@@ -320,7 +322,9 @@ export function ArtistCardArtwork({
         imageTone === "muted" &&
           "grayscale saturate-0 brightness-[0.52] contrast-125 transition duration-300 group-hover/card:brightness-[0.72]",
       )}
-    />
+    >
+      {children}
+    </ArtworkSurface>
   );
 }
 
@@ -347,7 +351,6 @@ export function ArtistCardDetails({
 
 export function ArtistCardInlineActions({
   artistName,
-  artworkWidth,
   following,
   hasPlayableArtist,
   canUseInlineHoverActions,
@@ -358,7 +361,6 @@ export function ArtistCardInlineActions({
   t,
 }: {
   artistName: string;
-  artworkWidth: string;
   following: boolean;
   hasPlayableArtist: boolean;
   canUseInlineHoverActions: boolean;
@@ -371,10 +373,7 @@ export function ArtistCardInlineActions({
   if (!hasPlayableArtist || !canUseInlineHoverActions) return null;
 
   return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-0 z-10 flex aspect-square -translate-x-1/2 items-center justify-center rounded-full bg-surface-canvas/0 transition-colors group-hover/card:bg-surface-canvas/42"
-      style={{ width: artworkWidth }}
-    >
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-full bg-surface-canvas/0 transition-colors group-hover/card:bg-surface-canvas/42">
       <div className="pointer-events-none flex translate-y-2 items-center justify-center gap-2 opacity-0 transition-[transform,opacity] group-focus-within/card:translate-y-0 group-focus-within/card:opacity-100 group-hover/card:translate-y-0 group-hover/card:opacity-100">
         <button
           type="button"

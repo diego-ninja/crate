@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from crate.db.queries.home_catalog import (
+    get_artist_genre_profiles_map,
     get_artist_genres_map,
     get_followed_artist_genre_names,
     get_home_hero_rows,
@@ -19,6 +20,7 @@ from crate.db.queries.home_tracks import (
 __all__ = [
     "get_artist_core_track_rows",
     "get_artists_core_track_rows",
+    "get_artist_genre_profiles_map",
     "get_artist_genres_map",
     "get_discovery_track_rows",
     "get_followed_artist_genre_names",

@@ -18,7 +18,7 @@ from crate.db.home_hero_scoring import (
 )
 from crate.db.home_debug import record_home_hero_debug
 from crate.db.queries.home import (
-    get_artist_genres_map,
+    get_artist_genre_profiles_map,
     get_discovery_track_rows,
     get_home_hero_rows,
     get_recent_interest_track_rows,
@@ -204,14 +204,16 @@ def _rank_home_hero_rows(
     source_rows = _dedupe_home_hero_rows(source_rows)
 
     artist_names = [row["name"] for row in source_rows]
-    genre_map = get_artist_genres_map(artist_names)
+    genre_profile_map = get_artist_genre_profiles_map(artist_names, limit=4)
 
     public_by_name: dict[str, dict] = {}
     for source_item in source_rows:
         item = dict(source_item)
         _add_hero_artwork_bounds(item)
         item["bio"] = _trim_bio(item.get("bio") or "")
-        item["genres"] = genre_map.get(item["name"], [])[:4]
+        genre_profile = genre_profile_map.get(item["name"], [])
+        item["genres"] = [genre["name"] for genre in genre_profile]
+        item["genre_profile"] = genre_profile
         item.setdefault("artwork_provenance", "fallback")
         for key in (
             "_hero_provenance",

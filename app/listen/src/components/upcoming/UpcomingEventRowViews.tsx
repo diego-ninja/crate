@@ -7,7 +7,7 @@ import { CrateImage } from "@/components/artwork/CrateImage";
 import type { UpcomingItem } from "./upcoming-model";
 import type { UpcomingEventRowModel } from "./upcoming-event-row-model";
 
-export function UpcomingEventRowArtwork({
+export function UpcomingEventRowBackground({
   coverUrl,
 }: Pick<UpcomingEventRowModel, "coverUrl">) {
   return (
@@ -25,24 +25,31 @@ export function UpcomingEventRowArtwork({
         />
       ) : null}
       <div className="upcoming-event-row-scrim absolute inset-0" />
-      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border-quiet bg-text-primary/5">
-        {coverUrl ? (
-          <CrateImage
-            src={coverUrl}
-            alt=""
-            loading="lazy"
-            className=" size-full object-cover"
-            onError={(event) => {
-              (event.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center text-accent-action">
-            <Disc3 size={24} />
-          </div>
-        )}
-      </div>
     </>
+  );
+}
+
+export function UpcomingEventRowArtwork({
+  coverUrl,
+}: Pick<UpcomingEventRowModel, "coverUrl">) {
+  return (
+    <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border-quiet bg-text-primary/5">
+      {coverUrl ? (
+        <CrateImage
+          src={coverUrl}
+          alt=""
+          loading="lazy"
+          className=" size-full object-cover"
+          onError={(event) => {
+            (event.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+      ) : (
+        <div className="flex size-full items-center justify-center text-accent-action">
+          <Disc3 size={24} />
+        </div>
+      )}
+    </div>
   );
 }
 

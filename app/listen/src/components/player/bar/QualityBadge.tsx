@@ -12,9 +12,9 @@ const tierStyles: Record<
     glow: "quality-badge-hi-res-glow",
   },
   lossless: {
-    border: "border-state-info/40",
-    text: "text-state-info",
-    bg: "bg-state-info/8",
+    border: "border-accent-action/40",
+    text: "text-accent-action",
+    bg: "bg-accent-action/8",
   },
   high: {
     border: "border-accent-action/30",
@@ -51,11 +51,10 @@ export function QualityBadge({
   origin?: QualityBadgeOrigin;
 }) {
   const style = tierStyles[badge.tier];
-  const Icon = origin === "source" ? tierIcons[badge.tier] : null;
-  const variantClass =
-    origin === "stream"
-      ? "quality-badge-stream"
-      : `${style.border} ${style.text} ${style.bg} ${style.glow || ""}`;
+  const Icon = tierIcons[badge.tier];
+  const variantClass = `${style.border} ${style.text} ${style.bg} ${
+    style.glow || ""
+  }`;
   const title =
     origin === "stream"
       ? `Streaming delivery quality · ${badge.detail || badge.label}`
@@ -63,7 +62,7 @@ export function QualityBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold tracking-wider leading-none whitespace-nowrap border ${variantClass}`}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-badge font-bold tracking-wider leading-none whitespace-nowrap border ${variantClass}`}
       title={title}
     >
       {Icon && <Icon size={9} />}

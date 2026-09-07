@@ -144,6 +144,8 @@ export function scopesForUrl(url: string): string[] {
     scopes.push("follows", "library");
   else if (url.startsWith("/api/catalog/me/albums"))
     scopes.push("saved_albums", "library");
+  else if (url.match(/^\/api\/catalog\/artists\/[^/]+\/page(?:\?|$)/))
+    scopes.push("artist_bio", "library");
   else if (url.startsWith("/api/me/history")) scopes.push("history");
   else if (url.startsWith("/api/me/stats")) scopes.push("history");
   else if (url.startsWith("/api/users/") && url.includes("/stats"))
@@ -165,8 +167,14 @@ export function scopesForUrl(url: string): string[] {
     const m = url.match(/^\/api\/artists\/(\d+)/);
     if (m) scopes.push(`artist:${m[1]}`);
     scopes.push("library", "follows");
-  } else if (url.startsWith("/api/artist-slugs/"))
+    if (url.match(/^\/api\/artists\/\d+(?:\?.*)?$/)) scopes.push("artist_bio");
+  } else if (url.match(/^\/api\/artists\/by-entity\/[^/]+(?:\?|$)/))
+    scopes.push("library", "follows", "artist_bio");
+  else if (url.startsWith("/api/artist-slugs/")) {
     scopes.push("library", "follows");
+    if (url.match(/^\/api\/artist-slugs\/[^/]+(?:\/page)?(?:\?|$)/))
+      scopes.push("artist_bio");
+  }
   // Album detail
   else if (url.match(/^\/api\/albums\/\d+/)) {
     const m = url.match(/^\/api\/albums\/(\d+)/);

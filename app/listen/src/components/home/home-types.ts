@@ -1,5 +1,6 @@
 import type { PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import type { ArtistHeroArtworkBounds } from "@crate/ui/domain/ArtistHeroFrame";
+import type { GenreProfileItem } from "@crate/ui/domain/genres/GenrePill";
 import type {
   ArtistHeroCompositionView,
   HomeHeroSurfaces,
@@ -217,6 +218,7 @@ export interface HomeHeroArtist {
   slug?: string;
   name: string;
   genres?: string[];
+  genre_profile?: GenreProfileItem[];
   listeners: number;
   scrobbles: number;
   album_count: number;

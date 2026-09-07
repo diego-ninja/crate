@@ -37,3 +37,14 @@ def test_maintenance_worker_receives_enrichment_provider_environment() -> None:
             "crate-maintenance-worker",
         )
         assert PROVIDER_ENV_KEYS <= environment_keys
+
+
+def test_dev_llm_workers_receive_provider_environment() -> None:
+    required_keys = {
+        "LLM_PROVIDER",
+        "GEMINI_API_KEY",
+        "AUDIOMUSE_GEMINI_API_KEY",
+    }
+    for service_name in ("worker", "maintenance-worker"):
+        environment_keys = _environment_keys("docker-compose.dev.yaml", service_name)
+        assert required_keys <= environment_keys

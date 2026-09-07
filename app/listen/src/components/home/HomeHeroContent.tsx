@@ -49,7 +49,9 @@ export function HeroBackdrop({
 }
 
 export function HeroGenres({ hero }: { hero: HomeHeroArtist }) {
-  const genres = hero.genres?.flatMap((name) => (name ? [{ name }] : [])) ?? [];
+  const genres = hero.genre_profile?.length
+    ? hero.genre_profile
+    : hero.genres?.flatMap((name) => (name ? [{ name }] : [])) ?? [];
 
   if (genres.length === 0) return null;
 

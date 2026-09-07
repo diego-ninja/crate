@@ -1,5 +1,10 @@
 /* crate-ui — Typography */
 
+@theme inline {
+  --text-badge: 0.625rem; /* 10px */
+  --text-badge--line-height: 1;
+}
+
 body {
   font-family:
     var(--font-brand),

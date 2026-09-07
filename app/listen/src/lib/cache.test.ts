@@ -225,6 +225,15 @@ describe("scopesForUrl", () => {
       "artist:7",
       "library",
       "follows",
+      "artist_bio",
+    ]);
+  });
+
+  it("does not add artist bio scope to artist top tracks", () => {
+    expect(scopesForUrl("/api/artists/7/top-tracks?count=50")).toEqual([
+      "artist:7",
+      "library",
+      "follows",
     ]);
   });
 
@@ -232,12 +241,19 @@ describe("scopesForUrl", () => {
     expect(scopesForUrl("/api/artist-slugs/quicksand")).toEqual([
       "library",
       "follows",
+      "artist_bio",
     ]);
   });
 
-  it("returns library+follows for nested artist-slug album paths (startsWith match wins)", () => {
-    // `/api/artist-slugs/...` startsWith check (line 130) matches before the
-    // regex-based nested album check (line 137), so follows is included.
+  it("returns artist bio scope for the cached artist page route", () => {
+    expect(
+      scopesForUrl("/api/artist-slugs/quicksand/page?top_tracks_count=50"),
+    ).toEqual(["library", "follows", "artist_bio"]);
+  });
+
+  it("does not add artist bio scope to nested artist album paths", () => {
+    // Artist biographies are only part of the artist detail/page response,
+    // not the nested album response.
     expect(scopesForUrl("/api/artist-slugs/quicksand/albums/slip")).toEqual([
       "library",
       "follows",
@@ -855,6 +871,19 @@ describe("connectCacheEvents", () => {
     );
     expect(mockRecordAssetInvalidationScope).toHaveBeenCalledWith("likes");
     expect(listener).toHaveBeenCalledWith("likes");
+  });
+
+  it("invalidates cached artist pages when an artist bio changes", () => {
+    const artistPageUrl = "/api/artist-slugs/high-vis/page?top_tracks_count=50";
+    cacheSet(artistPageUrl, { info: { bio: "Old bio" } });
+    const listener = vi.fn();
+    onCacheInvalidation(listener);
+
+    _safeConnect();
+    mockEs.onmessage!({ data: "artist_bio" } as MessageEvent);
+
+    expect(cacheGet(artistPageUrl)).toBeNull();
+    expect(listener).toHaveBeenCalledWith("artist_bio");
   });
 
   it("resumes from the last event persisted before a page reload", () => {

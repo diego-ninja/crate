@@ -76,7 +76,21 @@ export function ArtistCard({
         fillGrid={model.fillGrid}
         imageTone={model.imageTone}
         monogram={model.monogram}
-      />
+      >
+        {!external && model.hasPlayableArtist ? (
+          <ArtistCardInlineActions
+            artistName={name}
+            following={model.following}
+            hasPlayableArtist={model.hasPlayableArtist}
+            canUseInlineHoverActions={model.canUseInlineHoverActions}
+            playingTopTracks={playback.playingTopTracks}
+            togglingFollow={follow.togglingFollow}
+            handlePlayTopTracks={playback.handlePlayTopTracks}
+            handleToggleFollow={follow.handleToggleFollow}
+            t={model.t}
+          />
+        ) : null}
+      </ArtistCardArtwork>
       <ArtistCardDetails name={name} subtitle={subtitle} />
     </>
   );
@@ -114,18 +128,6 @@ export function ArtistCard({
       >
         {content}
       </button>
-      <ArtistCardInlineActions
-        artistName={name}
-        artworkWidth={model.artworkWidth}
-        following={model.following}
-        hasPlayableArtist={model.hasPlayableArtist}
-        canUseInlineHoverActions={model.canUseInlineHoverActions}
-        playingTopTracks={playback.playingTopTracks}
-        togglingFollow={follow.togglingFollow}
-        handlePlayTopTracks={playback.handlePlayTopTracks}
-        handleToggleFollow={follow.handleToggleFollow}
-        t={model.t}
-      />
       <ItemActionMenu
         actions={model.actions}
         header={{

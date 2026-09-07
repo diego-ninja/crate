@@ -254,6 +254,12 @@ services:
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - OLLAMA_URL=${OLLAMA_URL:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini/gemini-2.5-flash}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AUDIOMUSE_GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY:-}
       # SCRAPE_PROXY_URL not set in dev — VPN image is x86_64 only, scrapes go direct
     volumes:
       - ./app/crate:/app/crate:ro
@@ -424,6 +430,12 @@ services:
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - OLLAMA_URL=${OLLAMA_URL:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini/gemini-2.5-flash}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AUDIOMUSE_GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY:-}
     volumes:
       - ./app/crate:/app/crate:ro
       - ./app/tests:/app/tests:ro

@@ -1411,13 +1411,6 @@
   box-shadow: var(--_quality-hi-res-glow);
 }
 
-.quality-badge-stream {
-  border-color: var(--border-quiet);
-  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
-  color: color-mix(in srgb, var(--text-primary) 68%, transparent);
-  box-shadow: none;
-}
-
 .info-tab-hero {
   border: 1px solid var(--border-quiet);
   background: linear-gradient(

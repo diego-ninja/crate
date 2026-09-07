@@ -38,7 +38,7 @@ export function GenrePill({
     <>
       <span className="min-w-0 truncate">{item.name.toLowerCase()}</span>
       {percent != null ? (
-        <span className="shrink-0 rounded-sm border border-[var(--active-border)] bg-[var(--active-bg-strong)] px-1 py-0.5 text-xs font-semibold text-[var(--active-text)]">
+        <span className="shrink-0 rounded-sm border border-[var(--active-border)] bg-[var(--active-bg-strong)] px-1 py-0.5 text-badge font-semibold text-[var(--active-text)]">
           {percent}%
         </span>
       ) : null}
@@ -50,7 +50,7 @@ export function GenrePill({
   if (item.source) titleParts.push(item.source);
   const title = titleParts.join(" · ");
   const pillClassName =
-    "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-[var(--chip-active-border)] bg-[var(--chip-active-bg)] px-2 py-1 text-xs text-[var(--active-text)]";
+    "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-[var(--chip-active-border)] bg-[var(--chip-active-bg)] px-2 py-1 text-badge text-[var(--active-text)]";
 
   if (onRemove) {
     return (
