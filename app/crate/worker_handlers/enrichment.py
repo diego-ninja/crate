@@ -57,6 +57,8 @@ ENRICHMENT_CACHE_PREFIXES = (
 ENRICH_ARTISTS_CHUNK_SIZE = 20
 COMPLETENESS_CHUNK_SIZE = 20
 COMPLETENESS_MAX_MUSICBRAINZ_PAGES = 50
+COMPLETENESS_CACHE_TTL = 86400
+COMPLETENESS_STATUS_CACHE_KEY = "discover:completeness:status"
 
 
 def _mark_processing(artist_name: str):
@@ -1737,7 +1739,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
 
     artists = get_artists_with_mbid()
     if not artists:
-        set_cache("discover:completeness", [], ttl=86400)
+        _publish_completeness_cache([], total=0, failed_artists=0)
         return {"artists_checked": 0, "total": 0, "results": []}
 
     try:
@@ -1783,21 +1785,47 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
     return {**result, **final}
 
 
+def _publish_completeness_cache(
+    results: list[dict], *, total: int, failed_artists: int
+) -> None:
+    """Publish results together with their completeness status metadata."""
+    results.sort(key=lambda item: item["pct"])
+    set_cache("discover:completeness", results, ttl=COMPLETENESS_CACHE_TTL)
+    set_cache(
+        COMPLETENESS_STATUS_CACHE_KEY,
+        {
+            "partial": failed_artists > 0,
+            "artists_checked": len(results),
+            "total": total,
+            "failed_artists": failed_artists,
+        },
+        ttl=COMPLETENESS_CACHE_TTL,
+    )
+
+
 def _completeness_finalize_from_results(task_id: str, result: dict) -> dict:
     """Publish a single-task result using the same rules as fan-in."""
     failed_artists = int(result.get("failed_artists") or 0)
+    results = list(result.get("results") or [])
+    _publish_completeness_cache(
+        results,
+        total=int(result.get("total") or len(results)),
+        failed_artists=failed_artists,
+    )
     if failed_artists:
         emit_task_event(
             task_id,
             "warning",
             {
-                "message": f"Completeness skipped cache update for {failed_artists} failed artists"
+                "message": f"Completeness published partial cache; {failed_artists} artists failed"
             },
         )
-        return {"cache_written": False, "failed_artists": failed_artists}
+        return {
+            "cache_written": True,
+            "failed_artists": failed_artists,
+            "partial": True,
+        }
 
-    results = sorted(result.get("results", []), key=lambda item: item["pct"])
-    set_cache("discover:completeness", results, ttl=86400)
     emit_task_event(
         task_id,
         "info",
@@ -1836,23 +1864,27 @@ def _completeness_finalize(parent_task_id: str) -> dict:
         failed_artists += int(result.get("failed_artists") or 0)
         results.extend(result.get("results") or [])
 
+    _publish_completeness_cache(
+        results,
+        total=total,
+        failed_artists=failed_artists,
+    )
     if failed_artists:
         emit_task_event(
             parent_task_id,
             "warning",
             {
-                "message": f"Completeness skipped cache update for {failed_artists} failed artists"
+                "message": f"Completeness published partial cache; {failed_artists} artists failed"
             },
         )
         return {
-            "cache_written": False,
+            "cache_written": True,
             "artists_checked": len(results),
             "total": total,
             "failed_artists": failed_artists,
+            "partial": True,
         }
 
-    results.sort(key=lambda item: item["pct"])
-    set_cache("discover:completeness", results, ttl=86400)
     emit_task_event(
         parent_task_id,
         "info",

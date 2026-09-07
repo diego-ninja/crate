@@ -3,13 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiMock, pollTaskMock, refetchCompletenessMock, useApiMock } =
-  vi.hoisted(() => ({
-    apiMock: vi.fn(),
-    pollTaskMock: vi.fn(),
-    refetchCompletenessMock: vi.fn(),
-    useApiMock: vi.fn(),
-  }));
+const {
+  apiMock,
+  pollTaskMock,
+  refetchCompletenessMock,
+  toastWarningMock,
+  useApiMock,
+} = vi.hoisted(() => ({
+  apiMock: vi.fn(),
+  pollTaskMock: vi.fn(),
+  refetchCompletenessMock: vi.fn(),
+  toastWarningMock: vi.fn(),
+  useApiMock: vi.fn(),
+}));
 
 vi.mock("@/hooks/use-api", () => ({
   useApi: useApiMock,
@@ -27,6 +33,7 @@ vi.mock("sonner", () => ({
   toast: {
     error: vi.fn(),
     success: vi.fn(),
+    warning: toastWarningMock,
   },
 }));
 
@@ -93,5 +100,28 @@ describe("Discover completeness refresh", () => {
     onComplete();
 
     expect(refetchCompletenessMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when the completed refresh contains skipped artists", async () => {
+    apiMock.mockResolvedValue({ task_id: "task-1" });
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Discover />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Recompute gaps" }));
+
+    const onComplete = pollTaskMock.mock.calls[0]![1] as (
+      result?: Record<string, unknown>,
+    ) => void;
+    onComplete({ partial: true, failed_artists: 2 });
+
+    expect(refetchCompletenessMock).toHaveBeenCalledTimes(1);
+    expect(toastWarningMock).toHaveBeenCalledWith(
+      "Completeness refreshed with 2 artists skipped",
+    );
   });
 });

@@ -222,7 +222,17 @@ def test_completeness_finalizer_merges_children_before_publishing_cache(monkeypa
             "discover:completeness",
             [{"artist": "Alpha", "pct": 40}, {"artist": "Zulu", "pct": 90}],
             86400,
-        )
+        ),
+        (
+            "discover:completeness:status",
+            {
+                "partial": False,
+                "artists_checked": 2,
+                "total": 2,
+                "failed_artists": 0,
+            },
+            86400,
+        ),
     ]
     assert events[-1] == (
         "parent-1",
@@ -262,7 +272,7 @@ def test_completeness_finalizer_preserves_cache_when_child_failed(monkeypatch):
     }
 
 
-def test_completeness_finalizer_preserves_cache_when_artist_failed(monkeypatch):
+def test_completeness_finalizer_publishes_partial_cache_when_artist_failed(monkeypatch):
     from crate.worker_handlers import enrichment
 
     monkeypatch.setattr(enrichment, "emit_task_event", lambda *_args, **_kwargs: None)
@@ -280,22 +290,39 @@ def test_completeness_finalizer_preserves_cache_when_artist_failed(monkeypatch):
             }
         ],
     )
+    cached: list[tuple[str, object, int]] = []
     monkeypatch.setattr(
         enrichment,
         "set_cache",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("partial completeness must not replace the cache")
-        ),
+        lambda key, value, ttl=None: cached.append((key, value, ttl)),
     )
 
     result = enrichment._completeness_finalize("parent-1")
 
     assert result == {
-        "cache_written": False,
+        "cache_written": True,
         "artists_checked": 1,
         "total": 2,
         "failed_artists": 1,
+        "partial": True,
     }
+    assert cached == [
+        (
+            "discover:completeness",
+            [{"artist": "Healthy", "pct": 80}],
+            86400,
+        ),
+        (
+            "discover:completeness:status",
+            {
+                "partial": True,
+                "artists_checked": 1,
+                "total": 2,
+                "failed_artists": 1,
+            },
+            86400,
+        ),
+    ]
 
 
 def test_fan_in_passes_parent_id_to_completeness_finalizer(monkeypatch):

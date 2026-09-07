@@ -718,7 +718,14 @@ export function Discover() {
             return;
           }
           refetchCompleteness();
-          toast.success("Completeness refresh completed");
+          if (result?.partial) {
+            const failedArtists = Number(result.failed_artists || 0);
+            toast.warning(
+              `Completeness refreshed with ${failedArtists} artists skipped`,
+            );
+          } else {
+            toast.success("Completeness refresh completed");
+          }
         },
         (error) => {
           setCompletenessTaskId(null);
