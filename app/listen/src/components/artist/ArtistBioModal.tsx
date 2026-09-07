@@ -16,6 +16,7 @@ import {
   GenrePillRow,
   type GenreProfileItem,
 } from "@crate/ui/domain/genres/GenrePill";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 import { api } from "@/lib/api";
 import { CrateImage } from "@/components/artwork/CrateImage";
 import { openExternalUrl } from "@/lib/external-links";
@@ -78,6 +79,154 @@ function linkLabel(type: string, url: string): string {
   return type || "Link";
 }
 
+function BioStats({
+  listeners,
+  playcount,
+  spotifyFollowers,
+  spotifyPopularity,
+}: {
+  listeners: number;
+  playcount: number;
+  spotifyFollowers: number;
+  spotifyPopularity: number;
+}) {
+  const stats = [
+    listeners > 0
+      ? { value: formatCompact(listeners), label: "listeners" }
+      : null,
+    playcount > 0
+      ? { value: formatCompact(playcount), label: "scrobbles" }
+      : null,
+    spotifyFollowers > 0
+      ? { value: formatCompact(spotifyFollowers), label: "followers" }
+      : null,
+    spotifyPopularity > 0
+      ? { value: `${spotifyPopularity}%`, label: "popularity" }
+      : null,
+  ].filter((stat): stat is { value: string; label: string } => stat !== null);
+
+  if (stats.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {stats.map((stat) => (
+        <div key={stat.label}>
+          <div className="text-xl font-bold text-white/90">{stat.value}</div>
+          <div className="text-[11px] text-white/40">{stat.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BioDescription({
+  bio,
+  expanded,
+  onToggle,
+}: {
+  bio: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (!bio) return null;
+  return (
+    <div>
+      <p className="text-sm leading-7 text-white/70 sm:text-[15px]">
+        <ArtistBioText text={bio} maxChars={500} expanded={expanded} />
+      </p>
+      {bio.length > 500 ? (
+        <button
+          onClick={onToggle}
+          className="mt-2 flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp size={12} /> Less
+            </>
+          ) : (
+            <>
+              <ChevronDown size={12} /> More
+            </>
+          )}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function MemberList({ members }: { members: MBMember[] }) {
+  if (members.length === 0) return null;
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">
+        Members
+      </h3>
+      <div className="space-y-1">
+        {members.map((member) => (
+          <div
+            key={`${member.name}-${member.begin ?? ""}-${member.end ?? ""}`}
+            className="flex items-center justify-between border-b border-white/5 py-1.5 last:border-0"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-white/80">{member.name}</span>
+              {member.attributes?.length ? (
+                <span className="text-[11px] text-white/30">
+                  {member.attributes.join(", ")}
+                </span>
+              ) : null}
+            </div>
+            <span className="text-[11px] text-white/25">
+              {member.begin ?? "?"} - {member.end ?? "present"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LibraryStats({ artist }: { artist: ArtistData }) {
+  return (
+    <div className="flex gap-6 text-[11px] text-white/35">
+      <span>
+        <strong className="text-white/60">{artist.albums.length}</strong> albums
+      </span>
+      <span>
+        <strong className="text-white/60">{artist.total_tracks}</strong> tracks
+      </span>
+      <span>
+        <strong className="text-white/60">
+          {artist.total_size_mb > 1024
+            ? `${(artist.total_size_mb / 1024).toFixed(1)} GB`
+            : `${artist.total_size_mb} MB`}
+        </strong>
+      </span>
+    </div>
+  );
+}
+
+function ExternalLinks({ urls }: { urls: { type: string; url: string }[] }) {
+  if (urls.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {urls.map((link) => (
+        <a
+          key={`${link.type}-${link.url}`}
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => {
+            event.preventDefault();
+            void openExternalUrl(link.url);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md border border-white/10 px-2.5 py-1 text-[11px] text-white/50 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white/70"
+        >
+          <Globe size={11} /> {linkLabel(link.type, link.url)}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export function ArtistBioModal({
   open,
   artist,
@@ -99,7 +248,7 @@ export function ArtistBioModal({
   }, [open, artist.id, enrichment]);
 
   const mb = enrichment?.musicbrainz;
-  const members = mb?.members?.filter((m) => m.name) ?? [];
+  const members = mb?.members?.filter((member) => member.name) ?? [];
   const urls = mb?.urls
     ? Object.entries(mb.urls).map(([type, url]) => ({ type, url }))
     : [];
@@ -107,7 +256,6 @@ export function ArtistBioModal({
   const playcount = artistInfo?.playcount ?? 0;
   const spotifyFollowers = enrichment?.spotify?.followers ?? 0;
   const spotifyPopularity = enrichment?.spotify?.popularity ?? 0;
-  const displayBio = bioExpanded ? bio : bio.slice(0, 500);
   const genreItems: GenreProfileItem[] =
     artist.genre_profile && artist.genre_profile.length > 0
       ? artist.genre_profile
@@ -137,8 +285,8 @@ export function ArtistBioModal({
                 src={photoUrl}
                 alt={artist.name}
                 className="h-full w-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
+                onError={(event) => {
+                  (event.target as HTMLImageElement).style.display = "none";
                 }}
               />
             </div>
@@ -147,12 +295,12 @@ export function ArtistBioModal({
                 {artist.name}
               </h2>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                {mb?.begin_date && <span>Since {mb.begin_date}</span>}
-                {mb?.country && (
+                {mb?.begin_date ? <span>Since {mb.begin_date}</span> : null}
+                {mb?.country ? (
                   <span>
                     {mb.area ? `${mb.area}, ${mb.country}` : mb.country}
                   </span>
-                )}
+                ) : null}
               </div>
               {genreItems.length > 0 ? (
                 <GenrePillRow
@@ -179,138 +327,20 @@ export function ArtistBioModal({
       </ModalHeader>
 
       <ModalBody className="flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
-        {/* Stats */}
-        {(listeners > 0 || spotifyFollowers > 0) && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {listeners > 0 && (
-              <div>
-                <div className="text-xl font-bold text-white/90">
-                  {formatCompact(listeners)}
-                </div>
-                <div className="text-[11px] text-white/40">listeners</div>
-              </div>
-            )}
-            {playcount > 0 && (
-              <div>
-                <div className="text-xl font-bold text-white/90">
-                  {formatCompact(playcount)}
-                </div>
-                <div className="text-[11px] text-white/40">scrobbles</div>
-              </div>
-            )}
-            {spotifyFollowers > 0 && (
-              <div>
-                <div className="text-xl font-bold text-white/90">
-                  {formatCompact(spotifyFollowers)}
-                </div>
-                <div className="text-[11px] text-white/40">followers</div>
-              </div>
-            )}
-            {spotifyPopularity > 0 && (
-              <div>
-                <div className="text-xl font-bold text-white/90">
-                  {spotifyPopularity}%
-                </div>
-                <div className="text-[11px] text-white/40">popularity</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Bio */}
-        {bio && (
-          <div>
-            <p className="whitespace-pre-line text-sm leading-7 text-white/70 sm:text-[15px]">
-              {displayBio}
-              {!bioExpanded && bio.length > 500 && "..."}
-            </p>
-            {bio.length > 500 && (
-              <button
-                onClick={() => setBioExpanded(!bioExpanded)}
-                className="mt-2 flex items-center gap-1 text-xs text-primary hover:text-primary/80"
-              >
-                {bioExpanded ? (
-                  <>
-                    <ChevronUp size={12} /> Less
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown size={12} /> More
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Members */}
-        {members.length > 0 && (
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">
-              Members
-            </h3>
-            <div className="space-y-1">
-              {members.map((m, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-white/80">{m.name}</span>
-                    {m.attributes && m.attributes.length > 0 && (
-                      <span className="text-[11px] text-white/30">
-                        {m.attributes.join(", ")}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-white/25">
-                    {m.begin ?? "?"} - {m.end ?? "present"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Library stats */}
-        <div className="flex gap-6 text-[11px] text-white/35">
-          <span>
-            <strong className="text-white/60">{artist.albums.length}</strong>{" "}
-            albums
-          </span>
-          <span>
-            <strong className="text-white/60">{artist.total_tracks}</strong>{" "}
-            tracks
-          </span>
-          <span>
-            <strong className="text-white/60">
-              {artist.total_size_mb > 1024
-                ? `${(artist.total_size_mb / 1024).toFixed(1)} GB`
-                : `${artist.total_size_mb} MB`}
-            </strong>
-          </span>
-        </div>
-
-        {/* External links */}
-        {urls.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {urls.map((link, i) => (
-              <a
-                key={i}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(event) => {
-                  event.preventDefault();
-                  void openExternalUrl(link.url);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/10 px-2.5 py-1 text-[11px] text-white/50 hover:border-white/20 hover:bg-white/5 hover:text-white/70 transition-colors"
-              >
-                <Globe size={11} /> {linkLabel(link.type, link.url)}
-              </a>
-            ))}
-          </div>
-        )}
+        <BioStats
+          listeners={listeners}
+          playcount={playcount}
+          spotifyFollowers={spotifyFollowers}
+          spotifyPopularity={spotifyPopularity}
+        />
+        <BioDescription
+          bio={bio}
+          expanded={bioExpanded}
+          onToggle={() => setBioExpanded((expanded) => !expanded)}
+        />
+        <MemberList members={members} />
+        <LibraryStats artist={artist} />
+        <ExternalLinks urls={urls} />
       </ModalBody>
     </AppModal>
   );

@@ -55,6 +55,7 @@ from crate.api.schemas.browse import (
     ArtistTrackTitleResponse,
     BrowseFiltersResponse,
 )
+from crate.artist_bio import normalize_artist_bio
 from crate.db.cache_store import get_cache, set_cache
 from crate.db.health import get_all_artist_issue_counts, get_artist_issue_count
 from crate.external_artist_artwork import (
@@ -394,7 +395,7 @@ def _artist_library_info_payload(name: str) -> dict:
         return {"similar": []}
 
     return {
-        "bio": artist.get("bio") or "",
+        "bio": normalize_artist_bio(artist.get("bio")),
         "tags": tags,
         "similar": _enrich_similar_artists(similar),
         "listeners": int(artist.get("listeners") or 0),
@@ -2004,7 +2005,13 @@ def api_artist(request: Request, name: str):
         album_quality = get_album_quality_map(album_ids)
 
     top_genres = get_artist_top_genres(canonical)
-    genre_profile = build_genre_profile(get_artist_genre_profile(canonical), limit=8)
+    genre_rows = get_artist_genre_profile(canonical)
+    genre_profile = build_genre_profile(genre_rows, limit=8)
+    manual_genres = [
+        str(item["slug"])
+        for item in genre_rows
+        if item.get("source") == "manual" and item.get("slug")
+    ]
 
     upcoming_releases = get_upcoming_releases_for_artist(canonical)
     upcoming_releases_by_slug = {
@@ -2146,12 +2153,13 @@ def api_artist(request: Request, name: str):
         "primary_format": artist.get("primary_format"),
         "genres": top_genres,
         "genre_profile": genre_profile,
+        "manual_genres": manual_genres,
         "issue_count": get_artist_issue_count(canonical),
         "is_v2": is_v2,
         "popularity": artist.get("popularity"),
         "popularity_score": artist.get("popularity_score"),
         "popularity_confidence": artist.get("popularity_confidence"),
-        "bio": artist.get("bio"),
+        "bio": normalize_artist_bio(artist.get("bio")),
         "tags_json": _coerce_json_list(artist.get("tags_json")),
         "urls_json": artist.get("urls_json")
         if isinstance(artist.get("urls_json"), dict)

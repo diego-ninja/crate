@@ -250,6 +250,8 @@ class AdminUserSummaryResponse(AuthUserPublicResponse):
     created_at: datetime | None = None
     last_login: datetime | None = None
     last_seen_at: datetime | None = None
+    last_activity_at: datetime | None = None
+    activity_status: str = "never_active"
     active_devices: int | None = None
     online_now: bool = False
     listening_now: bool = False
@@ -266,6 +268,8 @@ class AdminUserDetailResponse(AuthMeResponse):
     created_at: datetime | None = None
     last_login: datetime | None = None
     last_seen_at: datetime | None = None
+    last_activity_at: datetime | None = None
+    activity_status: str = "never_active"
     active_sessions: int | None = None
     active_devices: int | None = None
     online_now: bool = False

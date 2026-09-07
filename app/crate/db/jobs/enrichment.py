@@ -327,3 +327,36 @@ def get_album_names_for_artist(artist_name: str) -> set[str]:
             .all()
         )
         return {row["name"].lower() for row in rows}
+
+
+def get_album_names_for_artists(artist_names: Sequence[str]) -> dict[str, set[str]]:
+    """Return normalized local album names grouped by artist in one query."""
+    names = [str(name).strip() for name in artist_names if str(name).strip()]
+    if not names:
+        return {}
+    names_by_key = {name.lower(): name for name in names}
+
+    with transaction_scope() as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    SELECT artist, name
+                    FROM library_albums
+                    WHERE LOWER(artist) = ANY(CAST(:artists AS text[]))
+                    """
+                ),
+                {"artists": list(names_by_key)},
+            )
+            .mappings()
+            .all()
+        )
+
+    grouped = {name: set() for name in names}
+    for row in rows:
+        artist = str(row["artist"] or "")
+        album_name = str(row["name"] or "").strip().lower()
+        canonical_name = names_by_key.get(artist.lower())
+        if canonical_name and album_name:
+            grouped[canonical_name].add(album_name)
+    return grouped

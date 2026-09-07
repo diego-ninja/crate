@@ -124,7 +124,7 @@ ENTRYPOINT ["python", "-m", "crate"]
 CMD ["worker"]
 
 
-FROM rust:1.85-slim AS media-worker-builder
+FROM rust:1.88-slim AS media-worker-builder
 
 WORKDIR /src/media-worker
 COPY media-worker/Cargo.toml media-worker/Cargo.lock ./

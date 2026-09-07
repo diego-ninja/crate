@@ -210,6 +210,22 @@ def api_backfill_similarities(request: Request):
 
 
 @router.post(
+    "/api/tasks/normalize-artist-bios",
+    response_model=TaskEnqueueResponse,
+    responses=_TASK_RESPONSES,
+    summary="Queue artist biography normalization",
+)
+def api_normalize_artist_bios(request: Request):
+    """Remove legacy attribution/markup from stored artist biographies."""
+    require_permission(request, "library.metadata.write")
+    pending = list_tasks(status="pending", task_type="normalize_artist_bios", limit=1)
+    running = list_tasks(status="running", task_type="normalize_artist_bios", limit=1)
+    if pending or running:
+        return JSONResponse({"error": "Already running"}, status_code=409)
+    return {"task_id": create_task("normalize_artist_bios")}
+
+
+@router.post(
     "/api/tasks/sync-shows",
     response_model=TaskEnqueueResponse,
     responses=_TASK_RESPONSES,

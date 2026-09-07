@@ -1,4 +1,7 @@
+import type { ReactNode } from "react";
 import { StatCard } from "@/components/artist/ArtistPageBits";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
+import { AIButton } from "@/components/ui/AIButton";
 import type {
   ArtistExternalLink,
   LastfmData,
@@ -33,6 +36,214 @@ interface ArtistOverviewSectionProps {
   spotify?: SpotifyData;
   externalLinks: ArtistExternalLink[];
   enrichmentLoading: boolean;
+  canResearchBio?: boolean;
+  onResearchBio?: () => void;
+}
+
+function Biography({
+  text,
+  expanded,
+  canResearch,
+  onToggle,
+  onResearch,
+}: {
+  text: string;
+  expanded: boolean;
+  canResearch: boolean;
+  onToggle: () => void;
+  onResearch?: () => void;
+}) {
+  if (!text) return null;
+  return (
+    <div className="max-w-3xl">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-white/70">Biography</h3>
+        {canResearch && onResearch ? (
+          <AIButton type="button" onClick={onResearch}>
+            Research with AI
+          </AIButton>
+        ) : null}
+      </div>
+      <p className="text-sm leading-relaxed text-white/60">
+        <ArtistBioText text={text} maxChars={400} expanded={expanded} />
+      </p>
+      {text.length > 400 ? (
+        <button
+          onClick={onToggle}
+          className="mt-2 flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp size={12} /> Less
+            </>
+          ) : (
+            <>
+              <ChevronDown size={12} /> More
+            </>
+          )}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function TopTracks({ tracks }: { tracks: TopTrack[] }) {
+  if (tracks.length === 0) return null;
+  return (
+    <div className="max-w-2xl">
+      <h3 className="mb-2 text-sm font-semibold text-white/70">Top Tracks</h3>
+      <div className="space-y-0.5">
+        {tracks.slice(0, 5).map((track, index) => {
+          const coverUrl =
+            albumCoverApiUrl({
+              albumId: track.album_id,
+              albumSlug: track.album_slug,
+              artistName: track.artist,
+              albumName: track.album,
+            }) || undefined;
+          return (
+            <MusicContextMenu
+              key={track.id}
+              type="track"
+              artist={track.artist}
+              artistId={track.artist_id}
+              artistSlug={track.artist_slug}
+              album={track.album || ""}
+              albumId={track.album_id}
+              albumSlug={track.album_slug}
+              trackId={track.id}
+              trackTitle={track.title}
+              albumCover={coverUrl}
+            >
+              <div className="group flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-white/5">
+                <span className="w-5 text-right text-xs text-white/30">
+                  {index + 1}
+                </span>
+                <span className="flex-1 truncate text-sm text-white/80">
+                  {track.title}
+                </span>
+                <span className="text-xs text-white/30">
+                  {formatDuration(track.duration)}
+                </span>
+              </div>
+            </MusicContextMenu>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OverviewStats({
+  musicbrainz,
+  activeMembersCount,
+  lastfm,
+  spotify,
+}: Pick<
+  ArtistOverviewSectionProps,
+  "musicbrainz" | "activeMembersCount" | "lastfm" | "spotify"
+>) {
+  type OverviewStat = { label: string; value: string; icon: ReactNode };
+  const stats: (OverviewStat | null)[] = [
+    musicbrainz?.type
+      ? { label: "Type", value: musicbrainz.type, icon: <Users size={14} /> }
+      : null,
+    musicbrainz?.begin_date
+      ? {
+          label: "Formed",
+          value: musicbrainz.begin_date,
+          icon: <Calendar size={14} />,
+        }
+      : null,
+    musicbrainz?.country
+      ? {
+          label: "Country",
+          value: musicbrainz.country,
+          icon: <MapPin size={14} />,
+        }
+      : null,
+    activeMembersCount > 0
+      ? {
+          label: "Active Members",
+          value: String(activeMembersCount),
+          icon: <Users size={14} />,
+        }
+      : null,
+    lastfm?.listeners
+      ? {
+          label: "Listeners",
+          value: formatCompact(lastfm.listeners),
+          icon: <Headphones size={14} />,
+        }
+      : null,
+    spotify?.followers
+      ? {
+          label: "Followers",
+          value: formatCompact(spotify.followers),
+          icon: <Users size={14} />,
+        }
+      : null,
+    spotify?.popularity
+      ? {
+          label: "Popularity",
+          value: `${spotify.popularity}%`,
+          icon: <BarChart3 size={14} />,
+        }
+      : null,
+    lastfm?.playcount
+      ? {
+          label: "Scrobbles",
+          value: formatCompact(lastfm.playcount),
+          icon: <Music size={14} />,
+        }
+      : null,
+  ];
+  const visibleStats = stats.filter(
+    (stat): stat is OverviewStat => stat !== null,
+  );
+
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-semibold text-white/70">Stats</h3>
+      <div className="grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        {visibleStats.map((stat) => (
+          <StatCard key={stat.label} {...stat} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExternalLinks({ links }: { links: ArtistExternalLink[] }) {
+  if (links.length === 0) return null;
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-semibold text-white/70">Links</h3>
+      <div className="flex flex-wrap gap-2">
+        {links.map((link) => (
+          <a
+            key={link.label}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs transition-colors hover:border-white/20 hover:bg-white/5 ${link.color}`}
+          >
+            <Globe size={12} /> {link.label}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EnrichmentLoading() {
+  return (
+    <div className="max-w-3xl space-y-3">
+      <Skeleton className="h-4 w-48" />
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-4 w-32" />
+    </div>
+  );
 }
 
 export function ArtistOverviewSection({
@@ -46,171 +257,27 @@ export function ArtistOverviewSection({
   spotify,
   externalLinks,
   enrichmentLoading,
+  canResearchBio = false,
+  onResearchBio,
 }: ArtistOverviewSectionProps) {
   return (
     <div className="space-y-8">
-      {bioText && (
-        <div className="max-w-3xl">
-          <h3 className="text-sm font-semibold text-white/70 mb-2">
-            Biography
-          </h3>
-          <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">
-            {bioExpanded ? bioText : bioText.slice(0, 400)}
-            {!bioExpanded && bioText.length > 400 && "..."}
-          </p>
-          {bioText.length > 400 && (
-            <button
-              onClick={onToggleBioExpanded}
-              className="text-xs text-primary hover:text-primary/80 mt-2 flex items-center gap-1"
-            >
-              {bioExpanded ? (
-                <>
-                  <ChevronUp size={12} /> Less
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={12} /> More
-                </>
-              )}
-            </button>
-          )}
-        </div>
-      )}
-
-      {topTracks.length > 0 && (
-        <div className="max-w-2xl">
-          <h3 className="text-sm font-semibold text-white/70 mb-2">
-            Top Tracks
-          </h3>
-          <div className="space-y-0.5">
-            {topTracks.slice(0, 5).map((track, i) => {
-              const coverUrl =
-                albumCoverApiUrl({
-                  albumId: track.album_id,
-                  albumSlug: track.album_slug,
-                  artistName: track.artist,
-                  albumName: track.album,
-                }) || undefined;
-              return (
-                <MusicContextMenu
-                  key={track.id}
-                  type="track"
-                  artist={track.artist}
-                  artistId={track.artist_id}
-                  artistSlug={track.artist_slug}
-                  album={track.album || ""}
-                  albumId={track.album_id}
-                  albumSlug={track.album_slug}
-                  trackId={track.id}
-                  trackTitle={track.title}
-                  albumCover={coverUrl}
-                >
-                  <div className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors group text-left">
-                    <span className="w-5 text-right text-xs text-white/30">
-                      {i + 1}
-                    </span>
-                    <span className="flex-1 text-sm truncate text-white/80">
-                      {track.title}
-                    </span>
-                    <span className="text-xs text-white/30">
-                      {formatDuration(track.duration)}
-                    </span>
-                  </div>
-                </MusicContextMenu>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <h3 className="text-sm font-semibold text-white/70 mb-3">Stats</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-3xl">
-          {musicbrainz?.type && (
-            <StatCard
-              label="Type"
-              value={musicbrainz.type}
-              icon={<Users size={14} />}
-            />
-          )}
-          {musicbrainz?.begin_date && (
-            <StatCard
-              label="Formed"
-              value={musicbrainz.begin_date}
-              icon={<Calendar size={14} />}
-            />
-          )}
-          {musicbrainz?.country && (
-            <StatCard
-              label="Country"
-              value={musicbrainz.country}
-              icon={<MapPin size={14} />}
-            />
-          )}
-          {activeMembersCount > 0 && (
-            <StatCard
-              label="Active Members"
-              value={String(activeMembersCount)}
-              icon={<Users size={14} />}
-            />
-          )}
-          {(lastfm?.listeners ?? 0) > 0 && (
-            <StatCard
-              label="Listeners"
-              value={formatCompact(lastfm!.listeners!)}
-              icon={<Headphones size={14} />}
-            />
-          )}
-          {(spotify?.followers ?? 0) > 0 && (
-            <StatCard
-              label="Followers"
-              value={formatCompact(spotify!.followers!)}
-              icon={<Users size={14} />}
-            />
-          )}
-          {(spotify?.popularity ?? 0) > 0 && (
-            <StatCard
-              label="Popularity"
-              value={`${spotify!.popularity}%`}
-              icon={<BarChart3 size={14} />}
-            />
-          )}
-          {(lastfm?.playcount ?? 0) > 0 && (
-            <StatCard
-              label="Scrobbles"
-              value={formatCompact(lastfm!.playcount!)}
-              icon={<Music size={14} />}
-            />
-          )}
-        </div>
-      </div>
-
-      {externalLinks.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-white/70 mb-3">Links</h3>
-          <div className="flex gap-2 flex-wrap">
-            {externalLinks.map((link) => (
-              <a
-                key={link.label}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
-              >
-                <Globe size={12} /> {link.label}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {enrichmentLoading && (
-        <div className="space-y-3 max-w-3xl">
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-4 w-32" />
-        </div>
-      )}
+      <Biography
+        text={bioText}
+        expanded={bioExpanded}
+        canResearch={canResearchBio}
+        onToggle={onToggleBioExpanded}
+        onResearch={onResearchBio}
+      />
+      <TopTracks tracks={topTracks} />
+      <OverviewStats
+        musicbrainz={musicbrainz}
+        activeMembersCount={activeMembersCount}
+        lastfm={lastfm}
+        spotify={spotify}
+      />
+      <ExternalLinks links={externalLinks} />
+      {enrichmentLoading ? <EnrichmentLoading /> : null}
     </div>
   );
 }

@@ -36,6 +36,7 @@ import {
   type MediaAccessTarget,
   type MediaAccessTickets,
 } from "@/lib/media-access";
+import { captureApiError } from "@/lib/sentry";
 
 export const AUTH_TOKEN_EVENT = "crate:auth-token-updated";
 const WEB_TOKEN_EXPIRES_AT_KEY = "listen-auth-token-expires-at";
@@ -683,6 +684,7 @@ if (typeof window !== "undefined") {
 const innerApi = createApiClient({
   credentials: apiCredentials(),
   defaultHeaders: getApiAuthHeaders,
+  onError: captureApiError,
 });
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -817,23 +819,40 @@ export async function apiFetch(
       credentials: apiCredentials(),
       headers,
     });
-  let response = await request();
-  if (
-    response.status === 401 &&
-    shouldAttemptRefresh(path) &&
-    (await refreshAuthToken())
-  ) {
-    response = await fetch(`${getApiBase()}${path}`, {
-      ...init,
-      credentials: apiCredentials(),
-      headers: {
-        ...((init?.headers as Record<string, string>) || {}),
-        ...getApiAuthHeaders(),
-      },
-    });
+  const method = init?.method || "GET";
+  const url = `${getApiBase()}${path}`;
+  let response: Response;
+  try {
+    response = await request();
+    if (
+      response.status === 401 &&
+      shouldAttemptRefresh(path) &&
+      (await refreshAuthToken())
+    ) {
+      response = await fetch(url, {
+        ...init,
+        credentials: apiCredentials(),
+        headers: {
+          ...((init?.headers as Record<string, string>) || {}),
+          ...getApiAuthHeaders(),
+        },
+      });
+    }
+    if (response.status === 401) {
+      redirectAfterUnauthorized();
+    }
+  } catch (error) {
+    captureApiError(error, { method, url });
+    throw error;
   }
-  if (response.status === 401) {
-    redirectAfterUnauthorized();
+  if (!response.ok) {
+    captureApiError(
+      new ApiError(
+        response.status,
+        response.statusText || "HTTP request failed",
+      ),
+      { method, url, status: response.status },
+    );
   }
   return response;
 }

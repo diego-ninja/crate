@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import text
 
 from crate.db.queries.auth_presence import get_users_presence
+from crate.db.queries.auth_user_activity import derive_user_activity
 from crate.db.tx import read_scope
 
 
@@ -69,34 +70,32 @@ def list_users() -> list[dict]:
     )
     for user in users:
         if user.get("id") is not None:
-            user.update(presence.get(int(user["id"]), {}))
+            user_presence = presence.get(int(user["id"]), {})
+            user.update(user_presence)
+            user.update(
+                derive_user_activity(
+                    last_login=user.get("last_login"),
+                    last_seen_at=user_presence.get("last_seen_at"),
+                    last_played_at=user_presence.get("last_played_at"),
+                )
+            )
     return users
 
 
 def list_users_map_rows() -> list[dict]:
-    from crate.db.cache_store import get_cache
-
     with read_scope() as session:
         rows = (
             session.execute(
                 text(
                     """
-                SELECT u.id, u.name, u.email, u.avatar, u.city, u.country, u.latitude, u.longitude,
-                       u.created_at,
-                       MAX(COALESCE(s.last_seen_at, s.created_at)) AS last_seen_at,
-                       CASE
-                         WHEN MAX(COALESCE(s.last_seen_at, s.created_at)) > NOW() - interval '3 minutes'
-                         THEN TRUE
-                         ELSE FALSE
-                       END AS online
+                SELECT u.id, u.name, u.email, u.username, u.avatar,
+                       u.city, u.country, u.country_code,
+                       u.latitude, u.longitude, u.role, u.status,
+                       u.created_at, u.last_login
                 FROM users u
-                LEFT JOIN sessions s
-                  ON s.user_id = u.id
-                 AND s.revoked_at IS NULL
-                 AND (s.expires_at IS NULL OR s.expires_at > NOW())
                 WHERE u.latitude IS NOT NULL AND u.longitude IS NOT NULL
                   AND COALESCE(u.status, 'active') = 'active'
-                GROUP BY u.id
+                ORDER BY u.id
                 """
                 )
             )
@@ -104,27 +103,48 @@ def list_users_map_rows() -> list[dict]:
             .all()
         )
 
+    user_ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+    presence = get_users_presence(user_ids)
     result: list[dict] = []
     for row in rows:
-        now_playing = get_cache(f"now_playing:{row['id']}", max_age_seconds=120)
+        user_id = int(row["id"])
+        user_presence = presence.get(user_id, {})
+        current_track = user_presence.get("current_track")
         result.append(
             {
-                "id": row["id"],
+                "id": user_id,
                 "name": row["name"] or row["email"].split("@")[0],
                 "email": row["email"],
+                "username": row["username"],
                 "avatar": row["avatar"],
                 "city": row["city"],
                 "country": row["country"],
+                "country_code": row["country_code"],
                 "latitude": float(row["latitude"]),
                 "longitude": float(row["longitude"]),
-                "online": bool(row["online"]),
+                "role": row["role"],
+                "status": row["status"] or "active",
+                "created_at": row["created_at"],
+                "last_login": row["last_login"],
+                "last_seen_at": user_presence.get("last_seen_at"),
+                "online": bool(user_presence.get("online_now")),
+                "active_sessions": int(user_presence.get("active_sessions") or 0),
+                "active_devices": int(user_presence.get("active_devices") or 0),
+                "listening_now": bool(user_presence.get("listening_now")),
+                "last_played_at": user_presence.get("last_played_at"),
+                "current_track": current_track,
                 "now_playing": {
-                    "title": now_playing.get("title"),
-                    "artist": now_playing.get("artist"),
-                    "album": now_playing.get("album"),
+                    "title": current_track.get("title"),
+                    "artist": current_track.get("artist"),
+                    "album": current_track.get("album"),
                 }
-                if now_playing
+                if current_track
                 else None,
+                **derive_user_activity(
+                    last_login=row["last_login"],
+                    last_seen_at=user_presence.get("last_seen_at"),
+                    last_played_at=user_presence.get("last_played_at"),
+                ),
             }
         )
     return result

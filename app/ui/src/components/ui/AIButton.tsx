@@ -16,7 +16,7 @@ export function AIButton({
   ...props
 }: AIButtonProps) {
   return (
-    <div className="relative inline-flex self-stretch">
+    <div className="relative inline-flex">
       {/* Glow pulse behind the button */}
       <div
         className={cn(
@@ -32,7 +32,7 @@ export function AIButton({
         variant="outline"
         disabled={disabled || loading}
         className={cn(
-          "relative h-full border-primary/45 bg-black/85 text-primary shadow-[0_0_18px_rgba(34,211,238,0.12)] hover:border-primary/70 hover:bg-primary/15 hover:text-primary text-xs",
+          "relative border-primary/45 bg-black/85 text-primary shadow-[0_0_18px_rgba(34,211,238,0.12)] hover:border-primary/70 hover:bg-primary/15 hover:text-primary",
           className,
         )}
         {...props}

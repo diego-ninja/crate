@@ -49,6 +49,17 @@ jobs:
       - name: Test admin UI (crate-ui)
         run: npm run --workspace=app/ui test
 
+      - name: Build admin UI and upload Sentry source maps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ github.event_name == 'push' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ninja-development
+          SENTRY_PROJECT: crate-admin
+          SENTRY_RELEASE: crate-${{ github.sha }}
+          VITE_SENTRY_DSN: ${{ vars.SENTRY_ADMIN_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: crate-${{ github.sha }}
+        run: npm run --workspace=app/ui build
+
       - name: Type check listen app
         run: npm run --workspace=app/listen typecheck
 
@@ -57,3 +68,14 @@ jobs:
 
       - name: Test listen app
         run: npm run --workspace=app/listen test
+
+      - name: Build Listen and upload Sentry source maps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ github.event_name == 'push' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ninja-development
+          SENTRY_PROJECT: crate-listen
+          SENTRY_RELEASE: crate-${{ github.sha }}
+          VITE_SENTRY_DSN: ${{ vars.SENTRY_LISTEN_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: crate-${{ github.sha }}
+        run: npm run --workspace=app/listen build

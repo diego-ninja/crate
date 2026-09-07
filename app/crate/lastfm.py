@@ -9,6 +9,7 @@ import musicbrainzngs
 
 from crate.db.cache_musicbrainz import get_mb_cache, set_mb_cache
 from crate.db.cache_store import get_cache, set_cache
+from crate.artist_bio import normalize_artist_bio
 from crate.slugs import slugify
 
 LASTFM_BASE = "http://ws.audioscrobbler.com/2.0/"
@@ -62,13 +63,7 @@ def get_artist_info(artist_name: str) -> dict | None:
 
     bio = artist.get("bio", {}) or {}
     bio_content = bio.get("content") or bio.get("summary", "")
-    bio_content = re.sub(
-        r'<a href="https://www.last.fm/.*?>Read more on Last\.fm</a>\.?',
-        "",
-        bio_content,
-    ).strip()
-    bio_content = re.sub(r"Read more on Last\.fm\.?$", "", bio_content).strip()
-    bio_content = re.sub(r"<[^>]+>", "", bio_content).strip()
+    bio_content = normalize_artist_bio(bio_content)
 
     image_url = _lastfm_image_url(artist.get("image", []))
 
@@ -98,7 +93,11 @@ def _artist_info_cache_key(artist_name: str) -> str:
 def get_cached_artist_info(artist_name: str) -> dict | None:
     cache_key = _artist_info_cache_key(artist_name)
     cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
-    return cached if cached else None
+    if not cached or not isinstance(cached, dict):
+        return None
+    result = dict(cached)
+    result["bio"] = normalize_artist_bio(result.get("bio"))
+    return result
 
 
 def _top_tracks_cache_key(artist_name: str, limit: int) -> str:

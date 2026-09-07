@@ -168,6 +168,7 @@ class TrackTagsUpdate(BaseModel):
 class ArtistMetadataUpdate(BaseModel):
     bio: str | None = None
     tags: list[str] | None = None
+    genres: list[str] | None = None
     urls: dict[str, str] | None = None
     mbid: str | None = None
     country: str | None = None

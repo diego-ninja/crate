@@ -7,6 +7,7 @@ from crate.db.repositories.tasks_maintenance import (
     cleanup_zombie_tasks,
     delete_old_finished_tasks,
     delete_tasks_by_status,
+    get_child_task_results,
     redispatch_stale_pending_tasks,
 )
 from crate.db.repositories.tasks_mutations import (
@@ -22,6 +23,7 @@ from crate.db.repositories.tasks_mutations import (
 
 __all__ = [
     "check_siblings_complete",
+    "get_child_task_results",
     "claim_next_task",
     "cleanup_orphaned_tasks",
     "cleanup_zombie_tasks",

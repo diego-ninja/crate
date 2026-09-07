@@ -4,6 +4,7 @@ interface AppErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode | ((error: Error, onReset: () => void) => ReactNode);
   onReset?: () => void;
+  onError?: (error: Error, info: React.ErrorInfo) => void;
 }
 
 interface AppErrorBoundaryState {
@@ -45,6 +46,7 @@ export class AppErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("Render failed", error, info);
+    this.props.onError?.(error, info);
   }
 
   private handleReset = () => {

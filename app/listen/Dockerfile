@@ -22,6 +22,13 @@ RUN ln -s /app-shared/shared ../shared
 
 # Symlink node_modules into shared/ui so its imports resolve react etc.
 RUN rm -rf /app-shared/shared/ui/node_modules && ln -s /app/node_modules /app-shared/shared/ui/node_modules
+
+ARG VITE_SENTRY_DSN=
+ARG VITE_SENTRY_ENVIRONMENT=production
+ARG VITE_SENTRY_RELEASE=
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
+    VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT \
+    VITE_SENTRY_RELEASE=$VITE_SENTRY_RELEASE
 # Skip tsc typecheck in Docker (CI handles it separately).
 RUN npx vite build
 

@@ -45,16 +45,33 @@ The local backend includes PostgreSQL, cache Redis, durable Redis, `slskd`, API,
 readplane, workers for normal/maintenance/analysis/playback work, projector,
 media worker and Caddy. The dev fixture has three artists and 122 tracks.
 
+## Sentry observability
+
+The API, readplane and worker processes use the DSNs configured in the local
+`.env` (`SENTRY_API_DSN`, `SENTRY_READPLANE_DSN` and `SENTRY_WORKERS_DSN`).
+Listen and Admin use their browser/Capacitor DSNs at build time. Production CI
+reads `SENTRY_ADMIN_DSN` and `SENTRY_LISTEN_DSN` from GitHub Actions Variables,
+and uses the `SENTRY_AUTH_TOKEN` Actions Secret only to upload source maps.
+The SDKs keep default PII collection disabled and redact credentials, cookies,
+query strings and user contact fields before sending events.
+
+Local frontend builds run without Sentry unless `VITE_SENTRY_DSN` is exported.
+This keeps development noise and accidental local event uploads opt-in.
+
 For local TLS and hostnames:
 
 ```bash
 make dns-setup       # *.crate.local -> 127.0.0.1; requires sudo
-make trust-local-ca  # imports Caddy's local CA; macOS helper
+make trust-local-ca  # trusts the mkcert CA used by the local Caddy certificate
 ```
 
-Those targets are convenience helpers, not portable prerequisites. `make dev`
-also advertises project development domains through Caddy; verify the active
-Caddyfile and local resolver when cookies or TLS are relevant to your change.
+Those targets are convenience helpers, not portable prerequisites. Run
+`make trust-local-ca` once on macOS. `make dev` generates the local certificate
+from the already trusted `mkcert` CA when it is missing, so recreating the
+Caddy data volume does not change the certificate authority used by browsers.
+`make dev` also advertises project development domains through Caddy; verify
+the active Caddyfile and local resolver when cookies or TLS are relevant to
+your change.
 
 The seeded development account is `admin@cratemusic.app` / `admin`.
 

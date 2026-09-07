@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from crate.db.orm.library import LibraryAlbum, LibraryArtist, LibraryTrack
 from crate.db.repositories.field_locks import list_locked_fields, lock_fields
+from crate.db.repositories.genres import set_artist_taxonomy_genres
 from crate.db.repositories.global_catalog_dirty_sources import (
     enqueue_local_dirty_source,
 )
@@ -46,6 +47,28 @@ def _artist_metadata_snapshot(artist: LibraryArtist) -> dict[str, Any]:
     }
 
 
+def _manual_artist_genres(session: Session, artist_name: str) -> list[str]:
+    rows = (
+        session.execute(
+            text(
+                """
+            SELECT COALESCE(tn.slug, g.slug) AS slug
+            FROM artist_genres ag
+            JOIN genres g ON g.id = ag.genre_id
+            LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+            LEFT JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
+            WHERE ag.artist_name = :artist_name AND ag.source = 'manual'
+            ORDER BY COALESCE(tn.slug, g.slug)
+            """
+            ),
+            {"artist_name": artist_name},
+        )
+        .mappings()
+        .all()
+    )
+    return [str(row["slug"]) for row in rows if row.get("slug")]
+
+
 def _required_artist_id(artist: LibraryArtist) -> int:
     if artist.id is None:
         raise RuntimeError(f"Library artist {artist.name!r} is missing numeric id")
@@ -64,7 +87,8 @@ def update_artist_metadata(
     values = {
         key: value for key, value in metadata.items() if key in ARTIST_METADATA_FIELDS
     }
-    if not values:
+    has_genres = "genres" in metadata
+    if not values and not has_genres:
         return None
 
     def _impl(s: Session) -> dict[str, Any] | None:
@@ -88,14 +112,27 @@ def update_artist_metadata(
         numeric_artist_id = _required_artist_id(artist)
 
         before = _artist_metadata_snapshot(artist)
+        before["genres"] = _manual_artist_genres(s, artist.name)
         for key, value in values.items():
             setattr(artist, ARTIST_METADATA_FIELDS[key], value)
             if key == "bandcamp_url":
                 artist.bandcamp_url_source = "manual" if value else None
                 artist.bandcamp_url_updated_at = datetime.now(timezone.utc)
+        if has_genres:
+            raw_genres = metadata.get("genres")
+            if not isinstance(raw_genres, list):
+                raise ValueError("genres must be a list of taxonomy slugs")
+            set_artist_taxonomy_genres(
+                artist.name,
+                [str(slug) for slug in raw_genres],
+                session=s,
+            )
 
         after = _artist_metadata_snapshot(artist)
+        after["genres"] = _manual_artist_genres(s, artist.name)
         changed_fields = [key for key in values if before.get(key) != after.get(key)]
+        if has_genres and before.get("genres") != after.get("genres"):
+            changed_fields.append("genres")
         if changed_fields:
             artist.updated_at = datetime.now(timezone.utc)
             lock_fields(

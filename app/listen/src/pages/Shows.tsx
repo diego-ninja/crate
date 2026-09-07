@@ -232,6 +232,14 @@ export function Shows() {
         />
       ) : null}
 
+      {!loading && !isGenreRadar && hasFollowedArtists && items.length === 0 ? (
+        <EmptyState
+          icon={<Sparkles size={22} className="text-primary" />}
+          title={t("radar.empty.noSignalsTitle")}
+          body={t("radar.empty.noSignalsBody")}
+        />
+      ) : null}
+
       {!loading &&
       hasFollowedArtists &&
       items.length > 0 &&

@@ -75,9 +75,15 @@ def set_artist_genres(
     if session is None:
         with transaction_scope() as s:
             return set_artist_genres(artist_name, genres, session=s)
+    sources = {source for _, _, source in genres}
+    if not sources:
+        return
     session.execute(
-        text("DELETE FROM artist_genres WHERE artist_name = :artist_name"),
-        {"artist_name": artist_name},
+        text(
+            "DELETE FROM artist_genres "
+            "WHERE artist_name = :artist_name AND source = ANY(:sources)"
+        ),
+        {"artist_name": artist_name, "sources": list(sources)},
     )
     for name, weight, source in genres:
         genre_id = get_or_create_genre(name, session=session)
@@ -119,6 +125,75 @@ def set_artist_genres(
             str(artist["entity_uid"]),
             "upsert",
             session=session,
+        )
+
+
+def set_artist_taxonomy_genres(
+    artist_name: str, slugs: list[str], *, session=None
+) -> None:
+    """Replace only manual artist assignments using canonical taxonomy nodes."""
+    if session is None:
+        with transaction_scope() as s:
+            return set_artist_taxonomy_genres(artist_name, slugs, session=s)
+
+    normalized = list(
+        dict.fromkeys(slug.strip().lower() for slug in slugs if slug.strip())
+    )
+    rows = (
+        session.execute(
+            text(
+                "SELECT id, slug, name FROM genre_taxonomy_nodes WHERE slug = ANY(:slugs)"
+            ),
+            {"slugs": normalized},
+        )
+        .mappings()
+        .all()
+        if normalized
+        else []
+    )
+    by_slug = {str(row["slug"]): row for row in rows}
+    missing = [slug for slug in normalized if slug not in by_slug]
+    if missing:
+        raise ValueError(f"Unknown taxonomy genre(s): {', '.join(missing)}")
+
+    session.execute(
+        text(
+            "DELETE FROM artist_genres WHERE artist_name = :artist_name AND source = 'manual'"
+        ),
+        {"artist_name": artist_name},
+    )
+    for slug in normalized:
+        node = by_slug[slug]
+        genre_id = get_or_create_genre(str(node["name"]), session=session)
+        session.execute(
+            text(
+                """
+                INSERT INTO artist_genres (artist_name, genre_id, weight, source)
+                VALUES (:artist_name, :genre_id, 1.0, 'manual')
+                ON CONFLICT (artist_name, genre_id) DO UPDATE
+                SET weight = EXCLUDED.weight, source = 'manual'
+                """
+            ),
+            {"artist_name": artist_name, "genre_id": genre_id},
+        )
+
+    artist = (
+        session.execute(
+            text(
+                "SELECT entity_uid::text AS entity_uid FROM library_artists WHERE name = :artist_name"
+            ),
+            {"artist_name": artist_name},
+        )
+        .mappings()
+        .first()
+    )
+    if artist and artist["entity_uid"]:
+        from crate.db.repositories.global_catalog_dirty_sources import (
+            enqueue_local_dirty_source,
+        )
+
+        enqueue_local_dirty_source(
+            "artist", str(artist["entity_uid"]), "upsert", session=session
         )
 
 
@@ -179,4 +254,5 @@ __all__ = [
     "get_or_create_genre",
     "set_album_genres",
     "set_artist_genres",
+    "set_artist_taxonomy_genres",
 ]

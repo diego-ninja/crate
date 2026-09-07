@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 3: Skin surface area — Listen Design System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    .back-link { display: block; max-width: 1200px; margin: 0 auto 1rem; color: #475569; text-decoration: none; font-size: .85rem; } .back-link:hover { color: #2563eb; }
+    header { text-align: center; margin: 0 auto 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; }
+    .decision-number { font-size: .75rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -.02em; margin-top: .25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .5rem; background: #fce7f3; color: #be185d; }
+    .decision-description { font-size: 1rem; color: #475569; margin: .75rem auto 0; max-width: 760px; line-height: 1.7; }
+    .instruction { margin-top: 1rem; font-size: .85rem; background: #eff6ff; color: #1d4ed8; padding: .6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; }
+    .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); border: 2px solid #e2e8f0; display: flex; flex-direction: column; position: relative; }
+    .option-card:hover { border-color: #6366f1; } .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .card-header { padding: 1rem 1.25rem .75rem; border-bottom: 1px solid #f1f5f9; } .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .option-label { font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; } .option-a .option-label { color: #7c3aed; } .option-b .option-label { color: #0891b2; } .option-c .option-label { color: #059669; } .option-d .option-label { color: #dc2626; }
+    .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; } .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+    .chosen-badge { display: none; background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+    .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); } .option-card.chosen .chosen-badge { display: inline-block; }
+    .visual-preview { min-height: 178px; padding: 1.25rem; display: flex; align-items: center; justify-content: center; background: #0a0a0f; }
+    .option-summary { padding: 1rem 1.25rem; color: #475569; font-size: .9rem; flex: 1; } .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 1.25rem 1.25rem; font-size: .8rem; }
+    .verdict h3 { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; } .pros h3 { color: #047857; } .cons h3 { color: #b91c1c; } .verdict ul { padding-left: 1rem; color: #64748b; }
+    .card-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: .75rem 1.25rem; } .tell-claude { color: #475569; font-size: .75rem; }
+    .palette-preview { width: 100%; max-width: 315px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; } .swatch { height: 74px; border-radius: 8px; border: 1px solid rgba(255,255,255,.15); display: flex; align-items: end; padding: 6px; color: #e2e8f0; font-size: 9px; } .swatch.one { background: #0a0a0f; } .swatch.two { background: #121326; } .swatch.three { background: #06b6d4; color: #082f49; } .swatch.four { background: #f1f5f9; color: #334155; }
+    .type-preview { width: 100%; max-width: 315px; padding: 13px; background: #111821; border: 1px solid #334155; border-radius: 10px; color: #f1f5f9; } .type-preview .large { font-size: 20px; font-weight: 700; } .type-preview .small { margin-top: 7px; font-size: 11px; color: #94a3b8; } .type-preview .button { display: inline-block; margin-top: 10px; padding: 6px 9px; border-radius: 6px; font-size: 10px; background: #06b6d4; color: #082f49; }
+    .layout-preview { width: 100%; max-width: 315px; display: grid; grid-template-columns: 52px 1fr; gap: 7px; color: #cbd5e1; font-size: 9px; } .layout-preview div { border-radius: 6px; min-height: 76px; padding: 7px; background: #17212b; border: 1px solid #334155; } .layout-preview .wide { background: #14303a; border-color: #0891b2; }
+    .custom-preview { width: 100%; max-width: 315px; padding: 13px; background: #111821; border: 1px dashed #64748b; border-radius: 10px; color: #cbd5e1; font-size: 10px; } .custom-preview .line { height: 22px; margin-top: 8px; border: 1px solid #475569; border-radius: 5px; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 2rem; } .comparison-section h2 { font-size: 1.25rem; color: #0f172a; margin-bottom: 1rem; } .comparison-table-wrapper { overflow-x: auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; }
+    .comparison-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .8rem; } .comparison-table th, .comparison-table td { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; } .comparison-table th { background: #f8fafc; color: #334155; font-size: .75rem; } .comparison-table td:first-child { font-weight: 600; color: #475569; } .col-b { background: #fdf2f8; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; color: #64748b; font-size: .8rem; padding-bottom: 2rem; }
+    @media (max-width: 760px) { body { padding: 1rem; } .options-grid { grid-template-columns: 1fr; gap: 1rem; } .verdict { grid-template-columns: 1fr; } header h1 { font-size: 1.35rem; } }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">← Todas las decisiones</a>
+  <header>
+    <span class="decision-number">Decision 3 of 8</span>
+    <h1>Skin surface area</h1>
+    <span class="category-badge">Visual</span>
+    <p class="decision-description">Un skin necesita suficiente superficie para sentirse distinto, pero no debe poder cambiar cualquier cosa. Si puede tocar layout, densidad o comportamiento, deja de ser una capa visual y se convierte en otra aplicación. Aquí decidimos qué tokens quedan abiertos a skins y qué estructura permanece estable para proteger la usabilidad, el responsive y los tests.</p>
+    <p class="instruction">Dime: <strong>“Option B”</strong> · <strong>“Option A but [cambio]”</strong> · <strong>“more options”</strong></p>
+  </header>
+
+  <main class="options-grid">
+    <article class="option-card option-a">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"></div></div><h2 class="option-title">Palette and surfaces</h2></div>
+      <div class="visual-preview"><div class="palette-preview"><div class="swatch one">app</div><div class="swatch two">panel</div><div class="swatch three">accent</div><div class="swatch four">contrast</div></div></div>
+      <div class="option-summary">El skin solo puede cambiar colores, superficies, opacidades y tratamiento de bordes/sombras. La tipografía, spacing y layout permanecen estables. Es el límite más seguro y suficiente para skins de color claramente diferenciados, aunque la variedad visual será principalmente cromática.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Se busca riesgo mínimo.</li><li>Los skins son variaciones de paleta.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Personalidad limitada.</li><li>Tipografía y densidad no evolucionan.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option A”</code></div>
+    </article>
+
+    <article class="option-card option-b chosen">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div><h2 class="option-title">Visual identity tokens</h2></div>
+      <div class="visual-preview"><div class="type-preview"><div class="large">Now playing</div><div class="small">Paleta, superficie, tipografía de display y efectos coherentes.</div><span class="button">Play</span></div></div>
+      <div class="option-summary">Permitir paleta, superficies, radios, sombras, tipografía de marca y efectos decorativos, siempre a través de tokens semánticos. El spacing estructural, el layout, los tamaños interactivos y el comportamiento permanecen estables. Es suficiente para que un skin tenga personalidad real sin convertirse en un fork de Listen.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Se quiere una identidad visual completa.</li><li>El default debe poder evolucionar a skins distintos.</li><li>La accesibilidad se valida por skin.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Requiere tokens tipográficos bien definidos.</li><li>Hay que acotar efectos con cuidado.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option B”</code></div>
+    </article>
+
+    <article class="option-card option-c">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"></div></div><h2 class="option-title">Layout and density skins</h2></div>
+      <div class="visual-preview"><div class="layout-preview"><div>nav</div><div class="wide">content<br><br>cards<br><br>queue</div></div></div>
+      <div class="option-summary">Además de identidad visual, cada skin puede cambiar densidad, tamaños, navegación y composición de superficies. Permite experiencias muy distintas, pero complica responsive, snapshots, accesibilidad y soporte. El skin empieza a controlar decisiones que deberían pertenecer al producto.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Cada skin es casi una experiencia independiente.</li><li>Hay presupuesto de QA por layout.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Multiplica estados y regresiones.</li><li>Difícil mantener navegación consistente.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option C”</code></div>
+    </article>
+
+    <article class="option-card option-d">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"></div></div><h2 class="option-title">Arbitrary component overrides</h2></div>
+      <div class="visual-preview"><div class="custom-preview"><strong>skin override</strong><div class="line"></div><div class="line"></div><div class="line"></div></div></div>
+      <div class="option-summary">Permitir que un skin sobrescriba estilos específicos de cualquier componente. Es la opción más expresiva, pero elimina la garantía de que todos los componentes compartan contrato. Produce excepciones, selectores frágiles y una matriz de QA difícil de sostener.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Se construyen prototipos experimentales.</li><li>La consistencia no es prioritaria.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Reintroduce directamente el drift.</li><li>Hace impredecible la API visual.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option D”</code></div>
+    </article>
+  </main>
+
+  <section class="comparison-section"><h2>How They Compare</h2><div class="comparison-table-wrapper"><table class="comparison-table">
+    <thead><tr><th>Dimension</th><th>Option A</th><th class="col-b">Option B</th><th>Option C</th><th>Option D</th></tr></thead>
+    <tbody>
+      <tr><td>Personalidad visual</td><td>Media</td><td class="col-b">Alta y gobernada</td><td>Muy alta</td><td>Impredecible</td></tr>
+      <tr><td>Layout estable</td><td>Sí</td><td class="col-b">Sí</td><td>No siempre</td><td>Depende del override</td></tr>
+      <tr><td>Accesibilidad</td><td>Fácil de validar</td><td class="col-b">Validable por tokens</td><td>Costosa por layout</td><td>Difícil de garantizar</td></tr>
+      <tr><td>Riesgo de drift</td><td>Bajo</td><td class="col-b">Bajo, con contrato</td><td>Alto</td><td>Muy alto</td></tr>
+      <tr><td>Esfuerzo de QA</td><td>Bajo</td><td class="col-b">Medio</td><td>Alto</td><td>Muy alto</td></tr>
+      <tr><td>Recomendación</td><td>MVP conservador</td><td class="col-b">Base recomendada</td><td>Fase futura excepcional</td><td>No recomendado</td></tr>
+    </tbody>
+  </table></div></section>
+  <div class="page-footer"><p>Decisión elegida: Option B. La siguiente decisión fija el nivel de fidelidad del theme default.</p></div>
+</body>
+</html>

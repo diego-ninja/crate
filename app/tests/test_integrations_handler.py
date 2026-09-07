@@ -64,6 +64,149 @@ class TestHandleSyncShows:
         assert result["artists_checked"] == 0
         assert result["shows_found"] == 0
 
+    def test_syncs_setlistfm_events_as_secondary_source(self, monkeypatch):
+        monkeypatch.setattr(
+            "crate.ticketmaster.is_configured",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.is_configured",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.is_shows_sync_enabled",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.get_library_artists",
+            lambda per_page=10000: (
+                [{"name": "Band A", "mbid": "artist-mbid"}],
+                None,
+            ),
+        )
+        monkeypatch.setattr(
+            "crate.ticketmaster.get_upcoming_shows",
+            lambda artist, limit=20: [],
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.get_upcoming_shows",
+            lambda mbid, limit=20: [
+                {
+                    "external_id": "setlistfm:event-1",
+                    "artist_name": "Band A",
+                    "date": "2099-12-31",
+                    "local_time": None,
+                    "venue": "The Venue",
+                    "address_line1": None,
+                    "city": "Madrid",
+                    "region": "Madrid",
+                    "postal_code": None,
+                    "country": "Spain",
+                    "country_code": "ES",
+                    "latitude": None,
+                    "longitude": None,
+                    "url": "https://www.setlist.fm/setlist/event-1",
+                    "image_url": None,
+                    "lineup": ["Band A"],
+                    "price_range": None,
+                    "tickets_url": None,
+                    "status": "scheduled",
+                    "source": "setlistfm",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.delete_past_shows",
+            lambda days_old=30: 0,
+        )
+        upserted: list[dict] = []
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.upsert_show",
+            lambda **kwargs: upserted.append(kwargs),
+        )
+        _mock_emit_silence(monkeypatch)
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.is_cancelled",
+            lambda task_id: False,
+        )
+
+        result = _handle_sync_shows("task-1", {}, {})
+
+        assert result["shows_found"] == 1
+        assert upserted == [
+            {
+                "external_id": "setlistfm:event-1",
+                "artist_name": "Band A",
+                "date": "2099-12-31",
+                "local_time": None,
+                "venue": "The Venue",
+                "address_line1": None,
+                "city": "Madrid",
+                "region": "Madrid",
+                "postal_code": None,
+                "country": "Spain",
+                "country_code": "ES",
+                "latitude": None,
+                "longitude": None,
+                "url": "https://www.setlist.fm/setlist/event-1",
+                "image_url": None,
+                "lineup": ["Band A"],
+                "price_range": None,
+                "tickets_url": None,
+                "status": "scheduled",
+                "source": "setlistfm",
+            }
+        ]
+
+    def test_setlistfm_can_sync_when_ticketmaster_is_unconfigured(self, monkeypatch):
+        monkeypatch.setattr(
+            "crate.ticketmaster.is_configured",
+            lambda: False,
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.is_configured",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.is_shows_sync_enabled",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.get_library_artists",
+            lambda per_page=10000: ([{"name": "Band A", "mbid": "artist-mbid"}], None),
+        )
+        monkeypatch.setattr(
+            "crate.setlistfm.get_upcoming_shows",
+            lambda mbid, limit=20: [
+                {
+                    "external_id": "setlistfm:event-1",
+                    "artist_name": "Band A",
+                    "date": "2099-12-31",
+                    "venue": "The Venue",
+                    "source": "setlistfm",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.delete_past_shows",
+            lambda days_old=30: 0,
+        )
+        upserted: list[dict] = []
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.upsert_show",
+            lambda **kwargs: upserted.append(kwargs),
+        )
+        _mock_emit_silence(monkeypatch)
+        monkeypatch.setattr(
+            "crate.worker_handlers.integrations.is_cancelled",
+            lambda task_id: False,
+        )
+
+        result = _handle_sync_shows("task-1", {}, {})
+
+        assert result["shows_found"] == 1
+        assert upserted[0]["source"] == "setlistfm"
+
     def test_syncs_shows_for_each_artist(self, monkeypatch):
         monkeypatch.setattr(
             "crate.ticketmaster.is_configured",

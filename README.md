@@ -337,32 +337,33 @@ make dev-rebuild     # rebuild images and restart
 
 The `.env` file drives both dev and production. Required unless noted.
 
-| Variable                                                                | Required   | Description                                                                                     |
-| ----------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
-| `MEDIA_DIR`                                                             | Yes        | Path to your music library (mounted into API read-only, worker read-write)                      |
-| `DATA_DIR`                                                              | Yes        | Path for persistent state (DB volumes, cache, etc.)                                             |
-| `DOMAIN`                                                                | Yes (prod) | Base domain used by Traefik (`admin.<DOMAIN>`, `listen.<DOMAIN>`, `api.<DOMAIN>`)               |
-| `JWT_SECRET`                                                            | Yes        | Secret for JWT tokens                                                                           |
-| `DEFAULT_ADMIN_PASSWORD`                                                | Yes        | Initial password for the bootstrap admin user                                                   |
-| `LASTFM_APIKEY`                                                         | Yes        | Last.fm API key — used for enrichment and upcoming shows                                        |
-| `LASTFM_API_SECRET`                                                     | No         | Required only for scrobbling                                                                    |
-| `FANART_API_KEY`                                                        | No         | Fanart.tv — artist backgrounds and thumbnails                                                   |
-| `SETLISTFM_API_KEY`                                                     | No         | Setlist.fm — probable concert setlists                                                          |
-| `SPOTIFY_ID` / `SPOTIFY_SECRET`                                         | No         | Spotify — popularity score                                                                      |
-| `DISCOGS_CONSUMER_KEY` / `DISCOGS_CONSUMER_SECRET`                      | No         | Discogs — catalog numbers and labels                                                            |
-| `TICKETMASTER_API_KEY`                                                  | No         | Ticketmaster — upcoming shows (primary source)                                                  |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                             | No         | Google OAuth login                                                                              |
-| `SLSKD_API_KEY`                                                         | No         | slskd API key (Soulseek integration)                                                            |
-| `SLSKD_SLSK_USERNAME` / `SLSKD_SLSK_PASSWORD`                           | No         | Soulseek network credentials                                                                    |
-| `CRATE_CREDENTIAL_KEY`                                                  | No         | Stable Fernet key for encrypted external session material. Defaults to JWT-derived key if unset |
-| `CRATE_BANDCAMP_COLLECTION_SYNC_*`                                      | No         | Bandcamp collection sync backend, timeout, page size and max pages                              |
-| `CRATE_BANDCAMP_DOWNLOAD_*`                                             | No         | Bandcamp purchase download backend and timeout                                                  |
-| `CRATE_BANDCAMP_WEB_CREDENTIAL_BRIDGE_*`                                | No         | Optional server-side Bandcamp credential bridge. Disabled by default                            |
-| `PROTONVPN_USER` / `PROTONVPN_PASS`                                     | No         | Proton VPN credentials for the scraping proxy                                                   |
-| `CRATE_POSTGRES_USER` / `CRATE_POSTGRES_PASSWORD` / `CRATE_POSTGRES_DB` | Yes        | App-level Postgres role                                                                         |
-| `PUID` / `PGID`                                                         | Yes        | Host UID/GID for file ownership                                                                 |
-| `CRATE_IMAGE_OWNER` / `CRATE_IMAGE_REGISTRY`                            | No         | Container image namespace and registry. Defaults to `thecrateapp` / `ghcr.io`                   |
-| `TZ`                                                                    | Yes        | Timezone (e.g. `Europe/Madrid`)                                                                 |
+| Variable                                                                | Required   | Description                                                                                             |
+| ----------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| `MEDIA_DIR`                                                             | Yes        | Path to your music library (mounted into API read-only, worker read-write)                              |
+| `DATA_DIR`                                                              | Yes        | Path for persistent state (DB volumes, cache, etc.)                                                     |
+| `DOMAIN`                                                                | Yes (prod) | Base domain used by Traefik (`admin.<DOMAIN>`, `listen.<DOMAIN>`, `api.<DOMAIN>`)                       |
+| `JWT_SECRET`                                                            | Yes        | Secret for JWT tokens                                                                                   |
+| `DEFAULT_ADMIN_PASSWORD`                                                | Yes        | Initial password for the bootstrap admin user                                                           |
+| `LASTFM_APIKEY`                                                         | Yes        | Last.fm API key — used for enrichment and upcoming shows                                                |
+| `LASTFM_API_SECRET`                                                     | No         | Required only for scrobbling                                                                            |
+| `FANART_API_KEY`                                                        | No         | Fanart.tv — artist backgrounds and thumbnails                                                           |
+| `SETLISTFM_API_KEY`                                                     | No         | Setlist.fm — probable concert setlists                                                                  |
+| `SPOTIFY_ID` / `SPOTIFY_SECRET`                                         | No         | Spotify — popularity score                                                                              |
+| `DISCOGS_CONSUMER_KEY` / `DISCOGS_CONSUMER_SECRET`                      | No         | Discogs — catalog numbers and labels                                                                    |
+| `TICKETMASTER_API_KEY`                                                  | No         | Ticketmaster — upcoming shows (primary source)                                                          |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                             | No         | Google OAuth login                                                                                      |
+| `SLSKD_API_KEY`                                                         | No         | slskd API key (Soulseek integration)                                                                    |
+| `SLSKD_SLSK_USERNAME` / `SLSKD_SLSK_PASSWORD`                           | No         | Soulseek network credentials                                                                            |
+| `CRATE_CREDENTIAL_KEY`                                                  | No         | Stable Fernet key for encrypted external session material. Defaults to JWT-derived key if unset         |
+| `CRATE_USER_INACTIVE_AFTER_DAYS`                                        | No         | Days without login, session or playback activity before the admin label becomes `Inactive` (default 30) |
+| `CRATE_BANDCAMP_COLLECTION_SYNC_*`                                      | No         | Bandcamp collection sync backend, timeout, page size and max pages                                      |
+| `CRATE_BANDCAMP_DOWNLOAD_*`                                             | No         | Bandcamp purchase download backend and timeout                                                          |
+| `CRATE_BANDCAMP_WEB_CREDENTIAL_BRIDGE_*`                                | No         | Optional server-side Bandcamp credential bridge. Disabled by default                                    |
+| `PROTONVPN_USER` / `PROTONVPN_PASS`                                     | No         | Proton VPN credentials for the scraping proxy                                                           |
+| `CRATE_POSTGRES_USER` / `CRATE_POSTGRES_PASSWORD` / `CRATE_POSTGRES_DB` | Yes        | App-level Postgres role                                                                                 |
+| `PUID` / `PGID`                                                         | Yes        | Host UID/GID for file ownership                                                                         |
+| `CRATE_IMAGE_OWNER` / `CRATE_IMAGE_REGISTRY`                            | No         | Container image namespace and registry. Defaults to `thecrateapp` / `ghcr.io`                           |
+| `TZ`                                                                    | Yes        | Timezone (e.g. `Europe/Madrid`)                                                                         |
 
 ## Makefile commands
 

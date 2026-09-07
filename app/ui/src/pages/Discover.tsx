@@ -25,6 +25,7 @@ import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { Input } from "@crate/ui/shadcn/input";
 import { useApi } from "@/hooks/use-api";
+import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
 import {
   artistPagePath,
@@ -304,163 +305,46 @@ function PopularityRow({
   );
 }
 
-export function Discover() {
-  const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [recomputing, setRecomputing] = useState(false);
-  const [checking, setChecking] = useState(false);
+interface DiscoverViewProps {
+  navigate: (to: string) => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  recomputing: boolean;
+  completenessTaskId: string | null;
+  checking: boolean;
+  refreshAll: () => void;
+  recomputeCompleteness: () => Promise<void>;
+  checkReleases: () => Promise<void>;
+  summary: {
+    totalArtists: number;
+    incompleteArtists: number;
+    detectedReleases: number;
+    opportunityArtists: number;
+  };
+  opportunityArtists: ArtistCompleteness[];
+  detectedReleases: Release[];
+  genreOpportunities: InsightsData["top_genres"];
+  trendingArtists: InsightsData["popularity"];
+  momentumAlbums: InsightsData["top_albums"];
+}
 
-  const {
-    data: completeness,
-    loading: completenessLoading,
-    error: completenessError,
-    refetch: refetchCompleteness,
-  } = useApi<ArtistCompleteness[]>("/api/discover/completeness");
-
-  const {
-    data: releaseData,
-    loading: releasesLoading,
-    error: releasesError,
-    refetch: refetchReleases,
-  } = useApi<{ releases: Release[] }>(
-    "/api/acquisition/new-releases?status=detected",
-  );
-
-  const {
-    data: insights,
-    loading: insightsLoading,
-    error: insightsError,
-    refetch: refetchInsights,
-  } = useApi<InsightsData>("/api/insights");
-
-  const normalizedSearch = search.trim().toLowerCase();
-
-  const opportunityArtists = useMemo(() => {
-    const source = completeness ?? [];
-    return source
-      .filter((artist) => artist.pct < 100)
-      .filter((artist) => artist.missing.length > 0)
-      .filter((artist) => {
-        if (!normalizedSearch) return true;
-        return `${artist.artist} ${artist.missing
-          .map((album) => album.title)
-          .join(" ")}`
-          .toLowerCase()
-          .includes(normalizedSearch);
-      })
-      .sort((a, b) => {
-        if ((b.listeners || 0) !== (a.listeners || 0))
-          return (b.listeners || 0) - (a.listeners || 0);
-        return a.pct - b.pct;
-      });
-  }, [completeness, normalizedSearch]);
-
-  const detectedReleases = useMemo(() => {
-    const source = releaseData?.releases ?? [];
-    return source.filter((release) => {
-      if (!normalizedSearch) return true;
-      return `${release.artist_name} ${release.album_title}`
-        .toLowerCase()
-        .includes(normalizedSearch);
-    });
-  }, [normalizedSearch, releaseData?.releases]);
-
-  const trendingArtists = useMemo(() => {
-    const source = insights?.popularity ?? [];
-    return source
-      .filter(
-        (row) =>
-          !normalizedSearch ||
-          row.artist.toLowerCase().includes(normalizedSearch),
-      )
-      .slice(0, 8);
-  }, [insights?.popularity, normalizedSearch]);
-
-  const momentumAlbums = useMemo(() => {
-    const source = insights?.top_albums ?? [];
-    return source
-      .filter(
-        (row) =>
-          !normalizedSearch ||
-          `${row.artist} ${row.album}`.toLowerCase().includes(normalizedSearch),
-      )
-      .slice(0, 8);
-  }, [insights?.top_albums, normalizedSearch]);
-
-  const genreOpportunities = useMemo(
-    () => (insights?.top_genres ?? []).slice(0, 8),
-    [insights?.top_genres],
-  );
-
-  const summary = useMemo(() => {
-    const totalArtists = completeness?.length ?? 0;
-    const incompleteArtists = (completeness ?? []).filter(
-      (artist) => artist.pct < 100,
-    ).length;
-    return {
-      totalArtists,
-      incompleteArtists,
-      detectedReleases: releaseData?.releases?.length ?? 0,
-      opportunityArtists: opportunityArtists.length,
-    };
-  }, [completeness, opportunityArtists.length, releaseData?.releases?.length]);
-
-  async function refreshAll() {
-    refetchCompleteness();
-    refetchReleases();
-    refetchInsights();
-  }
-
-  async function recomputeCompleteness() {
-    setRecomputing(true);
-    try {
-      await api("/api/discover/completeness/refresh", "POST");
-      toast.success("Completeness refresh queued");
-    } catch {
-      toast.error("Failed to queue completeness refresh");
-    } finally {
-      setRecomputing(false);
-    }
-  }
-
-  async function checkReleases() {
-    setChecking(true);
-    try {
-      await api("/api/acquisition/new-releases/check", "POST");
-      toast.success("New release check queued");
-    } catch {
-      toast.error("Failed to queue release check");
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  const loading = completenessLoading && releasesLoading && insightsLoading;
-  const hardError =
-    !completeness &&
-    completenessError &&
-    !releaseData &&
-    releasesError &&
-    !insights &&
-    insightsError;
-
-  if (hardError) {
-    return (
-      <ErrorState
-        message="Failed to build discovery workspace"
-        onRetry={refreshAll}
-      />
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16 text-white/45">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-      </div>
-    );
-  }
-
+function DiscoverView({
+  navigate,
+  search,
+  onSearchChange,
+  recomputing,
+  completenessTaskId,
+  checking,
+  refreshAll,
+  recomputeCompleteness,
+  checkReleases,
+  summary,
+  opportunityArtists,
+  detectedReleases,
+  genreOpportunities,
+  trendingArtists,
+  momentumAlbums,
+}: DiscoverViewProps) {
   return (
     <div className="space-y-6">
       <OpsPageHero
@@ -483,14 +367,16 @@ export function Discover() {
               size="sm"
               className="gap-2"
               onClick={recomputeCompleteness}
-              disabled={recomputing}
+              disabled={recomputing || completenessTaskId !== null}
             >
-              {recomputing ? (
+              {recomputing || completenessTaskId !== null ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <BarChart3 size={14} />
               )}
-              Recompute gaps
+              {recomputing || completenessTaskId !== null
+                ? "Recomputing..."
+                : "Recompute gaps"}
             </Button>
             <Button
               size="sm"
@@ -566,7 +452,7 @@ export function Discover() {
           />
           <Input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search artists, releases or missing albums..."
             className="pl-9"
           />
@@ -701,5 +587,216 @@ export function Discover() {
         </OpsPanel>
       </div>
     </div>
+  );
+}
+
+export function Discover() {
+  const navigate = useNavigate();
+  const { pollTask } = useTaskPoll();
+  const [search, setSearch] = useState("");
+  const [recomputing, setRecomputing] = useState(false);
+  const [completenessTaskId, setCompletenessTaskId] = useState<string | null>(
+    null,
+  );
+  const [checking, setChecking] = useState(false);
+
+  const {
+    data: completeness,
+    loading: completenessLoading,
+    error: completenessError,
+    refetch: refetchCompleteness,
+  } = useApi<ArtistCompleteness[]>("/api/discover/completeness");
+
+  const {
+    data: releaseData,
+    loading: releasesLoading,
+    error: releasesError,
+    refetch: refetchReleases,
+  } = useApi<{ releases: Release[] }>(
+    "/api/acquisition/new-releases?status=detected",
+  );
+
+  const {
+    data: insights,
+    loading: insightsLoading,
+    error: insightsError,
+    refetch: refetchInsights,
+  } = useApi<InsightsData>("/api/insights");
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const opportunityArtists = useMemo(() => {
+    const source = completeness ?? [];
+    return source
+      .filter((artist) => artist.pct < 100)
+      .filter((artist) => artist.missing.length > 0)
+      .filter((artist) => {
+        if (!normalizedSearch) return true;
+        return `${artist.artist} ${artist.missing
+          .map((album) => album.title)
+          .join(" ")}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        if ((b.listeners || 0) !== (a.listeners || 0))
+          return (b.listeners || 0) - (a.listeners || 0);
+        return a.pct - b.pct;
+      });
+  }, [completeness, normalizedSearch]);
+
+  const detectedReleases = useMemo(() => {
+    const source = releaseData?.releases ?? [];
+    return source.filter((release) => {
+      if (!normalizedSearch) return true;
+      return `${release.artist_name} ${release.album_title}`
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
+  }, [normalizedSearch, releaseData?.releases]);
+
+  const trendingArtists = useMemo(() => {
+    const source = insights?.popularity ?? [];
+    return source
+      .filter(
+        (row) =>
+          !normalizedSearch ||
+          row.artist.toLowerCase().includes(normalizedSearch),
+      )
+      .slice(0, 8);
+  }, [insights?.popularity, normalizedSearch]);
+
+  const momentumAlbums = useMemo(() => {
+    const source = insights?.top_albums ?? [];
+    return source
+      .filter(
+        (row) =>
+          !normalizedSearch ||
+          `${row.artist} ${row.album}`.toLowerCase().includes(normalizedSearch),
+      )
+      .slice(0, 8);
+  }, [insights?.top_albums, normalizedSearch]);
+
+  const genreOpportunities = useMemo(
+    () => (insights?.top_genres ?? []).slice(0, 8),
+    [insights?.top_genres],
+  );
+
+  const summary = useMemo(() => {
+    const totalArtists = completeness?.length ?? 0;
+    const incompleteArtists = (completeness ?? []).filter(
+      (artist) => artist.pct < 100,
+    ).length;
+    return {
+      totalArtists,
+      incompleteArtists,
+      detectedReleases: releaseData?.releases?.length ?? 0,
+      opportunityArtists: opportunityArtists.length,
+    };
+  }, [completeness, opportunityArtists.length, releaseData?.releases?.length]);
+
+  async function refreshAll() {
+    refetchCompleteness();
+    refetchReleases();
+    refetchInsights();
+  }
+
+  async function recomputeCompleteness() {
+    setRecomputing(true);
+    try {
+      const { task_id: taskId } = await api<{ task_id: string }>(
+        "/api/discover/completeness/refresh",
+        "POST",
+      );
+      setCompletenessTaskId(taskId);
+      pollTask(
+        taskId,
+        (result) => {
+          setCompletenessTaskId(null);
+          if (result?.finalization_skipped || result?.cache_written === false) {
+            toast.error("Completeness refresh finished with failed chunks");
+            return;
+          }
+          refetchCompleteness();
+          if (result?.partial) {
+            const failedArtists = Number(result.failed_artists || 0);
+            toast.warning(
+              `Completeness refreshed with ${failedArtists} artists skipped`,
+            );
+          } else {
+            toast.success("Completeness refresh completed");
+          }
+        },
+        (error) => {
+          setCompletenessTaskId(null);
+          toast.error(error || "Completeness refresh failed");
+        },
+        3000,
+        30 * 60 * 1000,
+      );
+      toast.success("Completeness refresh queued");
+    } catch {
+      toast.error("Failed to queue completeness refresh");
+    } finally {
+      setRecomputing(false);
+    }
+  }
+
+  async function checkReleases() {
+    setChecking(true);
+    try {
+      await api("/api/acquisition/new-releases/check", "POST");
+      toast.success("New release check queued");
+    } catch {
+      toast.error("Failed to queue release check");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const loading = completenessLoading && releasesLoading && insightsLoading;
+  const hardError =
+    !completeness &&
+    completenessError &&
+    !releaseData &&
+    releasesError &&
+    !insights &&
+    insightsError;
+
+  if (hardError) {
+    return (
+      <ErrorState
+        message="Failed to build discovery workspace"
+        onRetry={refreshAll}
+      />
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16 text-white/45">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <DiscoverView
+      navigate={navigate}
+      search={search}
+      onSearchChange={setSearch}
+      recomputing={recomputing}
+      completenessTaskId={completenessTaskId}
+      checking={checking}
+      refreshAll={() => void refreshAll()}
+      recomputeCompleteness={recomputeCompleteness}
+      checkReleases={checkReleases}
+      summary={summary}
+      opportunityArtists={opportunityArtists}
+      detectedReleases={detectedReleases}
+      genreOpportunities={genreOpportunities}
+      trendingArtists={trendingArtists}
+      momentumAlbums={momentumAlbums}
+    />
   );
 }

@@ -29,6 +29,7 @@ from crate.db.repositories.bandcamp import (
     get_bandcamp_link_for_entity,
     get_connection_for_user,
     get_user_owned_bandcamp_item,
+    has_active_connection,
     list_admin_user_collections,
     list_bandcamp_imports,
     list_bandcamp_library_matches,
@@ -408,7 +409,10 @@ def api_bandcamp_radar(request: Request):
 )
 def api_bandcamp_radar_refresh(request: Request):
     user = _require_auth(request)
-    task_id = create_task("bandcamp_radar_refresh", {"user_id": int(user["id"])})
+    user_id = int(user["id"])
+    if not has_active_connection(user_id):
+        raise HTTPException(status_code=400, detail="Bandcamp is not connected")
+    task_id = create_task("bandcamp_radar_refresh", {"user_id": user_id})
     return BandcampTaskResponse(task_id=task_id)
 
 

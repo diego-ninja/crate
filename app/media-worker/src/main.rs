@@ -6,13 +6,19 @@ use std::io::{self, Read};
 use std::process;
 
 use crate_media_worker::http;
+use crate_media_worker::observability;
 use crate_media_worker::package::{
     build_album_package, build_track_artifact, PackageJob, TrackArtifactJob,
 };
 
 fn main() {
+    let sentry = observability::init_sentry("media-worker");
     if let Err(err) = run() {
+        if sentry.is_some() {
+            sentry::capture_message("media worker command failed", sentry::Level::Error);
+        }
         eprintln!("crate-media-worker: {err}");
+        drop(sentry);
         process::exit(1);
     }
 }

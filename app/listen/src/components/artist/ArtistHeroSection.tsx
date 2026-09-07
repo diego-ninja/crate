@@ -15,6 +15,7 @@ import {
   Users,
 } from "@crate/ui/icons";
 import { FollowHeartButton } from "@crate/ui/primitives/FollowHeartButton";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 
 import {
   type ArtistData,
@@ -50,11 +51,119 @@ interface ArtistHeroSectionProps {
 const SECONDARY_ACTION_CLASS =
   "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-white/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-primary hover:drop-shadow-[0_0_10px_rgba(34,211,238,0.32)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
-export function ArtistHeroSection({
+function HeroBanner({
   artist,
   artistInfo,
   photoUrl,
   backgroundUrl,
+  onOpenBio,
+}: Pick<
+  ArtistHeroSectionProps,
+  "artist" | "artistInfo" | "photoUrl" | "backgroundUrl" | "onOpenBio"
+>) {
+  const { t } = useTranslation();
+  const bio = artistInfo?.bio ?? "";
+  const heroBackgroundSrc = backgroundUrl
+    ? `${backgroundUrl}${
+        backgroundUrl.includes("?") ? "&" : "?"
+      }v=artist-hero-bg-v1`
+    : undefined;
+
+  return (
+    <div className="relative h-[420px] overflow-hidden sm:h-[400px]">
+      {photoUrl ? (
+        <CrateImage
+          src={photoUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] brightness-[0.72] contrast-110 opacity-[0.82] sm:hidden"
+        />
+      ) : heroBackgroundSrc ? (
+        <CrateImage
+          src={heroBackgroundSrc}
+          alt=""
+          className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] brightness-[0.72] contrast-110 opacity-[0.82] sm:hidden"
+        />
+      ) : null}
+      {heroBackgroundSrc ? (
+        <CrateImage
+          src={heroBackgroundSrc}
+          alt=""
+          className="absolute inset-0 hidden h-full w-full scale-[1.02] object-cover object-[right_20%] grayscale brightness-[0.5] contrast-110 opacity-[0.45] sm:block"
+        />
+      ) : null}
+      <div className="absolute inset-0 bg-black/10 sm:bg-black/32" />
+      <div
+        className="absolute inset-0 sm:hidden"
+        style={{
+          background:
+            "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.04) 34%, rgba(8, 10, 14, 0.28) 64%, var(--surface-app) 100%)",
+        }}
+      />
+      <div
+        className="absolute inset-0 hidden sm:block"
+        style={{
+          background:
+            "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.16) 34%, rgba(8, 10, 14, 0.5) 64%, var(--surface-app) 100%)",
+        }}
+      />
+      <div className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-6 sm:px-6">
+        <div className="flex w-full flex-col gap-5 sm:flex-row sm:items-end">
+          <div className="hidden h-40 w-40 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-2xl ring-2 ring-white/10 sm:block">
+            <CrateImage
+              src={photoUrl}
+              alt={artist.name}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="max-w-3xl pb-1">
+            <h1 className="mb-1 text-3xl font-bold text-foreground sm:mb-2 sm:text-4xl">
+              {artist.name}
+            </h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              {artistInfo?.listeners ? (
+                <span className="flex items-center gap-1">
+                  <Users size={14} />
+                  {t("artist.meta.listeners", {
+                    count: formatCompact(artistInfo.listeners),
+                  })}
+                </span>
+              ) : null}
+              {artist.total_tracks > 0 ? (
+                <span>
+                  {t("common.trackCountLabel", { count: artist.total_tracks })}
+                </span>
+              ) : null}
+              {artist.albums.length > 0 ? (
+                <span>
+                  {t("common.albumCountLabel", { count: artist.albums.length })}
+                </span>
+              ) : null}
+            </div>
+            {bio ? (
+              <div className="mt-3 max-w-2xl">
+                <p className="line-clamp-2 text-sm leading-relaxed text-white/70 sm:line-clamp-3">
+                  <ArtistBioText text={bio} />
+                </p>
+                {bio.length > 200 ? (
+                  <button
+                    className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+                    onClick={onOpenBio}
+                  >
+                    {t("common.showMore")} <ChevronDown size={12} />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroActions({
+  artist,
+  photoUrl,
   following,
   onPlay,
   onShuffle,
@@ -63,19 +172,25 @@ export function ArtistHeroSection({
   hasSetlist,
   onToggleFollow,
   onShare,
-  onOpenBio,
-}: ArtistHeroSectionProps) {
+}: Pick<
+  ArtistHeroSectionProps,
+  | "artist"
+  | "photoUrl"
+  | "following"
+  | "onPlay"
+  | "onShuffle"
+  | "onArtistRadio"
+  | "onPlaySetlist"
+  | "hasSetlist"
+  | "onToggleFollow"
+  | "onShare"
+>) {
   const { t } = useTranslation();
   const isDesktop = useIsDesktop();
   const menuController = useContextMenuController<HTMLButtonElement>({
     placement: "bottom-end",
   });
-  const bio = artistInfo?.bio ?? "";
-  const heroBackgroundSrc = backgroundUrl
-    ? `${backgroundUrl}${
-        backgroundUrl.includes("?") ? "&" : "?"
-      }v=artist-hero-bg-v1`
-    : undefined;
+
   function handleToggleMenu(event: MouseEvent<HTMLButtonElement>) {
     menuController.openFromTrigger(event);
   }
@@ -117,13 +232,21 @@ export function ArtistHeroSection({
       active: following,
       onSelect: onToggleFollow,
     },
-    {
-      key: "share",
-      label: t("common.share"),
-      icon: Share2,
-      onSelect: onShare,
-    },
+    { key: "share", label: t("common.share"), icon: Share2, onSelect: onShare },
   ];
+
+  const menuHeader = {
+    type: "media" as const,
+    title: artist.name,
+    subtitle: `${t("common.trackCountLabel", {
+      count: artist.total_tracks,
+    })} · ${t("common.albumCountLabel", { count: artist.albums.length })}`,
+    imageUrl: photoUrl,
+    imageAlt: artist.name,
+    imageShape: "circle" as const,
+    fallbackIcon: Users,
+  };
+
   const mobileMenuTrigger =
     !isDesktop && typeof document !== "undefined" ? (
       <div
@@ -147,19 +270,7 @@ export function ArtistHeroSection({
           />
         </button>
         <ContextMenu
-          header={{
-            type: "media",
-            title: artist.name,
-            subtitle: `${t("common.trackCountLabel", {
-              count: artist.total_tracks,
-            })} · ${t("common.albumCountLabel", {
-              count: artist.albums.length,
-            })}`,
-            imageUrl: photoUrl,
-            imageAlt: artist.name,
-            imageShape: "circle",
-            fallbackIcon: Users,
-          }}
+          header={menuHeader}
           items={menuItems}
           menuRef={menuController.menuRef}
           onClose={menuController.close}
@@ -174,100 +285,6 @@ export function ArtistHeroSection({
       {mobileMenuTrigger
         ? createPortal(mobileMenuTrigger, document.body)
         : null}
-      <div className="relative h-[420px] overflow-hidden sm:h-[400px]">
-        {photoUrl ? (
-          <CrateImage
-            src={photoUrl}
-            alt=""
-            className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] brightness-[0.72] contrast-110 opacity-[0.82] sm:hidden"
-          />
-        ) : heroBackgroundSrc ? (
-          <CrateImage
-            src={heroBackgroundSrc}
-            alt=""
-            className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] brightness-[0.72] contrast-110 opacity-[0.82] sm:hidden"
-          />
-        ) : null}
-        {heroBackgroundSrc ? (
-          <CrateImage
-            src={heroBackgroundSrc}
-            alt=""
-            className="absolute inset-0 h-full w-full scale-[1.02] object-cover object-[right_20%] grayscale brightness-[0.5] contrast-110 opacity-[0.45] hidden sm:block"
-          />
-        ) : null}
-        <div className="absolute inset-0 bg-black/10 sm:bg-black/32" />
-        <div
-          className="absolute inset-0 sm:hidden"
-          style={{
-            background:
-              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.04) 34%, rgba(8, 10, 14, 0.28) 64%, var(--surface-app) 100%)",
-          }}
-        />
-        <div
-          className="absolute inset-0 hidden sm:block"
-          style={{
-            background:
-              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.16) 34%, rgba(8, 10, 14, 0.5) 64%, var(--surface-app) 100%)",
-          }}
-        />
-        <div className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-6 sm:px-6">
-          <div className="flex w-full flex-col gap-5 sm:flex-row sm:items-end">
-            <div className="hidden h-40 w-40 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-2xl ring-2 ring-white/10 sm:block">
-              <CrateImage
-                src={photoUrl}
-                alt={artist.name}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div className="max-w-3xl pb-1">
-              <h1 className="mb-1 text-3xl font-bold text-foreground sm:mb-2 sm:text-4xl">
-                {artist.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                {artistInfo?.listeners ? (
-                  <span className="flex items-center gap-1">
-                    <Users size={14} />
-                    {t("artist.meta.listeners", {
-                      count: formatCompact(artistInfo.listeners),
-                    })}
-                  </span>
-                ) : null}
-                {artist.total_tracks > 0 ? (
-                  <span>
-                    {t("common.trackCountLabel", {
-                      count: artist.total_tracks,
-                    })}
-                  </span>
-                ) : null}
-                {artist.albums.length > 0 ? (
-                  <span>
-                    {t("common.albumCountLabel", {
-                      count: artist.albums.length,
-                    })}
-                  </span>
-                ) : null}
-              </div>
-
-              {bio ? (
-                <div className="mt-3 max-w-2xl">
-                  <p className="line-clamp-2 whitespace-pre-line text-sm leading-relaxed text-white/70 sm:line-clamp-3">
-                    {bio}
-                  </p>
-                  {bio.length > 200 ? (
-                    <button
-                      className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
-                      onClick={onOpenBio}
-                    >
-                      {t("common.showMore")} <ChevronDown size={12} />
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div className="px-4 py-4 sm:px-0">
         <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5 sm:px-6 md:flex-row md:items-center md:justify-between md:gap-6">
           <div
@@ -280,7 +297,7 @@ export function ArtistHeroSection({
               onClick={onPlay}
               aria-label={t("player.play")}
             >
-              <Play size={17} fill="currentColor" />
+              <Play size={17} fill="currentColor" />{" "}
               <span>{t("player.play")}</span>
             </button>
             <button
@@ -288,11 +305,9 @@ export function ArtistHeroSection({
               onClick={onShuffle}
               aria-label={t("player.shuffle")}
             >
-              <Shuffle size={17} />
-              <span>{t("player.shuffle")}</span>
+              <Shuffle size={17} /> <span>{t("player.shuffle")}</span>
             </button>
           </div>
-
           <div
             role="group"
             aria-label={t("artist.actions.secondaryGroup")}
@@ -355,19 +370,7 @@ export function ArtistHeroSection({
                   <span>{t("common.more")}</span>
                 </button>
                 <ContextMenu
-                  header={{
-                    type: "media",
-                    title: artist.name,
-                    subtitle: `${t("common.trackCountLabel", {
-                      count: artist.total_tracks,
-                    })} · ${t("common.albumCountLabel", {
-                      count: artist.albums.length,
-                    })}`,
-                    imageUrl: photoUrl,
-                    imageAlt: artist.name,
-                    imageShape: "circle",
-                    fallbackIcon: Users,
-                  }}
+                  header={menuHeader}
                   items={menuItems}
                   menuRef={menuController.menuRef}
                   onClose={menuController.close}
@@ -379,6 +382,32 @@ export function ArtistHeroSection({
           </div>
         </div>
       </div>
+    </>
+  );
+}
+
+export function ArtistHeroSection(props: ArtistHeroSectionProps) {
+  return (
+    <>
+      <HeroBanner
+        artist={props.artist}
+        artistInfo={props.artistInfo}
+        photoUrl={props.photoUrl}
+        backgroundUrl={props.backgroundUrl}
+        onOpenBio={props.onOpenBio}
+      />
+      <HeroActions
+        artist={props.artist}
+        photoUrl={props.photoUrl}
+        following={props.following}
+        onPlay={props.onPlay}
+        onShuffle={props.onShuffle}
+        onArtistRadio={props.onArtistRadio}
+        onPlaySetlist={props.onPlaySetlist}
+        hasSetlist={props.hasSetlist}
+        onToggleFollow={props.onToggleFollow}
+        onShare={props.onShare}
+      />
     </>
   );
 }

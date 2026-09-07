@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("ArtistMetadataEditor", () => {
-  it("queues artist metadata with normalized tags and urls", async () => {
+  it("queues artist metadata with canonical genres and urls", async () => {
     const onSaved = vi.fn();
     const onOpenChange = vi.fn();
     render(
@@ -63,11 +63,6 @@ describe("ArtistMetadataEditor", () => {
     await userEvent.type(
       screen.getByRole("textbox", { name: /bio/i }),
       "New bio",
-    );
-    await userEvent.clear(screen.getByRole("textbox", { name: /tags/i }));
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /tags/i }),
-      "post-punk, punk, post-punk",
     );
     await userEvent.clear(
       screen.getByRole("textbox", { name: /external urls/i }),
@@ -88,7 +83,7 @@ describe("ArtistMetadataEditor", () => {
       "PUT",
       expect.objectContaining({
         bio: "New bio",
-        tags: ["post-punk", "punk"],
+        genres: [],
         urls: {
           official: "https://highvis.example",
           bandcamp: "https://highvis.bandcamp.com",

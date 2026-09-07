@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 8: Migration and quality gates — Listen Design System</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    .back-link { display: block; max-width: 1200px; margin: 0 auto 1rem; color: #475569; text-decoration: none; font-size: .85rem; } .back-link:hover { color: #2563eb; }
+    header { text-align: center; margin: 0 auto 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; } .decision-number { font-size: .75rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; } header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -.02em; margin-top: .25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: .5rem; background: #e0f2fe; color: #0369a1; } .decision-description { font-size: 1rem; color: #475569; margin: .75rem auto 0; max-width: 760px; line-height: 1.7; } .instruction { margin-top: 1rem; font-size: .85rem; background: #eff6ff; color: #1d4ed8; padding: .6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; } .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); border: 2px solid #e2e8f0; display: flex; flex-direction: column; position: relative; } .option-card:hover { border-color: #6366f1; } .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .card-header { padding: 1rem 1.25rem .75rem; border-bottom: 1px solid #f1f5f9; } .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; } .option-label { font-size: .65rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; } .option-a .option-label { color: #7c3aed; } .option-b .option-label { color: #0891b2; } .option-c .option-label { color: #059669; } .option-d .option-label { color: #dc2626; } .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; } .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; } .visual-preview { min-height: 178px; padding: 1.25rem; display: flex; align-items: center; justify-content: center; background: #0a0a0f; } .option-summary { padding: 1rem 1.25rem; color: #475569; font-size: .9rem; flex: 1; } .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0 1.25rem 1.25rem; font-size: .8rem; } .verdict h3 { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; } .pros h3 { color: #047857; } .cons h3 { color: #b91c1c; } .verdict ul { padding-left: 1rem; color: #64748b; } .card-footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: .75rem 1.25rem; } .tell-claude { color: #475569; font-size: .75rem; } .chosen-badge { display: none; background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; } .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.chosen { border-color: #059669; box-shadow: 0 4px 20px rgba(5,150,105,.15); }
+    .slice-preview { width: 100%; max-width: 315px; display: grid; gap: 6px; font-size: 10px; color: #cbd5e1; } .slice-preview div { padding: 9px; border-radius: 7px; border: 1px solid #334155; background: #17212b; } .slice-preview .done { border-color: #059669; background: #194331; color: #bbf7d0; } .slice-preview .next { border-color: #f59e0b; background: #332b18; color: #fde68a; }
+    .bigbang-preview { width: 100%; max-width: 315px; padding: 14px; border-radius: 9px; border: 1px solid #b91c1c; background: #32191b; color: #fca5a5; text-align: center; font-size: 11px; } .bigbang-preview .bar { height: 10px; margin-top: 11px; border-radius: 99px; background: #dc2626; }
+    .component-preview { width: 100%; max-width: 315px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .component-preview div { padding: 18px 5px; border-radius: 7px; text-align: center; font-size: 9px; background: #14303a; border: 1px solid #0891b2; color: #a5f3fc; }
+    .freeze-preview { width: 100%; max-width: 315px; padding: 14px; border-radius: 9px; border: 1px solid #475569; background: #17212b; color: #cbd5e1; text-align: center; font-size: 10px; } .freeze-preview .lock { font-size: 25px; color: #fcd34d; margin-bottom: 7px; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 2rem; } .comparison-section h2 { font-size: 1.25rem; color: #0f172a; margin-bottom: 1rem; } .comparison-table-wrapper { overflow-x: auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; } .comparison-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .8rem; } .comparison-table th, .comparison-table td { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; } .comparison-table th { background: #f8fafc; color: #334155; font-size: .75rem; } .comparison-table td:first-child { font-weight: 600; color: #475569; } .col-b { background: #ecfeff; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; color: #64748b; font-size: .8rem; padding-bottom: 2rem; } @media (max-width: 760px) { body { padding: 1rem; } .options-grid { grid-template-columns: 1fr; gap: 1rem; } .verdict { grid-template-columns: 1fr; } header h1 { font-size: 1.35rem; } }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">← Todas las decisiones</a>
+  <header>
+    <span class="decision-number">Decision 8 of 8</span>
+    <h1>Migration and quality gates</h1>
+    <span class="category-badge">Technical</span>
+    <p class="decision-description">La iniciativa afecta a cientos de archivos, varias capas y zonas con animación o estilos calculados. La estrategia de migración debe permitir avanzar por cortes pequeños, mantener el comportamiento intacto y demostrar que cada zona queda mejor que antes. Los quality gates deben medir drift, tipos, tests, accesibilidad y regresión visual sin bloquear excepciones técnicas legítimas.</p>
+    <p class="instruction">Dime: <strong>“Option B”</strong> · <strong>“Option A but [cambio]”</strong> · <strong>“more options”</strong></p>
+  </header>
+
+  <main class="options-grid">
+    <article class="option-card option-a chosen">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div><h2 class="option-title">Vertical slices + gates</h2></div>
+      <div class="visual-preview"><div class="slice-preview"><div class="done">✓ tokens + primitives</div><div class="done">✓ player surface</div><div class="next">→ next: library</div><div>○ next: artist pages</div></div></div>
+      <div class="option-summary">Migrar por cortes verticales y áreas de alto impacto. Cada corte incluye inventario antes/después, tests del comportamiento tocado, revisión visual del default, accesibilidad, lint de drift y una allowlist actualizada. Se puede trabajar en paralelo sin esperar a una reescritura completa y cada PR deja el área más limpia.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>El producto debe seguir evolucionando.</li><li>Hay zonas de riesgo desigual.</li><li>Se quiere rollback sencillo.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>El baseline debe medirse bien.</li><li>Hay que evitar cortes demasiado amplios.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option A”</code></div>
+    </article>
+
+    <article class="option-card option-b">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"></div></div><h2 class="option-title">Big-bang rewrite</h2></div>
+      <div class="visual-preview"><div class="bigbang-preview"><strong>Rewrite all Listen</strong><div class="bar"></div><small>long-lived branch · high merge risk</small></div></div>
+      <div class="option-summary">Reescribir la capa visual completa sobre los nuevos tokens y sustituirla de una vez. Puede producir una estructura final limpia, pero mantiene una rama grande durante mucho tiempo y hace difícil validar regresiones o incorporar cambios de producto mientras dura el trabajo.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>El producto está congelado.</li><li>Hay una ventana dedicada.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Riesgo alto de regresiones.</li><li>Rollback y merge costosos.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option B”</code></div>
+    </article>
+
+    <article class="option-card option-c">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"></div></div><h2 class="option-title">Primitive-first migration</h2></div>
+      <div class="visual-preview"><div class="component-preview"><div>Button</div><div>Modal</div><div>Input</div><div>Row</div><div>Card</div><div>Popover</div></div></div>
+      <div class="option-summary">Limpiar primero todos los primitives y no migrar features hasta que la base esté terminada. Produce una fundación ordenada, pero retrasa el valor visible y puede diseñar abstracciones sin suficiente feedback de las pantallas complejas de Listen.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>La librería está muy fragmentada.</li><li>Hay capacidad para una fase de base.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Feedback tardío de casos reales.</li><li>El alcance de primitives puede crecer.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option C”</code></div>
+    </article>
+
+    <article class="option-card option-d">
+      <div class="card-header"><div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"></div></div><h2 class="option-title">Feature freeze</h2></div>
+      <div class="visual-preview"><div class="freeze-preview"><div class="lock">⌁</div><strong>Freeze features</strong><p>clean first · release later</p></div></div>
+      <div class="option-summary">Congelar nuevas features de Listen hasta terminar la limpieza y el sistema de skins. Simplifica el control de cambios, pero prolonga el tiempo hasta entregar valor y no elimina por sí mismo el riesgo técnico de una migración grande.</div>
+      <div class="verdict"><div class="pros"><h3>Funciona bien cuando</h3><ul><li>Hay una deadline de plataforma.</li><li>El equipo puede parar producto.</li></ul></div><div class="cons"><h3>Vigilar</h3><ul><li>Coste de oportunidad alto.</li><li>Presión por acelerar al final.</li></ul></div></div>
+      <div class="card-footer"><code class="tell-claude">Tell me: “Option D”</code></div>
+    </article>
+  </main>
+
+  <section class="comparison-section"><h2>How They Compare</h2><div class="comparison-table-wrapper"><table class="comparison-table">
+    <thead><tr><th>Dimension</th><th class="col-a">Option A</th><th>Option B</th><th>Option C</th><th>Option D</th></tr></thead>
+    <tbody>
+      <tr><td>Riesgo de regresión</td><td class="col-a">Bajo por corte</td><td>Muy alto</td><td>Medio</td><td>Medio-alto</td></tr>
+      <tr><td>Feedback de producto</td><td class="col-a">Continuo</td><td>Tardío</td><td>Tardío</td><td>Bloqueado</td></tr>
+      <tr><td>Rollback</td><td class="col-a">Simple por PR</td><td>Costoso</td><td>Medio</td><td>Medio</td></tr>
+      <tr><td>Valor entregado</td><td class="col-a">Incremental</td><td>Al final</td><td>Al final</td><td>Al final</td></tr>
+      <tr><td>Quality gates</td><td class="col-a">Por área y CI</td><td>Al final</td><td>En primitives</td><td>En release</td></tr>
+      <tr><td>Recomendación</td><td class="col-a">Base recomendada</td><td>No recomendado</td><td>Complemento posible</td><td>Solo con deadline</td></tr>
+    </tbody>
+  </table></div></section>
+  <div class="page-footer"><p>Decisión elegida: Option A. El diseño está validado; queda consolidar el plan de implementación.</p></div>
+</body>
+</html>

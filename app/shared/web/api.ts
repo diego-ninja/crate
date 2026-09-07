@@ -5,6 +5,13 @@ export interface ApiClientOptions {
   credentials?: RequestCredentials;
   defaultHeaders?: Record<string, string> | (() => Record<string, string>);
   onUnauthorized?: () => void;
+  onError?: (error: unknown, context: ApiErrorContext) => void;
+}
+
+export interface ApiErrorContext {
+  method: ApiMethod;
+  url: string;
+  status?: number;
 }
 
 export interface ApiRequestOptions {
@@ -36,6 +43,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
     credentials,
     defaultHeaders = {},
     onUnauthorized,
+    onError,
   } = options;
   const inflightGets = new Map<string, Promise<unknown>>();
 
@@ -95,24 +103,35 @@ export function createApiClient(options: ApiClientOptions = {}) {
     }
 
     const execute = async (signal?: AbortSignal) => {
-      const requestInit: RequestInit = { ...requestOptions };
-      if (signal) {
-        requestInit.signal = signal;
-      }
-      const res = await fetch(`${base}${url}`, requestInit);
-      if (!res.ok) {
-        if (
-          res.status === 401 &&
-          onUnauthorized &&
-          !url.includes("/auth/login")
-        ) {
-          onUnauthorized();
+      let status: number | undefined;
+      try {
+        const requestInit: RequestInit = { ...requestOptions };
+        if (signal) {
+          requestInit.signal = signal;
         }
-        const text = await res.text().catch(() => "Request failed");
-        throw new ApiError(res.status, text, retryAfterMs(res));
+        const res = await fetch(`${base}${url}`, requestInit);
+        status = res.status;
+        if (!res.ok) {
+          if (
+            res.status === 401 &&
+            onUnauthorized &&
+            !url.includes("/auth/login")
+          ) {
+            onUnauthorized();
+          }
+          const text = await res.text().catch(() => "Request failed");
+          throw new ApiError(res.status, text, retryAfterMs(res));
+        }
+        const text = await res.text();
+        return text ? JSON.parse(text) : (null as T);
+      } catch (error) {
+        try {
+          onError?.(error, { method, url: `${base}${url}`, status });
+        } catch {
+          // Telemetry must never change the API client's error contract.
+        }
+        throw error;
       }
-      const text = await res.text();
-      return text ? JSON.parse(text) : (null as T);
     };
 
     if (method === "GET" && body === undefined) {
