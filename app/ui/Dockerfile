@@ -8,7 +8,7 @@ COPY shared/ui/ /app-shared/shared/ui/
 # Install deps — strip @crate/ui from package.json (it's a local workspace
 # package, not on npm) then install, then symlink it into node_modules.
 COPY ui/package.json ui/package-lock.json* ./
-RUN sed -i '/"@crate\/ui"/d' package.json && npm install --ignore-scripts
+RUN sed -i '/"@crate\/ui"/d' package.json && npm install --ignore-scripts --legacy-peer-deps --package-lock=false
 RUN mkdir -p node_modules/@crate && ln -s /app-shared/shared/ui node_modules/@crate/ui
 
 # Copy shared code (imported by ui via relative paths)
