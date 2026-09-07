@@ -74,7 +74,10 @@ from crate.db.queries.browse_media import (
 from crate.local_search import search_local_library
 from crate.metrics import record_later
 from crate.db.queries.browse_media_track_lookup import get_track_info_cols_by_storage_id
-from crate.db.repositories.tasks import create_task_dedup
+from crate.db.repositories.tasks import (
+    create_task_dedup,
+    find_active_task_by_type_params,
+)
 from crate.federation.global_playback import (
     GlobalTrackNotFound,
     NoPlayableGlobalTrack,
@@ -143,6 +146,20 @@ _DOWNLOAD_RESPONSES = merge_responses(
         404: error_response("The requested download could not be found."),
     },
 )
+
+
+def _queue_completeness_refresh() -> str:
+    """Queue or recover the active completeness task after deduplication."""
+    params: dict = {}
+    task_id = create_task_dedup("compute_completeness", params)
+    if task_id is None:
+        task_id = find_active_task_by_type_params("compute_completeness", params)
+    if task_id is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not queue completeness refresh",
+        )
+    return task_id
 
 
 @router.get(
@@ -928,7 +945,7 @@ def api_discover_completeness(request: Request):
     cached = get_cache("discover:completeness", max_age_seconds=86400)
     if cached is not None:
         return cached
-    create_task_dedup("compute_completeness", {})
+    _queue_completeness_refresh()
     return []
 
 
@@ -941,7 +958,7 @@ def api_discover_completeness(request: Request):
 def api_discover_completeness_refresh(request: Request):
     """Force recompute of completeness data."""
     _require_auth(request)
-    task_id = create_task_dedup("compute_completeness", {})
+    task_id = _queue_completeness_refresh()
     return {"task_id": task_id}
 
 

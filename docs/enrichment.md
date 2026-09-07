@@ -43,6 +43,23 @@ Typical sources:
 - Deezer / iTunes fallbacks
 - Spotify popularity/follower overlays when configured
 
+### AI biography research
+
+Admin biography research runs asynchronously. It queries public MusicBrainz and
+Wikipedia endpoints, Last.fm when configured, optional official URLs already
+stored for the artist, and an optional generic web-search provider. Configure
+`TAVILY_API_KEY` for Tavily or `BRAVE_SEARCH_API_KEY` for Brave. If both are
+configured, Tavily is used first and Brave is tried if Tavily returns no usable
+results. If neither is configured, the curated public sources remain available.
+The worker sends bounded excerpts to the configured LLM and returns a proposal
+with source links, claims, conflicts and warnings. No biography is changed
+until an administrator reviews and applies the proposal.
+
+Research only fetches public `http`/`https` URLs and rejects credentials,
+non-standard ports and private or loopback addresses. Raw pages are not
+persisted. The existing metadata task performs the final write, so the change
+is audited and manual field locks remain effective.
+
 ## Acquisition normalization
 
 Crate treats acquisition as “import into a canonical library”, not merely

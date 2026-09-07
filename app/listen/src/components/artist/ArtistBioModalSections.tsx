@@ -9,6 +9,7 @@ import {
   GenrePillRow,
   type GenreProfileItem,
 } from "@crate/ui/domain/genres/GenrePill";
+import { ArtistBioText as SharedArtistBioText } from "@crate/ui/domain/ArtistBioText";
 import { CrateImage } from "@/components/artwork/CrateImage";
 import { openExternalUrl } from "@/lib/external-links";
 import { formatCompact } from "@/lib/utils";
@@ -178,8 +179,7 @@ export function ArtistBioText({
   return (
     <div>
       <p className="whitespace-pre-line text-sm leading-7 text-text-secondary-strong sm:text-[15px]">
-        {bioExpanded ? bio : bio.slice(0, 500)}
-        {!bioExpanded && bio.length > 500 ? "..." : null}
+        <SharedArtistBioText text={bio} maxChars={500} expanded={bioExpanded} />
       </p>
       {bio.length > 500 ? (
         <button

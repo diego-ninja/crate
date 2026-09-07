@@ -100,7 +100,7 @@ def get_artist_top_genres(artist_name: str) -> list[str]:
         return [row["name"] for row in rows]
 
 
-def get_artist_genre_profile(artist_name: str, limit: int = 8) -> list[dict]:
+def get_artist_genre_profile(artist_name: str, limit: int = 100) -> list[dict]:
     with read_scope() as session:
         rows = (
             session.execute(

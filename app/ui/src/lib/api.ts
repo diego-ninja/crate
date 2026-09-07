@@ -1,8 +1,10 @@
 export { ApiError } from "../../../shared/web/api";
 
 import { createApiClient } from "../../../shared/web/api";
+import { captureApiError } from "./sentry";
 
 export const api = createApiClient({
+  onError: captureApiError,
   onUnauthorized: () => {
     if (window.location.pathname !== "/login") {
       const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`;

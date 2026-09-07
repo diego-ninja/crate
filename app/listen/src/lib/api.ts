@@ -31,6 +31,7 @@ import {
 } from "@/lib/api-media-access";
 import { createApiUrlResolver } from "@/lib/api-url-resolver";
 import { createApiAuthTransport } from "@/lib/api-auth-transport";
+import { captureApiError } from "@/lib/sentry";
 
 export {
   AUTH_TOKEN_EVENT,
@@ -168,6 +169,7 @@ if (typeof window !== "undefined") {
 const innerApi = createApiClient({
   credentials: apiCredentials(),
   defaultHeaders: getApiAuthHeaders,
+  onError: captureApiError,
 });
 
 const apiAuthTransport = createApiAuthTransport({
@@ -184,6 +186,28 @@ const apiAuthTransport = createApiAuthTransport({
 });
 
 export const api = apiAuthTransport.api;
-export const apiFetch = apiAuthTransport.apiFetch;
 export const ensureFreshAuthToken = apiAuthTransport.ensureFreshAuthToken;
 export const refreshAuthToken = apiAuthTransport.refreshAuthToken;
+export const apiFetch = async (
+  path: string,
+  init?: RequestInit,
+): Promise<Response> => {
+  const method = init?.method || "GET";
+  const url = `${getApiBase()}${path}`;
+  try {
+    const response = await apiAuthTransport.apiFetch(path, init);
+    if (!response.ok) {
+      captureApiError(
+        new ApiError(
+          response.status,
+          response.statusText || "HTTP request failed",
+        ),
+        { method, url, status: response.status },
+      );
+    }
+    return response;
+  } catch (error) {
+    captureApiError(error, { method, url });
+    throw error;
+  }
+};

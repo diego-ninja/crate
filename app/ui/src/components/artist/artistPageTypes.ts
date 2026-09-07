@@ -9,6 +9,7 @@ export interface ArtistData {
   albums: ArtistAlbumSummary[];
   genres?: string[];
   genre_profile?: GenreProfileItem[];
+  manual_genres?: string[];
   total_tracks?: number;
   total_size_mb?: number;
   primary_format?: string;

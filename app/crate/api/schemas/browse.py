@@ -146,6 +146,7 @@ class ArtistDetailResponse(IdentityFieldsMixin):
     primary_format: str | None = None
     genres: list[str] = Field(default_factory=list)
     genre_profile: list[GenreProfileResponse] = Field(default_factory=list)
+    manual_genres: list[str] = Field(default_factory=list)
     issue_count: int
     is_v2: bool
     popularity: int | None = None

@@ -53,7 +53,14 @@ _WAIT_WHILE_PRESSURED_MAX_SLEEP_SECONDS = 300
 # Registry of post-processing functions for fan-out coordinators.
 # Keyed by the child task_type. Called once by the last chunk to complete.
 # Lazy-populated after handler functions are defined (see bottom of module).
-_PARENT_FINALIZERS: dict[str, Callable[[], dict | None]] = {}
+_PARENT_FINALIZERS: dict[str, Callable[[str], dict | None]] = {}
+
+
+def register_parent_finalizer(
+    task_type: str, finalizer: Callable[[str], dict | None]
+) -> None:
+    """Register fan-in post-processing for a child task type."""
+    _PARENT_FINALIZERS[task_type] = finalizer
 
 
 def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
@@ -465,7 +472,7 @@ def _try_complete_parent(parent_task_id: str, child_task_type: str = "") -> None
     finalize_fn = _PARENT_FINALIZERS.get(child_task_type)
     if finalize_fn and status["failed"] == 0:
         try:
-            extra = finalize_fn()
+            extra = finalize_fn(parent_task_id)
             if extra:
                 result.update(extra)
         except Exception:
@@ -545,8 +552,9 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     return {"analyzed": analyzed, "artists": len(artists)}
 
 
-def _popularity_finalize() -> dict | None:
+def _popularity_finalize(parent_task_id: str | None = None) -> dict | None:
     """Post-processing after all popularity chunks complete."""
+    del parent_task_id
     from crate.api.cache_events import broadcast_invalidation
     from crate.db.cache_settings import set_setting
     from crate.db.cache_store import delete_cache_prefix
@@ -1086,7 +1094,7 @@ def _handle_backfill_track_audio_fingerprints(
 
 
 # Populate finalizers now that handler functions are defined
-_PARENT_FINALIZERS["compute_popularity"] = _popularity_finalize
+register_parent_finalizer("compute_popularity", _popularity_finalize)
 
 ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "compute_analytics": _handle_compute_analytics,

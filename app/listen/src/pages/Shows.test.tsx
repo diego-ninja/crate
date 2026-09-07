@@ -150,6 +150,29 @@ describe("Shows page", () => {
     expect(screen.queryByText("Insights")).not.toBeInTheDocument();
   });
 
+  it("explains when followed artists have no current Radar signals", () => {
+    mockUseApi.mockReturnValue({
+      data: {
+        items: [],
+        insights: [],
+        summary: {
+          followed_artists: 1,
+          show_count: 0,
+          release_count: 0,
+          attending_count: 0,
+          insight_count: 0,
+        },
+      },
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderWithListenProviders(<Shows />);
+
+    expect(screen.getByText("No new Radar signals yet")).toBeInTheDocument();
+  });
+
   it("uses one expanded show card as the next show source of truth", () => {
     renderWithListenProviders(<Shows />);
 

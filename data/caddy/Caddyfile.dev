@@ -1,33 +1,36 @@
 {
-	local_certs
+}
+
+(local_tls) {
+	tls /certs/dev-stack.pem /certs/dev-stack-key.pem
 }
 
 https://admin.dev.lespedants.org {
-	tls internal
+	import local_tls
 	reverse_proxy host.docker.internal:5173
 }
 
 https://listen.dev.lespedants.org {
-	tls internal
+	import local_tls
 	reverse_proxy host.docker.internal:5174
 }
 
 https://docs.dev.cratemusic.app {
-	tls internal
+	import local_tls
 	reverse_proxy host.docker.internal:5175
 }
 
 https://reference.dev.cratemusic.app {
-	tls internal
+	import local_tls
 	reverse_proxy host.docker.internal:5177
 }
 
 https://www.dev.cratemusic.app {
-	tls internal
+	import local_tls
 	reverse_proxy host.docker.internal:5176
 }
 
 https://api.dev.lespedants.org {
-	tls internal
+	import local_tls
 	reverse_proxy api:8585
 }

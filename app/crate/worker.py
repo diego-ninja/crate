@@ -69,6 +69,10 @@ def run_worker(config: dict):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    from crate.observability import init_sentry
+
+    init_sentry("workers")
+
     from crate.utils import init_musicbrainz
 
     queues = _normalise_queues(config.get("worker_queues"))
@@ -620,6 +624,8 @@ _HANDLER_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "process_new_content",
             "compute_completeness",
             "refresh_probable_setlist",
+            "normalize_artist_bios",
+            "research_artist_bio",
         ),
     ),
     (
@@ -641,6 +647,7 @@ _HANDLER_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         (
             "bandcamp_connect_credentials",
             "bandcamp_sync_collection",
+            "bandcamp_discover_refresh",
             "bandcamp_import_purchase",
             "bandcamp_radar_refresh",
             "bandcamp_backfill_entity_urls",

@@ -192,6 +192,19 @@ function ShowsEmptyStates({ page }: ShowsSectionProps) {
     );
   }
   if (
+    !page.isGenreRadar &&
+    page.hasFollowedArtists &&
+    page.items.length === 0
+  ) {
+    return (
+      <EmptyState
+        icon={<Sparkles size={22} className="text-accent-action" />}
+        title={page.t("radar.empty.noSignalsTitle")}
+        body={page.t("radar.empty.noSignalsBody")}
+      />
+    );
+  }
+  if (
     page.hasFollowedArtists &&
     page.items.length > 0 &&
     page.filtered.length === 0

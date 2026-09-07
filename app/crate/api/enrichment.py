@@ -12,6 +12,7 @@ from crate.api.openapi_responses import (
     merge_responses,
 )
 from crate.api.permissions import require_permission
+from crate.artist_bio import normalize_artist_bio
 from crate.api.schemas.utility import (
     ArtistAnalysisDataResponse,
     ArtistEnrichmentResponse,
@@ -63,6 +64,8 @@ def _enrich_enrichment_artist_refs(result: dict) -> dict:
     enriched = dict(result or {})
 
     lastfm = dict(enriched.get("lastfm") or {})
+    if lastfm:
+        lastfm["bio"] = normalize_artist_bio(lastfm.get("bio"))
     if isinstance(lastfm.get("similar"), list):
         lastfm["similar"] = _enrich_artist_refs(lastfm["similar"])
     if lastfm:

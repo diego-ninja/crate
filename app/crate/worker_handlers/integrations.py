@@ -27,17 +27,25 @@ def _merge_ticketmaster_events(event_groups: list[list[dict]]) -> list[dict]:
 
 
 def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
-    """Sync shows from Ticketmaster to DB for all library artists."""
+    """Sync shows from Ticketmaster and optional Setlist.fm sources."""
+    from crate.setlistfm import get_upcoming_shows as setlist_get_shows
+    from crate.setlistfm import is_configured as setlist_is_configured
+    from crate.setlistfm import is_shows_sync_enabled
+    from crate.setlistfm import shows_sync_max_artists
     from crate.ticketmaster import get_upcoming_shows as tm_get_shows
-    from crate.ticketmaster import is_configured
+    from crate.ticketmaster import is_configured as tm_is_configured
 
-    if not is_configured():
+    ticketmaster_configured = tm_is_configured()
+    setlist_configured = setlist_is_configured() and is_shows_sync_enabled()
+    max_setlist_artists = shows_sync_max_artists()
+    if not ticketmaster_configured and not setlist_configured:
         return {"error": "Ticketmaster not configured"}
 
     artists, _ = get_library_artists(per_page=10000)
     total = len(artists)
     synced = 0
     shows_found = 0
+    setlist_artists_checked = 0
     sync_locations = get_show_sync_locations()
 
     p = TaskProgress(phase="fetching", phase_count=2, total=total)
@@ -51,25 +59,50 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
         if index % 10 == 0:
             emit_progress(task_id, p)
 
-        try:
-            event_groups = [tm_get_shows(name, limit=30)]
-            for location in sync_locations:
-                lat = location.get("latitude")
-                lon = location.get("longitude")
-                if lat is None or lon is None:
-                    continue
-                event_groups.append(
-                    tm_get_shows(
-                        name,
-                        country_code=str(location.get("country_code") or ""),
-                        limit=50,
-                        latitude=float(lat),
-                        longitude=float(lon),
-                        radius_km=int(location.get("show_radius_km") or 60),
+        ticketmaster_events: list[dict] = []
+        setlist_events: list[dict] = []
+        provider_succeeded = False
+
+        if ticketmaster_configured:
+            try:
+                event_groups = [tm_get_shows(name, limit=30)]
+                for location in sync_locations:
+                    lat = location.get("latitude")
+                    lon = location.get("longitude")
+                    if lat is None or lon is None:
+                        continue
+                    event_groups.append(
+                        tm_get_shows(
+                            name,
+                            country_code=str(location.get("country_code") or ""),
+                            limit=50,
+                            latitude=float(lat),
+                            longitude=float(lon),
+                            radius_km=int(location.get("show_radius_km") or 60),
+                        )
                     )
+                ticketmaster_events = _merge_ticketmaster_events(event_groups)
+                provider_succeeded = True
+            except Exception:
+                log.debug(
+                    "Failed to sync Ticketmaster shows for %s", name, exc_info=True
                 )
-            events = _merge_ticketmaster_events(event_groups)
-            for event in events:
+
+        mbid = str(artist.get("mbid") or "").strip()
+        if (
+            setlist_configured
+            and mbid
+            and setlist_artists_checked < max_setlist_artists
+        ):
+            setlist_artists_checked += 1
+            try:
+                setlist_events = setlist_get_shows(mbid, limit=30)
+                provider_succeeded = True
+            except Exception:
+                log.debug("Failed to sync Setlist.fm shows for %s", name, exc_info=True)
+
+        try:
+            for event in ticketmaster_events:
                 external_id = event.get("id")
                 if not external_id:
                     continue
@@ -98,21 +131,55 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
                     if event.get("price_range")
                     else None,
                     status=event.get("status", "onsale"),
+                    source="ticketmaster",
                 )
                 shows_found += 1
-            synced += 1
-            if events:
-                emit_task_event(
-                    task_id,
-                    "info",
-                    {
-                        "message": f"Found {len(events)} shows for {name}",
-                        "artist": name,
-                        "count": len(events),
-                    },
+
+            for event in setlist_events:
+                external_id = event.get("external_id")
+                artist_name = event.get("artist_name") or name
+                event_date = event.get("date")
+                if not external_id or not event_date or not artist_name:
+                    continue
+                upsert_show(
+                    external_id=external_id,
+                    artist_name=artist_name,
+                    date=event_date,
+                    local_time=event.get("local_time"),
+                    venue=event.get("venue"),
+                    address_line1=event.get("address_line1"),
+                    city=event.get("city"),
+                    region=event.get("region"),
+                    postal_code=event.get("postal_code"),
+                    country=event.get("country"),
+                    country_code=event.get("country_code"),
+                    latitude=event.get("latitude"),
+                    longitude=event.get("longitude"),
+                    url=event.get("url"),
+                    image_url=event.get("image_url"),
+                    lineup=event.get("lineup"),
+                    price_range=event.get("price_range"),
+                    tickets_url=event.get("tickets_url"),
+                    status=event.get("status", "scheduled"),
+                    source="setlistfm",
                 )
+                shows_found += 1
         except Exception:
-            log.debug("Failed to sync shows for %s", name, exc_info=True)
+            log.debug("Failed to persist shows for %s", name, exc_info=True)
+
+        if provider_succeeded:
+            synced += 1
+        total_events = len(ticketmaster_events) + len(setlist_events)
+        if total_events:
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": f"Found {total_events} shows for {name}",
+                    "artist": name,
+                    "count": total_events,
+                },
+            )
 
     p.phase = "cleanup"
     p.phase_index = 1
@@ -128,6 +195,7 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     return {
         "artists_checked": synced,
         "shows_found": shows_found,
+        "setlist_artists_checked": setlist_artists_checked,
         "old_deleted": deleted,
     }
 

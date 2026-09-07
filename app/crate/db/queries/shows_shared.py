@@ -20,6 +20,26 @@ def show_dedupe_key(show: dict) -> str:
     )
 
 
+def _show_location_key(show: dict) -> str:
+    return "|".join(
+        [
+            _normalize_show_text(show.get("artist_name")),
+            str(show.get("date") or "").strip(),
+            _normalize_show_text(show.get("venue")),
+            _normalize_show_text(show.get("city")),
+            _normalize_show_text(show.get("country_code") or show.get("country")),
+        ]
+    )
+
+
+def _can_merge_show_rows(first: dict, second: dict) -> bool:
+    if _show_location_key(first) != _show_location_key(second):
+        return False
+    first_time = _normalize_show_text(first.get("local_time"))
+    second_time = _normalize_show_text(second.get("local_time"))
+    return not first_time or not second_time or first_time == second_time
+
+
 def _show_row_score(show: dict) -> tuple[int, int, int]:
     populated_fields = sum(
         1
@@ -47,6 +67,7 @@ def _show_row_score(show: dict) -> tuple[int, int, int]:
     source_score = {
         "both": 3,
         "ticketmaster": 2,
+        "setlistfm": 1,
         "lastfm": 1,
     }.get(str(show.get("source") or "").strip().lower(), 0)
     attendance_score = int(show.get("lastfm_attendance") or 0)
@@ -88,12 +109,19 @@ def _merge_show_rows(primary: dict, secondary: dict) -> dict:
 
 def dedupe_show_rows(shows: list[dict]) -> list[dict]:
     deduped: list[dict] = []
-    key_to_index: dict[str, int] = {}
+    location_to_indexes: dict[str, list[int]] = {}
 
     for show in shows:
-        key = show_dedupe_key(show)
-        if key in key_to_index:
-            existing_index = key_to_index[key]
+        location_key = _show_location_key(show)
+        existing_index = next(
+            (
+                index
+                for index in location_to_indexes.get(location_key, [])
+                if _can_merge_show_rows(deduped[index], show)
+            ),
+            None,
+        )
+        if existing_index is not None:
             existing = deduped[existing_index]
             existing_score = _show_row_score(existing)
             candidate_score = _show_row_score(show)
@@ -103,7 +131,7 @@ def dedupe_show_rows(shows: list[dict]) -> list[dict]:
                 deduped[existing_index] = _merge_show_rows(existing, show)
             continue
 
-        key_to_index[key] = len(deduped)
+        location_to_indexes.setdefault(location_key, []).append(len(deduped))
         deduped.append(dict(show))
 
     return deduped

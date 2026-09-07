@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router";
 import { api } from "@/lib/api";
+import { setSentryUser } from "@/lib/sentry";
 
 export interface AuthUser {
   id: number;
@@ -142,6 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  useEffect(() => {
+    setSentryUser(actualUser?.id ?? null);
+  }, [actualUser?.id]);
 
   useEffect(() => {
     if (!actualUser) return;

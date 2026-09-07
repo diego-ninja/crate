@@ -417,6 +417,10 @@ def metrics_dashboard(
 )
 def llm_status(request: Request):
     _require_llm_status_viewer(request)
+    from crate.artist_bio_research import (
+        configured_web_search_providers,
+        web_search_provider_label,
+    )
     from crate.llm import get_config, get_provider_api_key, get_provider_key_names
 
     config = get_config()
@@ -453,6 +457,11 @@ def llm_status(request: Request):
         "provider": config["provider"],
         "models": models,
         "error": error,
+        "web_research": {
+            "available": True,
+            "provider": web_search_provider_label(),
+            "providers": configured_web_search_providers(),
+        },
     }
 
 

@@ -375,6 +375,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=ui
           cache-to: type=gha,scope=ui,mode=max
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.SENTRY_ADMIN_DSN }}
+            VITE_SENTRY_ENVIRONMENT=production
+            VITE_SENTRY_RELEASE=crate-${{ github.sha }}
 
   build-listen:
     needs: changes
@@ -413,6 +417,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=listen
           cache-to: type=gha,scope=listen,mode=max
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.SENTRY_LISTEN_DSN }}
+            VITE_SENTRY_ENVIRONMENT=production
+            VITE_SENTRY_RELEASE=crate-${{ github.sha }}
 
   build-docs:
     needs: changes

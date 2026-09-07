@@ -60,7 +60,7 @@ jobs:
             -v "${{ github.workspace }}/app/media-worker:/src" \
             -w /src \
             -e CARGO_TARGET_DIR=/tmp/media-worker-target \
-            rust:1.85-slim \
+            rust:1.88-slim \
             /usr/local/cargo/bin/cargo test --locked
 
       - name: Build media-worker image

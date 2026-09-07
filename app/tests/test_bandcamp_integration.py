@@ -363,6 +363,110 @@ def test_bandcamp_web_skips_items_without_bandcamp_url():
     assert entries[0]["item"]["album_title"] == "Real LP"
 
 
+def test_bandcamp_web_parses_followers_with_url_hints():
+    from crate.bandcamp.web import parse_fancollection_page
+
+    entries, next_token = parse_fancollection_page(
+        {
+            "followeers": [
+                {
+                    "band_id": 101,
+                    "name": "Followed Artist",
+                    "date_followed": "2026-07-15T21:46:07Z",
+                    "url_hints": {
+                        "subdomain": "followed-artist",
+                        "custom_domain": None,
+                    },
+                    "token": "following-token",
+                }
+            ],
+            "last_token": "following-token",
+            "more_available": False,
+        },
+        relation_type="following",
+    )
+
+    assert next_token == "following-token"
+    assert entries[0]["item"]["band_id"] == 101
+    assert entries[0]["item"]["artist_name"] == "Followed Artist"
+    assert entries[0]["item"]["item_url"] == "https://followed-artist.bandcamp.com"
+    assert entries[0]["item"]["artist_url"] == "https://followed-artist.bandcamp.com"
+
+
+def test_bandcamp_web_paginates_following_bands_without_duplicates(monkeypatch):
+    from crate.bandcamp.models import BandcampFanIdentity, BandcampSessionMaterial
+    from crate.bandcamp.web import BandcampWebClient
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    pages = iter(
+        [
+            FakeResponse(
+                {
+                    "followeers": [
+                        {
+                            "band_id": 101,
+                            "name": "First Artist",
+                            "url_hints": {"subdomain": "first-artist"},
+                            "token": "page-one",
+                        },
+                        {
+                            "band_id": 102,
+                            "name": "Second Artist",
+                            "url_hints": {"subdomain": "second-artist"},
+                            "token": "page-one",
+                        },
+                    ],
+                    "more_available": True,
+                }
+            ),
+            FakeResponse(
+                {
+                    "followeers": [
+                        {
+                            "band_id": 102,
+                            "name": "Second Artist",
+                            "url_hints": {"subdomain": "second-artist"},
+                            "token": "page-two",
+                        },
+                        {
+                            "band_id": 103,
+                            "name": "Third Artist",
+                            "url_hints": {"subdomain": "third-artist"},
+                            "token": "page-two",
+                        },
+                    ],
+                    "more_available": False,
+                }
+            ),
+        ]
+    )
+    client = BandcampWebClient(
+        BandcampSessionMaterial(
+            cookies={"identity": "cookie"},
+            profile=BandcampFanIdentity(username="fan", fan_id=456),
+        )
+    )
+    monkeypatch.setattr(client.session, "post", lambda *args, **kwargs: next(pages))
+
+    payload = client.sync_collection_payload(
+        include=["following"], page_size=100, max_pages=3
+    )
+
+    assert [entry["item"]["band_id"] for entry in payload["following"]] == [
+        101,
+        102,
+        103,
+    ]
+
+
 def test_bandcamp_web_resolves_pagedata_and_stat_download_url():
     from crate.bandcamp.web import (
         resolve_download_url_from_pagedata,
@@ -1794,3 +1898,163 @@ def test_bandcamp_radar_refresh_builds_wishlist_candidates(pg_db):
     assert result["upserted"] >= 1
     assert any(row["bandcamp_item_id"] == item["id"] for row in radar)
     assert radar[0]["score"] >= 80
+
+
+def test_bandcamp_private_items_are_hidden_after_connection_revocation(pg_db):
+    from crate.db.repositories.bandcamp import (
+        disconnect_connection,
+        list_bandcamp_radar_items,
+        list_user_collection,
+        refresh_bandcamp_radar_for_user,
+        upsert_bandcamp_item,
+        upsert_connection,
+        upsert_user_bandcamp_item,
+    )
+
+    connection = upsert_connection(
+        user_id=1,
+        session_secret_ref="bandcamp_session:test-revoked",
+        session_fingerprint="fingerprint-revoked",
+        connection_method="manual_dev",
+        username="fan",
+        fan_id=456,
+    )
+    item = upsert_bandcamp_item(
+        {
+            "item_url": "https://revokedartist.bandcamp.com/album/private-lp",
+            "bandcamp_item_type": "album",
+            "artist_name": "Revoked Artist",
+            "album_title": "Private LP",
+        }
+    )
+    upsert_user_bandcamp_item(
+        user_id=1,
+        connection_id=connection["id"],
+        bandcamp_item_id=item["id"],
+        relation_type="collection",
+        owned=True,
+        downloadable=True,
+    )
+    upsert_user_bandcamp_item(
+        user_id=1,
+        connection_id=connection["id"],
+        bandcamp_item_id=item["id"],
+        relation_type="following",
+        owned=False,
+        downloadable=False,
+    )
+    refresh_bandcamp_radar_for_user(1)
+
+    assert list_user_collection(1, "collection")
+    assert list_user_collection(1, "following")
+    assert list_bandcamp_radar_items(1)
+
+    disconnect_connection(1)
+
+    assert list_user_collection(1, "collection") == []
+    assert list_user_collection(1, "following") == []
+    assert list_user_collection(1, "wishlist") == []
+    assert list_bandcamp_radar_items(1) == []
+    assert refresh_bandcamp_radar_for_user(1) == {"upserted": 0}
+
+
+def test_bandcamp_discover_refresh_is_idempotent_and_preserves_radar_state(pg_db):
+    from crate.db.repositories.bandcamp import (
+        refresh_bandcamp_discover_for_user,
+        update_bandcamp_radar_status,
+        upsert_connection,
+    )
+    from crate.db.tx import read_scope
+
+    upsert_connection(
+        user_id=1,
+        session_secret_ref="bandcamp_session:test-discover",
+        session_fingerprint="fingerprint-discover",
+        connection_method="manual_dev",
+        username="fan",
+        fan_id=456,
+    )
+    items = [
+        {
+            "item": {
+                "item_url": "https://discoverartist.bandcamp.com/album/first",
+                "bandcamp_item_type": "album",
+                "artist_name": "Discover Artist",
+                "album_title": "First",
+                "release_date": "2026-08-20",
+                "raw": {"title": "First"},
+            },
+            "page_cursor": "*",
+            "rank": 0,
+        },
+        {
+            "item": {
+                "item_url": "https://discoverartist.bandcamp.com/album/second",
+                "bandcamp_item_type": "album",
+                "artist_name": "Discover Artist",
+                "album_title": "Second",
+                "release_date": "2026-08-21",
+                "raw": {"title": "Second"},
+            },
+            "page_cursor": "cursor-2",
+            "rank": 1,
+        },
+    ]
+
+    first = refresh_bandcamp_discover_for_user(
+        1,
+        items,
+        last_cursor="cursor-3",
+        cache_metadata={"etag": '"discover"'},
+    )
+    assert first == {"upserted": 2, "stale": 0}
+
+    with read_scope() as session:
+        rows = (
+            session.execute(
+                text("""
+            SELECT bri.id, bri.status, bri.source, bri.reason_json
+            FROM bandcamp_radar_items bri
+            WHERE bri.user_id = 1 AND bri.source = 'discover_followed'
+            ORDER BY (bri.reason_json->>'rank')::int
+            """)
+            )
+            .mappings()
+            .all()
+        )
+    assert len(rows) == 2
+    assert rows[0]["reason_json"]["release_date"] == "2026-08-20"
+    assert rows[0]["reason_json"]["page_cursor"] == "*"
+
+    update_bandcamp_radar_status(user_id=1, radar_id=rows[0]["id"], status="saved")
+    second = refresh_bandcamp_discover_for_user(1, items[:1])
+    assert second == {"upserted": 1, "stale": 1}
+
+    with read_scope() as session:
+        states = session.execute(
+            text("""
+            SELECT status, source
+            FROM bandcamp_radar_items
+            WHERE user_id = 1 AND source = 'discover_followed'
+            ORDER BY id
+            """)
+        ).all()
+    assert states == [("saved", "discover_followed"), ("stale", "discover_followed")]
+
+
+def test_bandcamp_radar_refresh_requires_active_connection(
+    bandcamp_api_client, monkeypatch
+):
+    from crate.api import bandcamp as bandcamp_api
+
+    def fail_if_enqueued(*args, **kwargs):
+        raise AssertionError(
+            "Bandcamp refresh must not be enqueued without a connection"
+        )
+
+    monkeypatch.setattr(bandcamp_api, "create_task", fail_if_enqueued)
+
+    response = bandcamp_api_client.post("/api/bandcamp/me/radar/refresh")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Bandcamp is not connected"

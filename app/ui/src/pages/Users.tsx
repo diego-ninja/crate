@@ -10,6 +10,8 @@ import {
 import { Link, useSearchParams } from "react-router";
 import {
   Activity,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Headphones,
   Info,
@@ -110,6 +112,8 @@ interface UserRecord {
   current_track?: CurrentTrack | null;
   last_played_at?: string | null;
   last_seen_at?: string | null;
+  last_activity_at?: string | null;
+  activity_status?: "active" | "inactive" | "never_active" | string;
   connected_accounts?: ConnectedAccount[];
   last_login: string | null;
   created_at: string;
@@ -164,7 +168,8 @@ type UserFilter =
   | "listening"
   | "admins"
   | "suspended"
-  | "deleted";
+  | "deleted"
+  | "inactive";
 type SessionFilter = "active" | "recent" | "all";
 
 const ROLE_OPTIONS = [
@@ -186,6 +191,8 @@ const STATUS_OPTIONS = [
 
 const SESSION_ACTIVE_WINDOW_MS = 3 * 60 * 1000;
 const SESSION_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const USER_ACTIVITY_INACTIVE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const USERS_PAGE_SIZE = 20;
 
 function roleLabel(role: string) {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
@@ -319,6 +326,46 @@ function formatRelativeTimestamp(value?: string | null) {
 
 function userStatus(user: Pick<UserRecord, "status">) {
   return (user.status || "active").trim().toLowerCase();
+}
+
+function userActivityStatus(
+  user: Pick<
+    UserRecord,
+    | "activity_status"
+    | "last_activity_at"
+    | "last_played_at"
+    | "last_seen_at"
+    | "last_login"
+  >,
+) {
+  if (
+    user.activity_status === "inactive" ||
+    user.activity_status === "never_active"
+  ) {
+    return user.activity_status;
+  }
+  const lastActivity = Math.max(
+    toTimestamp(user.last_activity_at),
+    toTimestamp(user.last_played_at),
+    toTimestamp(user.last_seen_at),
+    toTimestamp(user.last_login),
+  );
+  if (!lastActivity) return "never_active";
+  return Date.now() - lastActivity > USER_ACTIVITY_INACTIVE_AFTER_MS
+    ? "inactive"
+    : "active";
+}
+
+function activityLabel(status: string) {
+  if (status === "inactive") return "Inactive";
+  if (status === "never_active") return "No activity yet";
+  return "Active recently";
+}
+
+function activityBadgeClass(status: string) {
+  if (status === "inactive") return "border-amber-400/25 text-amber-300";
+  if (status === "never_active") return "border-white/10 text-white/45";
+  return "border-green-400/20 text-green-300";
 }
 
 function statusBadgeClass(status: string) {
@@ -657,6 +704,7 @@ export function Users() {
   const [detailTarget, setDetailTarget] = useState<UserRecord | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<UserFilter>("all");
+  const [page, setPage] = useState(1);
   const [searchParams, setSearchParams] = useSearchParams();
   const canViewUserMap = hasCapability("users.view");
   const canCreateUsers =
@@ -685,6 +733,11 @@ export function Users() {
   function openUserDetail(user: UserRecord) {
     setDetailTarget(user);
     setInspectParam(user.id);
+  }
+
+  function inspectMapUser(userId: number) {
+    const target = users.find((user) => user.id === userId);
+    if (target) openUserDetail(target);
   }
 
   async function fetchUsers() {
@@ -761,7 +814,8 @@ export function Users() {
               (role) => role === "admin" || role === "owner",
             )) ||
           (filter === "suspended" && userStatus(user) === "suspended") ||
-          (filter === "deleted" && userStatus(user) === "deleted");
+          (filter === "deleted" && userStatus(user) === "deleted") ||
+          (filter === "inactive" && userActivityStatus(user) === "inactive");
 
         const providerText = (user.connected_accounts || [])
           .map((account) => account.provider)
@@ -775,6 +829,25 @@ export function Users() {
       })
       .sort(sortUsersByPresence);
   }, [filter, query, users]);
+
+  const pageCount = Math.max(
+    1,
+    Math.ceil(filteredUsers.length / USERS_PAGE_SIZE),
+  );
+  const pageStart = (page - 1) * USERS_PAGE_SIZE;
+  const paginatedUsers = filteredUsers.slice(
+    pageStart,
+    pageStart + USERS_PAGE_SIZE,
+  );
+  const showingStart = filteredUsers.length === 0 ? 0 : pageStart + 1;
+  const showingEnd = Math.min(
+    pageStart + USERS_PAGE_SIZE,
+    filteredUsers.length,
+  );
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   if (loading) {
     return (
@@ -854,7 +927,7 @@ export function Users() {
 
       {canViewUserMap ? (
         <Suspense fallback={null}>
-          <UserMap />
+          <UserMap onInspectUser={(user) => inspectMapUser(user.id)} />
         </Suspense>
       ) : null}
 
@@ -868,7 +941,10 @@ export function Users() {
               />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(1);
+                }}
                 placeholder="Search users..."
                 className="pl-10"
               />
@@ -908,11 +984,21 @@ export function Users() {
                   count: users.filter((user) => userStatus(user) === "deleted")
                     .length,
                 },
+                {
+                  key: "inactive",
+                  label: "Inactive",
+                  count: users.filter(
+                    (user) => userActivityStatus(user) === "inactive",
+                  ).length,
+                },
               ].map((item) => (
                 <CratePill
                   key={item.key}
                   active={filter === item.key}
-                  onClick={() => setFilter(item.key as UserFilter)}
+                  onClick={() => {
+                    setFilter(item.key as UserFilter);
+                    setPage(1);
+                  }}
                 >
                   {item.label} {item.count}
                 </CratePill>
@@ -921,11 +1007,11 @@ export function Users() {
           </div>
 
           <div className="text-sm text-white/45">
-            Showing {filteredUsers.length} of {users.length} users
+            Showing {showingStart}-{showingEnd} of {filteredUsers.length} users
           </div>
 
           <div className="space-y-3">
-            {filteredUsers.map((user) => (
+            {paginatedUsers.map((user) => (
               <div
                 key={user.id}
                 className="rounded-md border border-white/8 bg-black/15 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]"
@@ -957,6 +1043,16 @@ export function Users() {
                           >
                             {statusLabel(userStatus(user))}
                           </Badge>
+                          {userActivityStatus(user) !== "active" ? (
+                            <Badge
+                              variant="outline"
+                              className={activityBadgeClass(
+                                userActivityStatus(user),
+                              )}
+                            >
+                              {activityLabel(userActivityStatus(user))}
+                            </Badge>
+                          ) : null}
                           {user.username ? (
                             <Badge variant="outline">@{user.username}</Badge>
                           ) : null}
@@ -1091,6 +1187,36 @@ export function Users() {
               </div>
             ) : null}
           </div>
+
+          {filteredUsers.length > 0 && pageCount > 1 ? (
+            <div className="flex items-center justify-between gap-3 border-t border-white/8 pt-4">
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Previous page"
+                disabled={page === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft size={15} className="mr-1" />
+                Previous
+              </Button>
+              <span className="text-xs text-white/45">
+                Page {page} of {pageCount}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Next page"
+                disabled={page === pageCount}
+                onClick={() =>
+                  setPage((current) => Math.min(pageCount, current + 1))
+                }
+              >
+                Next
+                <ChevronRight size={15} className="ml-1" />
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

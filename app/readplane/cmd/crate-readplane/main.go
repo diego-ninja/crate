@@ -17,6 +17,7 @@ import (
 	"github.com/thecrateapp/crate/app/readplane/internal/config"
 	readplanefederation "github.com/thecrateapp/crate/app/readplane/internal/federation"
 	"github.com/thecrateapp/crate/app/readplane/internal/httpx"
+	"github.com/thecrateapp/crate/app/readplane/internal/observability"
 	"github.com/thecrateapp/crate/app/readplane/internal/postgres"
 	"github.com/thecrateapp/crate/app/readplane/internal/redisx"
 	"github.com/thecrateapp/crate/app/readplane/internal/routes"
@@ -32,6 +33,11 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	sentryEnabled, sentryShutdown, sentryErr := observability.InitSentry("readplane")
+	defer sentryShutdown()
+	if sentryErr != nil {
+		logger.Warn("failed to initialize Sentry", "error", sentryErr)
+	}
 	cfg := config.Load(version)
 	if !cfg.Enabled {
 		logger.Warn("READPLANE_ENABLED=false; service still starting for health checks")
@@ -133,9 +139,14 @@ func main() {
 	server := routes.NewServer(cfg, pool, redisClient, authenticator, catalogStore, snapshotStore, fallback, federationProxy, logger)
 	go server.RunAuthInvalidation(ctx)
 
+	handler := server.Handler()
+	if sentryEnabled {
+		handler = observability.WrapHTTP(handler)
+	}
+
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

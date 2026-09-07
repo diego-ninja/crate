@@ -672,6 +672,8 @@
   "radar.empty.genreBody": "Crate will show upcoming shows here when this genre has nearby artists on your Radar.",
   "radar.empty.followTitle": "Follow some artists to unlock Radar",
   "radar.empty.followBody": "As soon as you follow artists, Radar will show their upcoming shows and new releases here.",
+  "radar.empty.noSignalsTitle": "No new Radar signals yet",
+  "radar.empty.noSignalsBody": "There are no recent releases or nearby shows from the artists you follow.",
   "radar.empty.filteredTitle": "Nothing matches your filters",
   "radar.empty.filteredBody": "Try another search or switch between shows and releases.",
   "home.radar.title": "Radar",

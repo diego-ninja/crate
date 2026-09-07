@@ -56,6 +56,7 @@ dev: ## Start backend (Postgres + Redis + API + Worker + Readplane + Caddy) and 
 	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
+	@$(MAKE) --no-print-directory _ensure-dev-certs
 	@$(DC_DEV) up -d --build
 	@echo "$(GREEN)Backend is up (Postgres, Redis, API, Worker, Readplane, Caddy)$(NC)"
 	@echo ""
@@ -695,7 +696,7 @@ shell: ## Open a shell in a service (usage: make shell s=crate-api)
 # ===========================================================================
 
 .PHONY: setup
-setup: _check-deps _create-network _generate-certs _setup-hosts _create-dirs ## Initial local environment setup
+setup: _check-deps _create-network _generate-certs _generate-dev-certs _setup-hosts _create-dirs ## Initial local environment setup
 	@echo "$(GREEN)Setup complete. Run 'make up' to start the stack$(NC)"
 
 .PHONY: _check-deps
@@ -722,6 +723,30 @@ _generate-certs:
 		&& mv $(LOCAL_DOMAIN)+1.pem $(LOCAL_DOMAIN).pem \
 		&& mv $(LOCAL_DOMAIN)+1-key.pem $(LOCAL_DOMAIN)-key.pem
 	@echo "$(GREEN)Certificates generated$(NC)"
+
+.PHONY: _generate-dev-certs _ensure-dev-certs
+_generate-dev-certs:
+	@echo "$(YELLOW)Generating mkcert certificate for development domains...$(NC)"
+	@mkdir -p data/caddy/certs
+	@mkcert \
+		-cert-file data/caddy/certs/dev-stack.pem \
+		-key-file data/caddy/certs/dev-stack-key.pem \
+		admin.dev.lespedants.org \
+		listen.dev.lespedants.org \
+		api.dev.lespedants.org \
+		docs.dev.cratemusic.app \
+		reference.dev.cratemusic.app \
+		www.dev.cratemusic.app \
+		admin-dev.lespedants.org \
+		listen-dev.lespedants.org \
+		api-dev.lespedants.org
+	@echo "$(GREEN)Development certificate generated$(NC)"
+
+_ensure-dev-certs:
+	@command -v mkcert >/dev/null 2>&1 || { echo "$(RED)mkcert is required. Run 'make setup' first$(NC)"; exit 1; }
+	@if [ ! -s data/caddy/certs/dev-stack.pem ] || [ ! -s data/caddy/certs/dev-stack-key.pem ]; then \
+		$(MAKE) --no-print-directory _generate-dev-certs; \
+	fi
 
 .PHONY: _setup-hosts
 _setup-hosts:
@@ -896,10 +921,10 @@ dns-setup: ## Setup local DNS wildcard for *.crate.local → 127.0.0.1 (requires
 	@./scripts/setup-local-dns.sh
 
 .PHONY: trust-local-ca
-trust-local-ca: ## Trust Caddy's local CA for HTTPS (run after first 'make dev', requires sudo)
-	@docker cp crate-dev-caddy:/data/caddy/pki/authorities/local/root.crt /tmp/caddy-root.crt
-	@sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt
-	@echo "$(GREEN)Caddy local CA trusted. Restart your browser.$(NC)"
+trust-local-ca: ## Trust the mkcert CA for local HTTPS
+	@command -v mkcert >/dev/null 2>&1 || { echo "$(RED)mkcert is required. Run 'make setup' first$(NC)"; exit 1; }
+	@mkcert -install
+	@echo "$(GREEN)mkcert CA trusted. Restart your browser if needed.$(NC)"
 
 # ===========================================================================
 # CAPACITOR (mobile native builds)

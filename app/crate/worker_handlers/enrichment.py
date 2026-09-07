@@ -16,7 +16,7 @@ from crate.db.genres import set_album_genres
 from crate.db.repositories.bandcamp import set_library_entity_bandcamp_url
 from crate.db.jobs.enrichment import (
     get_albums_needing_release_metadata,
-    get_album_names_for_artist,
+    get_album_names_for_artists,
     get_artists_with_mbid,
     persist_album_release_group_types,
     persist_album_release_mbids as _db_persist_album_release_mbids,
@@ -41,6 +41,7 @@ from crate.task_progress import (
     entity_label,
 )
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
+from crate.worker_handlers.analysis import register_parent_finalizer
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,10 @@ ENRICHMENT_CACHE_PREFIXES = (
     "spotify:artist:",
 )
 ENRICH_ARTISTS_CHUNK_SIZE = 20
+COMPLETENESS_CHUNK_SIZE = 20
+COMPLETENESS_MAX_MUSICBRAINZ_PAGES = 50
+COMPLETENESS_CACHE_TTL = 86400
+COMPLETENESS_STATUS_CACHE_KEY = "discover:completeness:status"
 
 
 def _mark_processing(artist_name: str):
@@ -74,6 +79,42 @@ def _clean_album_lookup_name(album_name: str) -> str:
     import re
 
     return re.sub(r"^\d{4}\s*-\s*", "", album_name)
+
+
+def _may_have_stale_short_form_release(album: Mapping[str, Any]) -> bool:
+    primary_type = str(album.get("release_group_primary_type") or "").strip().casefold()
+    try:
+        track_count = int(album.get("track_count") or 0)
+    except (TypeError, ValueError):
+        track_count = 0
+    return primary_type in {"single", "ep"} and track_count > 1
+
+
+def _existing_release_is_incompatible(
+    album: Mapping[str, Any], release: Mapping[str, Any]
+) -> bool:
+    """Detect a short-form MB match that cannot represent the local album."""
+    primary_type = (
+        str(
+            release.get("release_group_primary_type")
+            or album.get("release_group_primary_type")
+            or ""
+        )
+        .strip()
+        .casefold()
+    )
+    if primary_type not in {"single", "ep"}:
+        return False
+
+    try:
+        local_count = int(album.get("track_count") or 0)
+        release_count = int(release.get("track_count") or 0)
+    except (TypeError, ValueError):
+        return False
+
+    if local_count <= 1 or release_count <= 0:
+        return False
+    return release_count * 2 < local_count
 
 
 def _build_album_match_local_info(
@@ -451,6 +492,83 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
     return {"reset": name, "enrichment": result}
 
 
+def _handle_normalize_artist_bios(task_id: str, params: dict, config: dict) -> dict:
+    """Clean legacy biography text in small, resumable database batches."""
+    del config
+    from crate.api.cache_events import broadcast_invalidation
+    from crate.db.jobs.artist_bio import normalize_artist_bios_batch
+
+    cursor = 0
+    batch_size = max(1, min(int(params.get("batch_size") or 100), 500))
+    totals = {
+        "scanned": 0,
+        "changed": 0,
+        "already_clean": 0,
+        "locked": 0,
+        "empty_after_cleaning": 0,
+        "batches": 0,
+    }
+    progress = TaskProgress(phase="normalizing bios", phase_count=1, total=0)
+    while True:
+        batch = normalize_artist_bios_batch(after_id=cursor, limit=batch_size)
+        totals["batches"] += 1
+        for key in (
+            "scanned",
+            "changed",
+            "already_clean",
+            "locked",
+            "empty_after_cleaning",
+        ):
+            totals[key] += int(batch.get(key) or 0)
+        cursor = int(batch.get("last_id") or cursor)
+        progress.done = totals["scanned"]
+        progress.item = f"{totals['scanned']} artists scanned"
+        emit_progress(task_id, progress)
+        if not batch.get("has_more"):
+            break
+    if totals["changed"]:
+        broadcast_invalidation("artist_bio", "library", "home", "global_catalog")
+    emit_task_event(task_id, "info", {"message": "Artist bios normalized", **totals})
+    return totals
+
+
+def _handle_research_artist_bio(task_id: str, params: dict, config: dict) -> dict:
+    del config
+    from crate.artist_bio_research import research_artist_bio
+    from crate.db.repositories.library import (
+        get_library_artist,
+        get_library_artist_by_entity_uid,
+        get_library_artist_by_id,
+    )
+
+    artist = None
+    if params.get("artist_id") is not None:
+        artist = get_library_artist_by_id(int(params["artist_id"]))
+    if artist is None and params.get("artist_entity_uid"):
+        artist = get_library_artist_by_entity_uid(str(params["artist_entity_uid"]))
+    if artist is None and params.get("artist_name"):
+        artist = get_library_artist(str(params["artist_name"]))
+    if artist is None:
+        return {"error": "Artist not found"}
+
+    progress = TaskProgress(phase="researching artist bio", phase_count=1, total=1)
+
+    def report(message: str) -> None:
+        progress.item = message
+        emit_progress(task_id, progress)
+
+    result = research_artist_bio(
+        artist,
+        language=str(params.get("language") or "English"),
+        progress=report,
+    )
+    progress.done = 1
+    progress.item = "Research complete"
+    emit_progress(task_id, progress, force=True)
+    emit_task_event(task_id, "info", {"message": "Artist bio research complete"})
+    return result
+
+
 def _emit_lyrics_track_event(task_id: str, data: dict) -> None:
     if data.get("event") != "track_done":
         return
@@ -609,17 +727,19 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
         existing_mbid = album.get("musicbrainz_albumid")
         existing_primary_type = album.get("release_group_primary_type")
         existing_release_date = normalize_release_date(album.get("release_date"))
+        may_have_stale_short_form = _may_have_stale_short_form_release(album)
         if album["id"] in type_backfilled_ids or (
             existing_mbid
             and existing_mbid.strip()
             and existing_primary_type
             and existing_release_date
         ):
-            if release_dates_only:
-                enriched += 1
-            else:
-                skipped += 1
-            continue
+            if not may_have_stale_short_form:
+                if release_dates_only:
+                    enriched += 1
+                else:
+                    skipped += 1
+                continue
 
         if release_dates_only and not existing_mbid:
             failed += 1
@@ -638,13 +758,18 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
             wait_for_provider_slot("musicbrainz", 1.1)
             existing_release = _get_release_detail(existing_mbid.strip())
-            if existing_release and _persist_existing_release_group_types(
-                int(album["id"]), existing_release
-            ):
-                enriched += 1
-            else:
+            if not existing_release:
                 failed += 1
-            continue
+                continue
+            if not _existing_release_is_incompatible(album, existing_release):
+                if _persist_existing_release_group_types(
+                    int(album["id"]), existing_release
+                ):
+                    enriched += 1
+                else:
+                    failed += 1
+                continue
+            existing_mbid = None
 
         clean_album = _clean_album_lookup_name(album_name)
         tracks_db = get_library_tracks(album["id"]) if "id" in album else []
@@ -932,6 +1057,7 @@ def _process_new_content_album_mbids(
                 and existing_mbid.strip()
                 and album.get("release_group_primary_type")
                 and normalize_release_date(album.get("release_date"))
+                and not _may_have_stale_short_form_release(album)
             ):
                 continue
 
@@ -940,11 +1066,14 @@ def _process_new_content_album_mbids(
 
                 wait_for_provider_slot("musicbrainz", 1.1)
                 existing_release = _get_release_detail(existing_mbid.strip())
-                if existing_release and _persist_existing_release_group_types(
-                    int(album["id"]), existing_release
-                ):
-                    mbid_count += 1
-                continue
+                if not existing_release:
+                    continue
+                if not _existing_release_is_incompatible(album, existing_release):
+                    if _persist_existing_release_group_types(
+                        int(album["id"]), existing_release
+                    ):
+                        mbid_count += 1
+                    continue
 
             clean_name = _clean_album_lookup_name(
                 album.get("tag_album") or album["name"]
@@ -1477,77 +1606,99 @@ def _process_new_content_inner(
     return result
 
 
-def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> dict:
-    """Compute library completeness vs MusicBrainz for all artists with MBIDs."""
-    import re
+def _fetch_completeness_musicbrainz(mbid: str, artist_name: str) -> dict | None:
+    """Fetch the paginated album release groups for one artist."""
     import musicbrainzngs
 
     musicbrainzngs.set_useragent("crate", "1.0", "https://github.com/crate")
+    wait_for_provider_slot("musicbrainz", 1.1)
+    mb_artist = musicbrainzngs.get_artist_by_id(mbid)["artist"]
+    mb_name = mb_artist.get("name", "")
+    from thefuzz import fuzz
+
+    if fuzz.ratio(artist_name.lower(), mb_name.lower()) < 70:
+        log.warning("MBID mismatch: %s -> %s, skipping", mbid, mb_name)
+        return None
+
+    all_albums: list[dict] = []
+    total_count = 0
+    offset = 0
+    complete = False
+    for _page in range(COMPLETENESS_MAX_MUSICBRAINZ_PAGES):
+        wait_for_provider_slot("musicbrainz", 1.1)
+        response = musicbrainzngs.browse_release_groups(
+            artist=mbid,
+            release_type=["album"],
+            limit=100,
+            offset=offset,
+        )
+        release_groups = response.get("release-group-list", [])
+        total_count = int(response.get("release-group-count", total_count))
+        all_albums.extend(
+            {
+                "title": group.get("title", ""),
+                "type": group.get("primary-type", ""),
+                "year": group.get("first-release-date", "")[:4]
+                if group.get("first-release-date")
+                else "",
+            }
+            for group in release_groups
+        )
+        if not release_groups or offset + len(release_groups) >= total_count:
+            complete = True
+            break
+        offset += len(release_groups)
+
+    if total_count and not complete:
+        raise RuntimeError(
+            f"MusicBrainz release-group pagination exceeded "
+            f"{COMPLETENESS_MAX_MUSICBRAINZ_PAGES} pages for {mbid}"
+        )
+
+    return {"count": total_count or len(all_albums), "albums": all_albums}
+
+
+def _compute_completeness_for_artists(
+    task_id: str, artists: list[dict], config: dict
+) -> dict:
+    del config
+    import re
+
+    artist_names = [str(artist["name"]) for artist in artists]
+    local_names_by_artist = get_album_names_for_artists(artist_names)
     year_re = re.compile(r"^\d{4}\s*[-–]\s*")
+    progress = TaskProgress(phase="completeness", phase_count=1, total=len(artists))
+    results: list[dict] = []
+    failed = 0
 
-    artists = get_artists_with_mbid()
-
-    total = len(artists)
-    p = TaskProgress(phase="completeness", phase_count=1, total=total)
-    results = []
     for index, artist in enumerate(artists):
         if is_cancelled(task_id):
             break
-        p.done = index
-        p.item = entity_label(artist=artist["name"])
-        emit_progress(task_id, p)
+        progress.done = index + 1
+        progress.item = entity_label(artist=artist["name"])
+        emit_progress(task_id, progress)
 
         try:
             mb_data = get_cache(
                 f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7
             )
             if not mb_data:
-                try:
-                    wait_for_provider_slot("musicbrainz", 1.1)
-                    mb_artist = musicbrainzngs.get_artist_by_id(artist["mbid"])[
-                        "artist"
-                    ]
-                    mb_name = mb_artist.get("name", "")
-                    from thefuzz import fuzz
-
-                    if fuzz.ratio(artist["name"].lower(), mb_name.lower()) < 70:
-                        log.debug(
-                            "MBID mismatch: %s -> %s, skipping", artist["mbid"], mb_name
-                        )
-                        continue
-                except Exception:
-                    pass
-
-                wait_for_provider_slot("musicbrainz", 1.1)
-                result = musicbrainzngs.browse_release_groups(
-                    artist=artist["mbid"], release_type=["album"], limit=100
+                mb_data = _fetch_completeness_musicbrainz(
+                    artist["mbid"], artist["name"]
                 )
-                mb_albums = result.get("release-group-list", [])
-                mb_data = {
-                    "count": result.get("release-group-count", len(mb_albums)),
-                    "albums": [
-                        {
-                            "title": rg.get("title", ""),
-                            "type": rg.get("primary-type", ""),
-                            "year": rg.get("first-release-date", "")[:4]
-                            if rg.get("first-release-date")
-                            else "",
-                        }
-                        for rg in mb_albums
-                    ],
-                }
+                if mb_data is None:
+                    failed += 1
+                    continue
                 set_cache(f"mb:albums:{artist['mbid']}", mb_data, ttl=604800)
 
-            mb_count = mb_data["count"]
-            local_count = artist["album_count"] or 0
+            mb_count = int(mb_data.get("count") or 0)
+            local_count = int(artist.get("album_count") or 0)
             pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
-
-            local_names = get_album_names_for_artist(artist["name"])
+            local_names = local_names_by_artist.get(artist["name"], set())
             local_clean = {year_re.sub("", name).lower() for name in local_names}
-
             missing = [
                 album
-                for album in mb_data["albums"]
+                for album in mb_data.get("albums", [])
                 if album["title"].lower() not in local_names
                 and album["title"].lower() not in local_clean
             ]
@@ -1558,7 +1709,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
                     "artist_entity_uid": artist.get("entity_uid"),
                     "artist_slug": artist["slug"],
                     "artist": artist["name"],
-                    "has_photo": bool(artist["has_photo"]),
+                    "has_photo": bool(artist.get("has_photo")),
                     "listeners": artist.get("listeners", 0),
                     "local_count": local_count,
                     "mb_count": mb_count,
@@ -1567,16 +1718,179 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
                 }
             )
         except Exception:
-            log.debug("Completeness check failed for %s", artist["name"], exc_info=True)
+            failed += 1
+            log.warning(
+                "Completeness check failed for %s", artist["name"], exc_info=True
+            )
 
+    return {
+        "artists_checked": len(results),
+        "total": len(artists),
+        "failed_artists": failed,
+        "results": results,
+    }
+
+
+def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> dict:
+    """Compute library completeness vs MusicBrainz, fanned out by artist chunks."""
+    artists = params.get("artists")
+    if artists:
+        return _compute_completeness_for_artists(task_id, list(artists), config)
+
+    artists = get_artists_with_mbid()
+    if not artists:
+        _publish_completeness_cache([], total=0, failed_artists=0)
+        return {"artists_checked": 0, "total": 0, "results": []}
+
+    try:
+        chunk_size = int(params.get("chunk_size") or COMPLETENESS_CHUNK_SIZE)
+    except (TypeError, ValueError):
+        chunk_size = COMPLETENESS_CHUNK_SIZE
+    chunk_size = max(1, min(chunk_size, 100))
+
+    if len(artists) > chunk_size:
+        from crate.db.repositories.tasks import create_task
+
+        chunks = [
+            artists[index : index + chunk_size]
+            for index in range(0, len(artists), chunk_size)
+        ]
+        emit_task_event(
+            task_id,
+            "info",
+            {
+                "message": f"Dispatching completeness for {len(artists)} artists in {len(chunks)} chunks"
+            },
+        )
+        for index, chunk in enumerate(chunks):
+            create_task(
+                "compute_completeness",
+                {
+                    "artists": chunk,
+                    "_chunk": True,
+                    "chunk_index": index,
+                    "total_chunks": len(chunks),
+                },
+                parent_task_id=task_id,
+            )
+        progress = TaskProgress(
+            phase="dispatched", phase_count=1, total=len(chunks), done=0
+        )
+        progress.item = f"0/{len(chunks)} chunks"
+        emit_progress(task_id, progress, force=True)
+        return {"_delegated": True, "chunks": len(chunks), "artists": len(artists)}
+
+    result = _compute_completeness_for_artists(task_id, artists, config)
+    final = _completeness_finalize_from_results(task_id, result)
+    return {**result, **final}
+
+
+def _publish_completeness_cache(
+    results: list[dict], *, total: int, failed_artists: int
+) -> None:
+    """Publish results together with their completeness status metadata."""
     results.sort(key=lambda item: item["pct"])
-    set_cache("discover:completeness", results, ttl=86400)
+    set_cache("discover:completeness", results, ttl=COMPLETENESS_CACHE_TTL)
+    set_cache(
+        COMPLETENESS_STATUS_CACHE_KEY,
+        {
+            "partial": failed_artists > 0,
+            "artists_checked": len(results),
+            "total": total,
+            "failed_artists": failed_artists,
+        },
+        ttl=COMPLETENESS_CACHE_TTL,
+    )
+
+
+def _completeness_finalize_from_results(task_id: str, result: dict) -> dict:
+    """Publish a single-task result using the same rules as fan-in."""
+    failed_artists = int(result.get("failed_artists") or 0)
+    results = list(result.get("results") or [])
+    _publish_completeness_cache(
+        results,
+        total=int(result.get("total") or len(results)),
+        failed_artists=failed_artists,
+    )
+    if failed_artists:
+        emit_task_event(
+            task_id,
+            "warning",
+            {
+                "message": f"Completeness published partial cache; {failed_artists} artists failed"
+            },
+        )
+        return {
+            "cache_written": True,
+            "failed_artists": failed_artists,
+            "partial": True,
+        }
+
     emit_task_event(
         task_id,
         "info",
+        {
+            "message": f"Completeness computed: {len(results)}/{result.get('total', 0)} artists checked"
+        },
+    )
+    return {"cache_written": True}
+
+
+def _completeness_finalize(parent_task_id: str) -> dict:
+    """Merge completed chunks and publish only a complete aggregate cache."""
+    from crate.db.repositories.tasks import get_child_task_results
+
+    children = get_child_task_results(parent_task_id)
+    failed_chunks = sum(1 for child in children if child.get("status") != "completed")
+    if failed_chunks:
+        emit_task_event(
+            parent_task_id,
+            "warning",
+            {"message": f"Completeness finished with {failed_chunks} failed chunks"},
+        )
+        return {
+            "cache_written": False,
+            "artists_checked": 0,
+            "total": 0,
+            "failed_chunks": failed_chunks,
+        }
+
+    results: list[dict] = []
+    total = 0
+    failed_artists = 0
+    for child in children:
+        result = child.get("result") or {}
+        total += int(result.get("total") or 0)
+        failed_artists += int(result.get("failed_artists") or 0)
+        results.extend(result.get("results") or [])
+
+    _publish_completeness_cache(
+        results,
+        total=total,
+        failed_artists=failed_artists,
+    )
+    if failed_artists:
+        emit_task_event(
+            parent_task_id,
+            "warning",
+            {
+                "message": f"Completeness published partial cache; {failed_artists} artists failed"
+            },
+        )
+        return {
+            "cache_written": True,
+            "artists_checked": len(results),
+            "total": total,
+            "failed_artists": failed_artists,
+            "partial": True,
+        }
+
+    emit_task_event(
+        parent_task_id,
+        "info",
         {"message": f"Completeness computed: {len(results)}/{total} artists checked"},
     )
-    return {"artists_checked": len(results), "total": total}
+    return {"cache_written": True, "artists_checked": len(results), "total": total}
 
 
 def _handle_refresh_probable_setlist(task_id: str, params: dict, config: dict) -> dict:
@@ -1598,8 +1912,14 @@ ENRICHMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "enrich_artists": _handle_enrich_artists,
     "sync_lyrics": _handle_sync_lyrics,
     "reset_enrichment": _handle_reset_enrichment,
+    "normalize_artist_bios": _handle_normalize_artist_bios,
+    "research_artist_bio": _handle_research_artist_bio,
     "enrich_mbids": _handle_enrich_mbids,
     "process_new_content": _handle_process_new_content,
     "compute_completeness": _handle_compute_completeness,
     "refresh_probable_setlist": _handle_refresh_probable_setlist,
 }
+
+# Completeness uses the shared analysis fan-in coordinator because its child
+# tasks run through the same actor lifecycle as the other chunked workloads.
+register_parent_finalizer("compute_completeness", _completeness_finalize)

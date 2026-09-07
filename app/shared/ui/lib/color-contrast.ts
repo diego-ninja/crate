@@ -103,7 +103,10 @@ export function parseCssColor(value: string): ParsedColor | null {
     : rgbMatch[1]!.split(/\s*\/\s*|\s+/).filter(Boolean);
   if (channels.length !== 3 && channels.length !== 4) return null;
 
-  const [red, green, blue] = channels.slice(0, 3).map(parseColorChannel);
+  const parsedChannels = channels.slice(0, 3).map(parseColorChannel);
+  const red = parsedChannels[0] ?? null;
+  const green = parsedChannels[1] ?? null;
+  const blue = parsedChannels[2] ?? null;
   const alpha = channels.length === 4 ? parseAlphaChannel(channels[3]!) : 1;
   if (red === null || green === null || blue === null || alpha === null) {
     return null;

@@ -1,7 +1,11 @@
 import os
 import logging
+import math
 import re
 from collections import Counter
+from collections.abc import Mapping
+from datetime import date, datetime, timezone
+from typing import Any
 
 import requests
 from requests import RequestException
@@ -87,6 +91,30 @@ def _api_key() -> str | None:
         return None
 
 
+def is_configured() -> bool:
+    """Return whether a Setlist.fm API key is available."""
+    return bool(_api_key())
+
+
+def is_shows_sync_enabled() -> bool:
+    """Return whether the experimental future-shows sync is explicitly enabled."""
+    return os.environ.get("SETLISTFM_SHOWS_SYNC_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def shows_sync_max_artists() -> int:
+    """Return the bounded number of artists queried by one shows sync."""
+    try:
+        configured = int(os.environ.get("SETLISTFM_SHOWS_SYNC_MAX_ARTISTS", "100"))
+    except ValueError:
+        configured = 100
+    return max(0, min(configured, 1000))
+
+
 def _api_get(endpoint: str, params: dict | None = None) -> dict | None:
     key = _api_key()
     if not key:
@@ -161,6 +189,127 @@ def search_artist(name: str) -> str | None:
 
 def get_setlists(mbid: str, page: int = 1, per_page: int = 20) -> dict | None:
     return _api_get(f"artist/{mbid}/setlists", {"p": page})
+
+
+def _clean_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _coordinate(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        coordinate = float(value)
+    except (TypeError, ValueError):
+        return None
+    return coordinate if math.isfinite(coordinate) else None
+
+
+def normalize_upcoming_show(
+    event: Mapping[str, Any],
+    *,
+    fallback_artist_name: str | None = None,
+    today: date | None = None,
+) -> dict[str, Any] | None:
+    """Normalize one Setlist.fm event that is dated today or in the future.
+
+    Setlist.fm is primarily a setlist catalogue. The API does not provide the
+    ticketing fields needed to represent an on-sale event, so those fields are
+    deliberately kept empty in the normalized show.
+    """
+    event_id = _clean_text(event.get("id"))
+    raw_date = _clean_text(event.get("eventDate"))
+    if not event_id or not raw_date or not re.fullmatch(r"\d{2}-\d{2}-\d{4}", raw_date):
+        return None
+
+    try:
+        event_date = datetime.strptime(raw_date, "%d-%m-%Y").date()
+    except ValueError:
+        return None
+    reference_date = today or datetime.now(timezone.utc).date()
+    if event_date < reference_date:
+        return None
+
+    artist = _mapping(event.get("artist"))
+    artist_name = _clean_text(artist.get("name")) or _clean_text(fallback_artist_name)
+    venue = _mapping(event.get("venue"))
+    venue_name = _clean_text(venue.get("name"))
+    if not artist_name or not venue_name:
+        return None
+
+    city = _mapping(venue.get("city"))
+    country = _mapping(city.get("country"))
+    coords = _mapping(city.get("coords"))
+
+    return {
+        "external_id": f"setlistfm:{event_id}",
+        "artist_name": artist_name,
+        "date": event_date.isoformat(),
+        "local_time": None,
+        "venue": venue_name,
+        "address_line1": None,
+        "city": _clean_text(city.get("name")),
+        "region": _clean_text(city.get("state")) or _clean_text(city.get("stateCode")),
+        "postal_code": None,
+        "country": _clean_text(country.get("name")),
+        "country_code": _clean_text(country.get("code")),
+        "latitude": _coordinate(coords.get("lat")),
+        "longitude": _coordinate(coords.get("long")),
+        "url": _clean_text(event.get("url")),
+        "image_url": None,
+        "lineup": [artist_name],
+        "price_range": None,
+        "tickets_url": None,
+        "status": "scheduled",
+        "source": "setlistfm",
+    }
+
+
+def get_upcoming_shows(
+    mbid: str,
+    limit: int = 20,
+    *,
+    today: date | None = None,
+) -> list[dict[str, Any]]:
+    """Return future-dated events already present in Setlist.fm.
+
+    There is no documented upcoming-events endpoint. This makes a bounded
+    request to the artist setlists resource and keeps only future-dated rows.
+    """
+    normalized_mbid = _clean_text(mbid)
+    requested_limit = max(0, min(int(limit), 100))
+    if not normalized_mbid or requested_limit == 0:
+        return []
+
+    page_size = 20
+    pages_needed = min(5, max(1, (requested_limit + page_size - 1) // page_size))
+    events: dict[str, dict[str, Any]] = {}
+    for page in range(1, pages_needed + 1):
+        data = get_setlists(normalized_mbid, page=page, per_page=page_size)
+        if not data:
+            break
+        raw_events = _as_list(data.get("setlist"))
+        if not raw_events:
+            break
+        for raw_event in raw_events:
+            if not isinstance(raw_event, Mapping):
+                continue
+            normalized = normalize_upcoming_show(raw_event, today=today)
+            if normalized:
+                events[normalized["external_id"]] = normalized
+        if len(events) >= requested_limit or len(raw_events) < page_size:
+            break
+
+    return sorted(
+        events.values(), key=lambda item: (item["date"], item["external_id"])
+    )[:requested_limit]
 
 
 def get_cached_probable_setlist(artist_name: str) -> list[dict] | None:

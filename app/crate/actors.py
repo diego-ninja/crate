@@ -177,9 +177,12 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
     "cleanup_artwork_variants": TaskPoolConfig("maintenance", 3, 1800, 0),
     "repair_artwork_variants": TaskPoolConfig("maintenance", 3, 3600, 1),
     "backfill_similarities": TaskPoolConfig("maintenance", 3, 3600, 0),
+    "normalize_artist_bios": TaskPoolConfig("maintenance", 2, 3600, 0),
+    "research_artist_bio": TaskPoolConfig("default", 1, 900, 1),
     "sync_shows": TaskPoolConfig("maintenance", 3, 3600, 1),
     "bandcamp_connect_credentials": TaskPoolConfig("maintenance", 1, 900, 0),
     "bandcamp_sync_collection": TaskPoolConfig("maintenance", 2, 7200, 1),
+    "bandcamp_discover_refresh": TaskPoolConfig("maintenance", 2, 600, 1),
     "bandcamp_import_purchase": TaskPoolConfig("default", 0, 14400, 0),
     "bandcamp_radar_refresh": TaskPoolConfig("maintenance", 2, 600, 1),
     "bandcamp_backfill_entity_urls": TaskPoolConfig("maintenance", 2, 7200, 0),
@@ -195,7 +198,7 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
         "maintenance", 2, 3600, 0
     ),  # deprecated legacy storage migration
     # Library completeness check
-    "compute_completeness": TaskPoolConfig("maintenance", 3, 3600, 0),
+    "compute_completeness": TaskPoolConfig("maintenance", 3, 900, 1),
     # Playback delivery
     "prepare_stream_variant": TaskPoolConfig("playback", 0, 1200, 1),
     "warmup_stream_variants": TaskPoolConfig("maintenance", 3, 900, 0),
@@ -942,7 +945,10 @@ def _make_actor_fn(task_type: str):
     """Create a closure that calls _execute_task for a specific task type."""
 
     def actor_fn(task_id: str):
-        _execute_task(task_type, task_id)
+        from crate.observability.sentry import task_scope
+
+        with task_scope(task_type, task_id, get_queue_for_task(task_type)):
+            _execute_task(task_type, task_id)
 
     actor_fn.__name__ = task_type
     actor_fn.__qualname__ = task_type

@@ -7,7 +7,11 @@ import { I18nProvider } from "./i18n/I18nProvider";
 import { startMediaAccessTicketRefresh } from "./lib/api";
 import { initCapacitor } from "./lib/capacitor";
 import { primeOfflineRuntimeProfile } from "./lib/offline";
-import { shouldRegisterServiceWorker, usesMobileShell } from "./lib/platform";
+import {
+  isCapacitorRuntime,
+  shouldRegisterServiceWorker,
+  usesMobileShell,
+} from "./lib/platform";
 import { bootstrapNativeSessionStore } from "./lib/server-store";
 import { renderSecureSessionError } from "./lib/secure-session-error";
 import {
@@ -15,6 +19,7 @@ import {
   initializeThemeSkin,
   subscribeThemeSkin,
 } from "@crate/ui/lib/theme-skin";
+import { initSentry } from "./lib/sentry";
 import "./index.css";
 
 async function disableDevServiceWorker() {
@@ -64,6 +69,14 @@ function ThemeAwareToaster() {
       }}
     />
   );
+}
+
+if (isCapacitorRuntime) {
+  void import("./lib/sentry-capacitor").then(({ initNativeSentry }) => {
+    initNativeSentry();
+  });
+} else {
+  initSentry();
 }
 
 // Load Poppins only on web — iOS/Android use system fonts (San

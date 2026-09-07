@@ -131,6 +131,7 @@ class BandcampWebClient:
         endpoint = self.COLLECTION_ENDPOINTS[relation_type]
         token = f"{int(time.time())}:0:a::"
         entries: list[dict[str, Any]] = []
+        seen_entries: set[tuple[str, str]] = set()
 
         for _page in range(max_pages):
             try:
@@ -164,8 +165,21 @@ class BandcampWebClient:
                 page,
                 relation_type=relation_type,
             )
-            entries.extend(page_entries)
-            if not page_entries or not next_token or next_token == token:
+            for entry in page_entries:
+                identity = _normalized_entry_identity(
+                    entry,
+                    relation_type=relation_type,
+                )
+                if identity in seen_entries:
+                    continue
+                seen_entries.add(identity)
+                entries.append(entry)
+            if (
+                not page_entries
+                or page.get("more_available") is False
+                or not next_token
+                or next_token == token
+            ):
                 break
             token = next_token
 
@@ -317,6 +331,8 @@ def normalize_fancollection_item(
         or payload.get("band_url")
         or payload.get("url")
     )
+    if not item_url and relation_type == "following":
+        item_url = _following_bandcamp_url(payload)
     if not item_url:
         return None
 
@@ -329,6 +345,8 @@ def normalize_fancollection_item(
     key = build_redownload_key(payload)
     downloadable = bool(key and _mapping(redownload_urls).get(key))
     artist_url = _bandcamp_url(payload.get("artist_url") or payload.get("band_url"))
+    if relation_type == "following" and not artist_url:
+        artist_url = item_url
     album_url = _bandcamp_url(
         payload.get("album_url")
         or (item_url if item_type == "album" or "/album/" in item_url else "")
@@ -343,7 +361,9 @@ def normalize_fancollection_item(
         "downloadable": downloadable if relation_type == "collection" else False,
         "purchase_date": _string(payload.get("purchase_date")),
         "added_at": _string(
-            payload.get("added_at") or payload.get("also_collected_at")
+            payload.get("added_at")
+            or payload.get("also_collected_at")
+            or payload.get("date_followed")
         ),
         "item": {
             "bandcamp_item_id": _int_or_none(
@@ -446,11 +466,36 @@ def _page_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
         payload.get("wishlist_items"),
         payload.get("bands"),
         payload.get("followed_bands"),
+        payload.get("followeers"),
     )
     for value in candidates:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
     return []
+
+
+def _following_bandcamp_url(payload: dict[str, Any]) -> str:
+    hints = _mapping(payload.get("url_hints"))
+    subdomain = _string(hints.get("subdomain")).lower()
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", subdomain):
+        return ""
+    return _bandcamp_url(f"https://{subdomain}.bandcamp.com")
+
+
+def _normalized_entry_identity(
+    entry: dict[str, Any],
+    *,
+    relation_type: str,
+) -> tuple[str, str]:
+    item = _mapping(entry.get("item"))
+    if relation_type == "following":
+        band_id = _int_or_none(item.get("band_id"))
+        if band_id is not None:
+            return ("band_id", str(band_id))
+    item_id = _int_or_none(item.get("bandcamp_item_id"))
+    if item_id is not None:
+        return ("item_id", str(item_id))
+    return ("item_url", _canonical_url(item.get("item_url")))
 
 
 def _next_page_token(raw_items: list[dict[str, Any]], payload: dict[str, Any]) -> str:

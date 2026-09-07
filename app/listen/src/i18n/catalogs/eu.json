@@ -658,6 +658,8 @@
   "radar.empty.genreBody": "Cratek hemen erakutsiko ditu datozen kontzertuak genero honek zure Radar inguruan artistak dituenean.",
   "radar.empty.followTitle": "Jarraitu artista batzuk Radar desblokeatzeko",
   "radar.empty.followBody": "Artistak jarraitzen dituzunean, Radarrek hemen erakutsiko ditu haien datozen kontzertuak eta argitalpen berriak.",
+  "radar.empty.noSignalsTitle": "Oraindik ez dago seinale berririk Radarren",
+  "radar.empty.noSignalsBody": "Jarraitzen dituzun artisten azken argitalpenik edo hurbileko kontzerturik ez dago.",
   "radar.empty.filteredTitle": "Ezer ez dator bat zure iragazkiekin",
   "radar.empty.filteredBody": "Saiatu beste bilaketa batekin edo aldatu kontzertuen eta argitalpenen artean.",
   "home.radar.title": "Radar",

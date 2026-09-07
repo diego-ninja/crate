@@ -234,6 +234,14 @@ jobs:
 
       - name: Build macOS tester bundles
         if: runner.os == 'macOS'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ github.event_name == 'push' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ninja-development
+          SENTRY_PROJECT: crate-listen
+          SENTRY_RELEASE: crate-${{ github.sha }}
+          VITE_SENTRY_DSN: ${{ vars.SENTRY_LISTEN_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: crate-${{ github.sha }}
         run: |
           version="$(node -p "require('./app/listen-desktop/src-tauri/tauri.conf.json').version")"
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
@@ -245,6 +253,14 @@ jobs:
 
       - name: Build desktop bundles
         if: runner.os != 'macOS'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ github.event_name == 'push' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ninja-development
+          SENTRY_PROJECT: crate-listen
+          SENTRY_RELEASE: crate-${{ github.sha }}
+          VITE_SENTRY_DSN: ${{ vars.SENTRY_LISTEN_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: crate-${{ github.sha }}
         run: npm run --workspace=app/listen-desktop ${{ matrix.build_script }}
 
       - name: Collect artifacts

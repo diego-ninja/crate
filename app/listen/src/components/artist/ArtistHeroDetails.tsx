@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 
 import { ChevronDown, Users } from "@crate/ui/icons";
+import { ArtistBioText } from "@crate/ui/domain/ArtistBioText";
 
 import {
   type ArtistData,
@@ -55,7 +56,7 @@ export function ArtistHeroDetails({
       {bio ? (
         <div className="mt-3 max-w-2xl">
           <p className="line-clamp-2 whitespace-pre-line text-sm leading-relaxed text-text-primary/70 sm:line-clamp-3">
-            {bio}
+            <ArtistBioText text={bio} />
           </p>
           {bio.length > 200 ? (
             <button

@@ -658,6 +658,8 @@
   "radar.empty.genreBody": "Crate mostrarà aquí pròxims concerts quan aquest gènere tingui artistes propers al teu Radar.",
   "radar.empty.followTitle": "Segueix alguns artistes per desbloquejar Radar",
   "radar.empty.followBody": "Quan segueixis artistes, Radar mostrarà aquí els seus pròxims concerts i nous llançaments.",
+  "radar.empty.noSignalsTitle": "Encara no hi ha senyals noves al Radar",
+  "radar.empty.noSignalsBody": "No hi ha llançaments recents ni concerts propers dels artistes que segueixes.",
   "radar.empty.filteredTitle": "Res coincideix amb els teus filtres",
   "radar.empty.filteredBody": "Prova una altra cerca o canvia entre concerts i llançaments.",
   "home.radar.title": "Radar",
