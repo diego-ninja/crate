@@ -44,6 +44,7 @@ from crate.slugs import build_artist_slug, build_public_album_slug
 
 _GLOBAL_UID_NAMESPACE = uuid.UUID("e43655c7-8af2-4c5a-92f6-a5126dff7f84")
 _RECONCILIATION_ENTITY_TYPES = ("artist", "album", "track")
+_DEPENDENCY_RETRY_SECONDS = 3600
 log = logging.getLogger(__name__)
 
 
@@ -216,6 +217,11 @@ def reconcile_dirty_catalog_sources(*, limit: int = 500) -> dict[str, int]:
                     str(exc),
                     requested_at=dirty["requested_at"],
                     claimed_at=dirty["claimed_at"],
+                    retry_after_seconds=(
+                        _DEPENDENCY_RETRY_SECONDS
+                        if "waiting for its canonical artist" in str(exc)
+                        else None
+                    ),
                     session=session,
                 )
             failed += 1

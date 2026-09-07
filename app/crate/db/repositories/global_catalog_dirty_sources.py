@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from sqlalchemy import text
@@ -115,11 +116,8 @@ def _enqueue_dirty_source(
                     THEN NULL
                     ELSE global_catalog_dirty_sources.completed_at
                 END,
-                last_error = CASE
-                    WHEN global_catalog_dirty_sources.completed_at IS NOT NULL
-                    THEN NULL
-                    ELSE global_catalog_dirty_sources.last_error
-                END
+                last_error = NULL,
+                next_attempt_at = NULL
             """
         ),
         {
@@ -157,6 +155,10 @@ def claim_dirty_sources(
                     FROM global_catalog_dirty_sources
                     WHERE completed_at IS NULL
                       AND (
+                        next_attempt_at IS NULL
+                        OR next_attempt_at <= NOW()
+                      )
+                      AND (
                         claimed_at IS NULL
                         OR claimed_at < NOW() - make_interval(secs => :lease_seconds)
                       )
@@ -184,7 +186,8 @@ def claim_dirty_sources(
                     dirty.claimed_at,
                     dirty.completed_at,
                     dirty.attempts,
-                    dirty.last_error
+                    dirty.last_error,
+                    dirty.next_attempt_at
                 """
             ),
             {"limit": capped, "lease_seconds": capped_lease},
@@ -212,6 +215,7 @@ def complete_dirty_source(
                     ELSE NULL
                 END,
                 claimed_at = NULL,
+                next_attempt_at = NULL,
                 last_error = CASE
                     WHEN requested_at = :requested_at THEN NULL
                     ELSE last_error
@@ -235,14 +239,24 @@ def fail_dirty_source(
     *,
     requested_at,
     claimed_at,
+    retry_after_seconds: int | None = None,
     session,
 ) -> bool:
+    next_attempt_at = None
+    if retry_after_seconds is not None:
+        next_attempt_at = datetime.now(timezone.utc) + timedelta(
+            seconds=max(1, int(retry_after_seconds))
+        )
     result = session.execute(
         text(
             """
             UPDATE global_catalog_dirty_sources
             SET
                 claimed_at = NULL,
+                next_attempt_at = CASE
+                    WHEN requested_at = :requested_at THEN :next_attempt_at
+                    ELSE next_attempt_at
+                END,
                 last_error = CASE
                     WHEN requested_at = :requested_at THEN :error
                     ELSE last_error
@@ -256,6 +270,7 @@ def fail_dirty_source(
             "error": error[:4000],
             "requested_at": requested_at,
             "claimed_at": claimed_at,
+            "next_attempt_at": next_attempt_at,
         },
     )
     return int(getattr(result, "rowcount", 0) or 0) == 1

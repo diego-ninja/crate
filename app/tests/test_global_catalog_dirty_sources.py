@@ -83,6 +83,40 @@ def test_claimed_dirty_source_is_not_claimed_twice_and_failure_keeps_error(pg_db
     assert retried[0]["last_error"] == "peer manifest unavailable"
 
 
+def test_dependency_failure_is_deferred_until_retry_time_and_reopened_by_update(pg_db):
+    from crate.db.repositories.global_catalog_dirty_sources import (
+        claim_dirty_sources,
+        enqueue_local_dirty_source,
+        fail_dirty_source,
+    )
+    from crate.db.tx import transaction_scope
+
+    entity_uid = "e3f3c2f2-2bb3-4be7-8a5c-53d3b4c40f1d"
+    with transaction_scope() as session:
+        enqueue_local_dirty_source("track", entity_uid, "upsert", session=session)
+
+    with transaction_scope() as session:
+        claimed = claim_dirty_sources(1, session=session)[0]
+        fail_dirty_source(
+            int(claimed["id"]),
+            "Track source is waiting for its canonical artist",
+            requested_at=claimed["requested_at"],
+            claimed_at=claimed["claimed_at"],
+            retry_after_seconds=3600,
+            session=session,
+        )
+
+    with transaction_scope() as session:
+        assert claim_dirty_sources(1, session=session) == []
+        enqueue_local_dirty_source("track", entity_uid, "upsert", session=session)
+
+    with transaction_scope() as session:
+        reopened = claim_dirty_sources(1, session=session)
+
+    assert len(reopened) == 1
+    assert reopened[0]["last_error"] is None
+
+
 def test_mutation_arriving_during_claim_is_not_completed_by_stale_worker(pg_db):
     from crate.db.repositories.global_catalog_dirty_sources import (
         claim_dirty_sources,
