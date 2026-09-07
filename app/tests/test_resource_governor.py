@@ -27,6 +27,58 @@ def test_resource_governor_defers_governed_task_when_load_is_high(monkeypatch):
     assert "load 1.00>0.50" in decision.reason
 
 
+def test_resource_governor_allows_default_listener_budget(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.delenv("CRATE_RESOURCE_MAX_ACTIVE_USERS", raising=False)
+    monkeypatch.delenv("CRATE_RESOURCE_MAX_ACTIVE_STREAMS", raising=False)
+    monkeypatch.setattr(
+        governor,
+        "build_snapshot",
+        lambda include_playback=True: governor.ResourceSnapshot(
+            cpu_count=4,
+            load_1m=0.1,
+            load_ratio=0.025,
+            iowait_percent=0.0,
+            swap_used_percent=0.0,
+            memory_available_percent=80.0,
+            active_users=10,
+            active_streams=10,
+        ),
+    )
+
+    decision = governor.should_defer_task("materialize_artwork_variants")
+
+    assert decision.allowed is True
+
+
+def test_resource_governor_defers_above_default_listener_budget(monkeypatch):
+    from crate import resource_governor as governor
+
+    monkeypatch.setenv("CRATE_RESOURCE_GOVERNOR_ENABLED", "true")
+    monkeypatch.delenv("CRATE_RESOURCE_MAX_ACTIVE_USERS", raising=False)
+    monkeypatch.delenv("CRATE_RESOURCE_MAX_ACTIVE_STREAMS", raising=False)
+    snapshot = governor.ResourceSnapshot(
+        cpu_count=4,
+        load_1m=0.1,
+        load_ratio=0.025,
+        iowait_percent=0.0,
+        swap_used_percent=0.0,
+        memory_available_percent=80.0,
+        active_users=11,
+        active_streams=1,
+    )
+    monkeypatch.setattr(
+        governor, "build_snapshot", lambda include_playback=True: snapshot
+    )
+
+    decision = governor.should_defer_task("materialize_artwork_variants")
+
+    assert decision.allowed is False
+    assert "11 active listener(s)>10" in decision.reason
+
+
 def test_resource_governor_allows_non_governed_tasks_without_sampling(monkeypatch):
     from crate import resource_governor as governor
 
