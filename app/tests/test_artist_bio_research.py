@@ -26,6 +26,42 @@ def test_artist_research_rejects_private_or_credentialed_urls():
     assert research._safe_public_url("https://user:pass@example.com") is None
 
 
+def test_artist_research_rejects_redirect_to_private_url(monkeypatch):
+    initial_url = "https://example.com/artist"
+    request = {}
+
+    class RedirectResponse:
+        status_code = 302
+        is_redirect = True
+        headers = {"Location": "http://127.0.0.1/admin"}
+        encoding = "utf-8"
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            del chunk_size
+            return [b"private response"]
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        research,
+        "_safe_public_url",
+        lambda value: value if value == initial_url else None,
+    )
+
+    def fake_get(url, **kwargs):
+        request.update(url=url, **kwargs)
+        return RedirectResponse()
+
+    monkeypatch.setattr(research.requests, "get", fake_get)
+
+    assert research._get_public_page(initial_url) is None
+    assert request["allow_redirects"] is False
+
+
 def test_tavily_is_primary_and_brave_is_fallback_when_both_are_configured(
     monkeypatch,
 ):

@@ -9,7 +9,7 @@ import os
 import re
 import socket
 from collections.abc import Callable, Mapping
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import requests
 
@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 
 MAX_SOURCES = 8
 MAX_EXCERPT_CHARS = 3000
+MAX_PUBLIC_PAGE_REDIRECTS = 3
 _USER_AGENT = "Crate/artist-bio-research (+https://cratemusic.app)"
 _BLOCKED_HOSTS = {"localhost", "metadata.google.internal", "host.docker.internal"}
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -114,18 +115,37 @@ def _get_public_page(url: str) -> str | None:
     safe_url = _safe_public_url(url)
     if not safe_url:
         return None
-    try:
-        response = requests.get(
-            safe_url,
-            headers={"User-Agent": _USER_AGENT, "Accept": "text/html, text/plain"},
-            timeout=(5, 15),
-            stream=True,
-        )
-        response.raise_for_status()
-        return _clean_excerpt(_response_text(response))
-    except requests.RequestException:
-        log.info("Official artist page failed: %s", safe_url, exc_info=True)
-        return None
+
+    current_url = safe_url
+    for _ in range(MAX_PUBLIC_PAGE_REDIRECTS + 1):
+        response = None
+        try:
+            response = requests.get(
+                current_url,
+                headers={"User-Agent": _USER_AGENT, "Accept": "text/html, text/plain"},
+                timeout=(5, 15),
+                stream=True,
+                allow_redirects=False,
+            )
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                next_url = _safe_public_url(urljoin(current_url, location or ""))
+                if not next_url:
+                    return None
+                current_url = next_url
+                continue
+
+            response.raise_for_status()
+            return _clean_excerpt(_response_text(response))
+        except requests.RequestException:
+            log.info("Official artist page failed: %s", current_url, exc_info=True)
+            return None
+        finally:
+            if response is not None:
+                response.close()
+
+    log.info("Official artist page exceeded redirect limit: %s", safe_url)
+    return None
 
 
 def configured_web_search_providers() -> list[str]:
