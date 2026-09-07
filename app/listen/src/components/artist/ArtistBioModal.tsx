@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
+import { CrateImage } from "@/components/artwork/CrateImage";
 import {
   artistGenreSlug,
   type ArtistData,
 } from "@/components/artist/artist-model";
 import { AppModal } from "@crate/ui/primitives/AppModal";
-
 import {
-  ArtistBioHeader,
-  ArtistBioModalContent,
-} from "./ArtistBioModalSections";
+  ArtistBioProfile,
+  type ArtistBioMember,
+} from "@crate/ui/domain/ArtistBioProfile";
+import { openExternalUrl } from "@/lib/external-links";
+
 import type { ArtistBioModalProps } from "./artist-bio-types";
 import { useArtistBioEnrichment } from "./use-artist-bio-enrichment";
 
@@ -26,11 +28,19 @@ export function ArtistBioModal({
 }: ArtistBioModalProps) {
   const navigate = useNavigate();
   const bio = artistInfo?.bio ?? "";
-  const [bioExpanded, setBioExpanded] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(true);
   const enrichment = useArtistBioEnrichment(open, artist.id);
 
   const mb = enrichment?.musicbrainz;
-  const members = mb?.members?.filter((member) => member.name) ?? [];
+  const members: ArtistBioMember[] =
+    mb?.members
+      ?.filter((member) => member.name)
+      .map((member) => ({
+        name: member.name,
+        roles: member.attributes,
+        begin: member.begin,
+        end: member.end,
+      })) ?? [];
   const urls = mb?.urls
     ? Object.entries(mb.urls).map(([type, url]) => ({ type, url }))
     : [];
@@ -49,25 +59,49 @@ export function ArtistBioModal({
       panelClassName="listen-glass-panel flex min-h-0 w-full max-w-2xl flex-col overflow-hidden border-0 sm:max-h-[92vh]"
       mobileSafeArea
     >
-      <ArtistBioHeader
-        artist={artist}
-        genreItems={genreItems}
-        mb={mb}
-        navigate={navigate}
-        onClose={onClose}
+      <ArtistBioProfile
+        artistName={artist.name}
         photoUrl={photoUrl}
-      />
-      <ArtistBioModalContent
-        artist={artist}
+        photoContent={
+          <CrateImage
+            src={photoUrl}
+            alt={artist.name}
+            className="size-full object-cover"
+          />
+        }
+        meta={[
+          ...(mb?.begin_date ? [`Since ${mb.begin_date}`] : []),
+          ...(mb?.country
+            ? [mb.area ? `${mb.area}, ${mb.country}` : mb.country]
+            : []),
+        ]}
+        genres={genreItems}
         bio={bio}
         bioExpanded={bioExpanded}
-        listeners={listeners}
-        members={members}
         onBioToggle={() => setBioExpanded((expanded) => !expanded)}
-        playcount={playcount}
-        spotifyFollowers={spotifyFollowers}
-        spotifyPopularity={spotifyPopularity}
+        members={members}
+        stats={{
+          listeners,
+          playcount,
+          spotifyFollowers,
+          spotifyPopularity,
+        }}
+        libraryStats={{
+          albums: artist.albums.length,
+          tracks: artist.total_tracks,
+          sizeMb: artist.total_size_mb,
+        }}
         urls={urls}
+        onClose={onClose}
+        onGenreSelect={(item) => {
+          navigate(
+            `/explore?genre=${encodeURIComponent(
+              item.slug || artistGenreSlug(item.name),
+            )}`,
+          );
+          onClose();
+        }}
+        onExternalLink={(url) => void openExternalUrl(url)}
       />
     </AppModal>
   );

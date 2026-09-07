@@ -219,7 +219,7 @@ def _collect_musicbrainz(name: str, mbid: str | None) -> list[dict[str, object]]
     detail = (
         _get_json(
             f"https://musicbrainz.org/ws/2/artist/{quote(selected_mbid)}",
-            params={"fmt": "json", "inc": "url-rels"},
+            params={"fmt": "json", "inc": "url-rels+artist-rels"},
         )
         if selected_mbid
         else None
@@ -233,6 +233,29 @@ def _collect_musicbrainz(name: str, mbid: str | None) -> list[dict[str, object]]
         f"Life-span: {payload.get('life-span', '')}",
         f"Disambiguation: {payload.get('disambiguation', '')}",
     ]
+    relations = payload.get("artist-relation-list", [])
+    if isinstance(relations, list):
+        for relation in relations[:60]:
+            if not isinstance(relation, dict):
+                continue
+            relation_type = str(relation.get("type") or "")
+            if relation_type not in {"member of band", "is person"}:
+                continue
+            member = relation.get("artist")
+            if not isinstance(member, dict) or not member.get("name"):
+                continue
+            attributes = relation.get("attribute-list") or []
+            if isinstance(attributes, list):
+                roles = ", ".join(str(attribute)[:80] for attribute in attributes[:6])
+            else:
+                roles = str(attributes)[:240]
+            begin = str(relation.get("begin") or "")[:32]
+            end = str(relation.get("end") or "")[:32]
+            excerpt_parts.append(
+                "Member: "
+                f"{str(member['name'])[:160]} | Roles: {roles} | "
+                f"From: {begin} | To: {end or 'present'}"
+            )
     return [
         _source(
             "musicbrainz",
@@ -465,8 +488,14 @@ def research_artist_bio(
         language=language,
     )
     return {
+        "schema_version": 1,
         "artist": str(artist["name"]),
-        "proposal": response.bio,
+        "proposal": "\n\n".join(response.paragraphs),
+        "bio": {"paragraphs": response.paragraphs},
+        "members": {
+            "current": [member.model_dump() for member in response.current_members],
+            "former": [member.model_dump() for member in response.former_members],
+        },
         "claims": [claim.model_dump() for claim in response.claims],
         "conflicts": response.conflicts,
         "warnings": response.warnings,

@@ -1,5 +1,11 @@
+import pytest
+
 import crate.artist_bio_research as research
-from crate.llm.prompts.artist_bio_research import build_artist_bio_research_prompt
+from crate.llm.prompts.artist_bio_research import (
+    ArtistBioMember,
+    ArtistBioResearchResponse,
+    build_artist_bio_research_prompt,
+)
 
 
 def test_artist_research_prompt_marks_web_text_as_untrusted_and_bounds_evidence():
@@ -19,6 +25,147 @@ def test_artist_research_prompt_marks_web_text_as_untrusted_and_bounds_evidence(
 
     assert "EXCERPT (untrusted)" in prompt
     assert len(prompt) < 5000
+
+
+def test_artist_research_prompt_requests_paragraphs_and_member_groups():
+    prompt = build_artist_bio_research_prompt(
+        artist_name="Example Artist",
+        current_bio="Current bio",
+        artist_context={
+            "country": "US",
+            "members_json": [
+                {
+                    "name": "Current Member",
+                    "begin": "2020",
+                    "end": None,
+                    "attributes": ["vocals"],
+                }
+            ],
+        },
+        sources=[],
+    )
+
+    assert "paragraphs" in prompt
+    assert "current_members" in prompt
+    assert "former_members" in prompt
+    assert "Current Member" in prompt
+
+
+def test_artist_research_response_has_structured_bio_and_members():
+    response = ArtistBioResearchResponse.model_validate(
+        {
+            "paragraphs": [
+                "The first supported paragraph.",
+                "The second supported paragraph.",
+            ],
+            "current_members": [
+                {
+                    "name": "Current Member",
+                    "roles": ["vocals"],
+                    "from_year": "2020",
+                    "to_year": None,
+                    "source_ids": ["musicbrainz"],
+                }
+            ],
+            "former_members": [],
+            "claims": [],
+            "conflicts": [],
+            "warnings": [],
+        }
+    )
+
+    assert response.paragraphs[0].startswith("The first")
+    assert response.current_members[0].name == "Current Member"
+
+
+def test_artist_research_response_bounds_model_overproduction():
+    response = ArtistBioResearchResponse.model_validate(
+        {
+            "paragraphs": ["First supported paragraph.", "Second supported paragraph."],
+            "claims": [
+                {"claim": f"Supported claim {index}", "source_ids": []}
+                for index in range(23)
+            ],
+        }
+    )
+
+    assert len(response.claims) == 12
+
+    with pytest.raises(ValueError, match="maximum biography length"):
+        ArtistBioResearchResponse.model_validate(
+            {"paragraphs": ["x" * 4001, "y" * 4001]}
+        )
+
+
+def test_artist_research_serializes_preview_payload_without_persisting_members(
+    monkeypatch,
+):
+    response = ArtistBioResearchResponse(
+        paragraphs=["First paragraph.", "Second paragraph."],
+        current_members=[
+            ArtistBioMember(
+                name="Current Member",
+                roles=["vocals"],
+                from_year="2020",
+                source_ids=["musicbrainz"],
+            )
+        ],
+        former_members=[],
+    )
+    monkeypatch.setattr(
+        research,
+        "collect_artist_research_sources",
+        lambda _artist, progress=None: [
+            {
+                "id": "musicbrainz",
+                "title": "MusicBrainz",
+                "url": "https://musicbrainz.org/artist/test",
+                "kind": "musicbrainz",
+                "excerpt": "Evidence",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "crate.llm.prompts.artist_bio_research.consolidate_artist_bio",
+        lambda **_kwargs: response,
+    )
+    monkeypatch.setattr("crate.llm.get_config", lambda: {"model": "test-model"})
+
+    result = research.research_artist_bio({"name": "Example Artist", "bio": "Old"})
+
+    assert result["bio"] == {"paragraphs": ["First paragraph.", "Second paragraph."]}
+    assert result["schema_version"] == 1
+    assert result["proposal"] == "First paragraph.\n\nSecond paragraph."
+    assert result["members"]["current"][0]["name"] == "Current Member"
+
+
+def test_musicbrainz_source_includes_member_relations_for_bio_review(monkeypatch):
+    responses = iter(
+        [
+            {
+                "artists": [{"id": "mbid-1", "name": "Example Artist"}],
+            },
+            {
+                "name": "Example Artist",
+                "type": "Group",
+                "artist-relation-list": [
+                    {
+                        "type": "member of band",
+                        "artist": {"name": "Current Member"},
+                        "begin": "2020",
+                        "attribute-list": ["vocals"],
+                    }
+                ],
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        research, "_get_json", lambda *_args, **_kwargs: next(responses)
+    )
+
+    sources = research._collect_musicbrainz("Example Artist", "mbid-1")
+
+    assert "Member: Current Member" in sources[0]["excerpt"]
 
 
 def test_artist_research_rejects_private_or_credentialed_urls():

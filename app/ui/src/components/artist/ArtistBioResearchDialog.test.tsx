@@ -30,6 +30,30 @@ beforeEach(() => {
     status: "completed",
     result: {
       proposal: "High Vis is an English rock band.",
+      bio: {
+        paragraphs: [
+          "High Vis is an English rock band.",
+          "The group combines melodic songwriting with a direct hardcore edge.",
+        ],
+      },
+      members: {
+        current: [
+          {
+            name: "Graham Sayle",
+            roles: ["vocals"],
+            from_year: "2016",
+            to_year: null,
+          },
+        ],
+        former: [
+          {
+            name: "Former Member",
+            roles: ["guitar"],
+            from_year: "2016",
+            to_year: "2018",
+          },
+        ],
+      },
       model: "test-model",
       sources: [
         {
@@ -57,16 +81,65 @@ describe("ArtistBioResearchDialog", () => {
       />,
     );
 
+    expect(await screen.findByText("High Vis")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
     expect(
-      await screen.findByDisplayValue("High Vis is an English rock band."),
+      await screen.findByDisplayValue(/High Vis is an English rock band/),
     ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Sources" }));
     expect(screen.getByText("MusicBrainz")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
     await userEvent.click(
-      screen.getByRole("button", { name: /apply proposal/i }),
+      screen.getByRole("button", { name: /apply biography/i }),
     );
 
     await waitFor(() => {
-      expect(onApply).toHaveBeenCalledWith("High Vis is an English rock band.");
+      expect(onApply).toHaveBeenCalledWith(
+        "High Vis is an English rock band.\n\nThe group combines melodic songwriting with a direct hardcore edge.",
+      );
     });
+  });
+
+  it("previews the Listen profile with current and former member tables", async () => {
+    render(
+      <ArtistBioResearchDialog
+        open
+        onOpenChange={vi.fn()}
+        artist={artist}
+        currentBio="Old bio"
+        onApply={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByTestId("artist-bio-preview")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Current members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Former members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Current members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Former members" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a long research result inside a scrollable dialog body", async () => {
+    render(
+      <ArtistBioResearchDialog
+        open
+        onOpenChange={vi.fn()}
+        artist={artist}
+        currentBio="Old bio"
+        onApply={vi.fn()}
+      />,
+    );
+
+    const body = await screen.findByTestId("artist-bio-research-body");
+    const content = document.querySelector('[data-slot="dialog-content"]');
+    expect(body).toHaveClass("flex-1", "overflow-y-auto");
+    expect(content).toHaveClass("flex", "flex-col", "overflow-hidden");
   });
 });

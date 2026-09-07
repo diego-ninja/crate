@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 
 import { ArtistBioModal } from "./ArtistBioModal";
+import { ArtistBioMembers } from "@crate/ui/domain/ArtistBioProfile";
 import { ArtistSetlistModal } from "./ArtistSetlistSection";
 import { I18nProvider } from "@/i18n";
 
@@ -86,6 +87,62 @@ describe("artist mobile modals", () => {
     expect(panel?.className).not.toContain(
       "listen-mobile-bottom-chrome-height",
     );
+  });
+
+  it("shows the complete multi-paragraph biography when the bio sheet opens", () => {
+    renderWithProviders(
+      <ArtistBioModal
+        open
+        onClose={() => {}}
+        photoUrl="/artist.jpg"
+        tags={[]}
+        artist={{
+          id: 7,
+          name: "Kneecap",
+          albums: [],
+          total_tracks: 0,
+          total_size_mb: 0,
+          primary_format: null,
+          genres: [],
+          issue_count: 0,
+        }}
+        artistInfo={{
+          bio: `${"First paragraph. ".repeat(40)}\n\nSecond paragraph.`,
+          tags: [],
+          similar: [],
+          listeners: 0,
+          playcount: 0,
+          image_url: null,
+          url: "",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Second paragraph.")).toBeInTheDocument();
+  });
+
+  it("separates current and former members in the artist bio profile", () => {
+    renderWithProviders(
+      <ArtistBioMembers
+        members={[
+          { name: "Current Member", begin: "2020" },
+          { name: "Former Member", begin: "2015", end: "2019" },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Current members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Former members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Current members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Former members" }),
+    ).toBeInTheDocument();
   });
 
   it("renders artist genres in the bio sheet with genre pill styling and clean sheet chrome", () => {
