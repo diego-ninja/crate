@@ -2,9 +2,13 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import { AppErrorBoundary } from "@crate/ui/primitives/AppErrorBoundary";
+import { captureRenderError, initSentry } from "./lib/sentry";
+
+initSentry();
 
 createRoot(document.getElementById("root")!).render(
   <AppErrorBoundary
+    onError={captureRenderError}
     fallback={(error, onReset) => (
       <div className="flex min-h-screen items-center justify-center bg-app-surface px-6 text-foreground">
         <div className="w-full max-w-lg rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.42)]">

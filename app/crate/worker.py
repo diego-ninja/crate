@@ -69,6 +69,10 @@ def run_worker(config: dict):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    from crate.observability import init_sentry
+
+    init_sentry("workers")
+
     from crate.utils import init_musicbrainz
 
     queues = _normalise_queues(config.get("worker_queues"))

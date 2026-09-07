@@ -11,6 +11,20 @@ describe("AIButton", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the standard admin button sizing", () => {
+    render(
+      <div className="h-20">
+        <AIButton>Research with AI</AIButton>
+      </div>,
+    );
+
+    const button = screen.getByRole("button", { name: /Research with AI/i });
+    expect(button).toHaveClass("h-8", "px-3", "text-sm");
+    expect(button).not.toHaveClass("h-full", "text-xs");
+    expect(button.parentElement).toHaveClass("inline-flex");
+    expect(button.parentElement).not.toHaveClass("self-stretch");
+  });
+
   it("shows spinner when loading", () => {
     render(<AIButton loading>Generate</AIButton>);
     expect(screen.getByRole("button").querySelector("svg")).toHaveClass(

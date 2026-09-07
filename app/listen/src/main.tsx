@@ -6,8 +6,13 @@ import { I18nProvider } from "./i18n";
 import { startMediaAccessTicketRefresh } from "./lib/api";
 import { initCapacitor } from "./lib/capacitor";
 import { primeOfflineRuntimeProfile } from "./lib/offline";
-import { shouldRegisterServiceWorker, usesMobileShell } from "./lib/platform";
+import {
+  isCapacitorRuntime,
+  shouldRegisterServiceWorker,
+  usesMobileShell,
+} from "./lib/platform";
 import { bootstrapNativeSessionStore } from "./lib/server-store";
+import { initSentry } from "./lib/sentry";
 import "./index.css";
 
 async function disableDevServiceWorker() {
@@ -37,6 +42,14 @@ async function disableDevServiceWorker() {
 }
 
 const isCapacitorBuild = import.meta.env.MODE === "capacitor";
+
+if (isCapacitorRuntime) {
+  void import("./lib/sentry-capacitor").then(({ initNativeSentry }) => {
+    initNativeSentry();
+  });
+} else {
+  initSentry();
+}
 
 // Load Poppins only on web — iOS/Android use system fonts (San
 // Francisco / Roboto) for a native feel. The mode guard is build-time

@@ -106,6 +106,18 @@ def test_discover_paginates_and_normalizes_only_stable_fields(monkeypatch):
     assert result.cache_metadata["etag"] == '"discover-1"'
 
 
+def test_discover_derives_cover_url_from_primary_image_id():
+    from crate.bandcamp.discover import normalize_discover_item
+
+    payload = _album(101)
+    payload["primary_image"] = {"image_id": 26848682}
+
+    normalized = normalize_discover_item(payload)
+
+    assert normalized is not None
+    assert normalized["cover_url"] == "https://f4.bcbits.com/img/a26848682_10.jpg"
+
+
 def test_discover_stops_on_repeated_cursor_without_duplicates(monkeypatch):
     from crate.bandcamp.discover import BandcampDiscoverClient
 
@@ -244,6 +256,34 @@ def test_discover_uses_cached_result_without_calling_provider(monkeypatch):
 
     assert result.cache_hit is True
     assert result.items[0].item["bandcamp_item_id"] == 101
+
+
+def test_discover_migrates_cached_items_without_cover_url(monkeypatch):
+    from crate.bandcamp.discover import BandcampDiscoverClient, normalize_discover_item
+
+    cached_item = normalize_discover_item(_album(101))
+    assert cached_item is not None
+    cached_item["cover_url"] = ""
+    cached_item["art_id"] = 26848682
+    cached = {
+        "items": [{"item": cached_item, "page_cursor": "*", "rank": 0}],
+        "pages_fetched": 1,
+        "skipped_items": 0,
+        "last_cursor": "",
+        "cache_metadata": {},
+    }
+    monkeypatch.setattr(
+        "crate.bandcamp.discover.get_cache", lambda *_args, **_kwargs: cached
+    )
+    client = BandcampDiscoverClient(
+        _session_material(), enabled=True, cache_key="bandcamp:discover:1"
+    )
+
+    result = client.fetch_followed()
+
+    assert result.items[0].item["cover_url"] == (
+        "https://f4.bcbits.com/img/a26848682_10.jpg"
+    )
 
 
 def test_discover_worker_refreshes_only_an_active_connection(monkeypatch):

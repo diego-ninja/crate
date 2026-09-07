@@ -342,8 +342,16 @@ def normalize_discover_item(payload: dict[str, Any]) -> dict[str, Any] | None:
     if item_type == "track" and not track_title:
         track_title = title
 
+    art_id = _int_or_none(
+        payload.get("art_id")
+        or payload.get("image_id")
+        or primary_image.get("image_id")
+    )
     cover_url = _stable_https_url(
-        payload.get("cover_url") or payload.get("image_url") or primary_image.get("url")
+        payload.get("cover_url")
+        or payload.get("image_url")
+        or primary_image.get("url")
+        or _cover_url_from_image_id(art_id)
     )
     artist_url = _stable_bandcamp_url(
         payload.get("artist_url") or payload.get("band_url")
@@ -357,11 +365,7 @@ def normalize_discover_item(payload: dict[str, Any]) -> dict[str, Any] | None:
         "band_id": band_id,
         "album_id": album_id,
         "track_id": track_id,
-        "art_id": _int_or_none(
-            payload.get("art_id")
-            or payload.get("image_id")
-            or primary_image.get("image_id")
-        ),
+        "art_id": art_id,
         "artist_name": artist_name,
         "album_title": album_title,
         "track_title": track_title,
@@ -435,9 +439,10 @@ def _result_from_cache(payload: Any) -> BandcampDiscoverResult | None:
             rank = int(raw_entry.get("rank") or len(entries))
         except (TypeError, ValueError):
             return None
+        item = _with_derived_cover_url(raw_entry["item"])
         entries.append(
             BandcampDiscoverItem(
-                item=raw_entry["item"],
+                item=item,
                 page_cursor=_string(raw_entry.get("page_cursor")),
                 rank=rank,
             )
@@ -579,6 +584,26 @@ def _stable_https_url(value: Any) -> str:
     if parsed.scheme.lower() != "https" or not parsed.netloc:
         return ""
     return urlunsplit(("https", parsed.netloc.lower(), parsed.path, "", ""))
+
+
+def _cover_url_from_image_id(image_id: int | None) -> str:
+    if image_id is None or image_id <= 0:
+        return ""
+    return f"https://f4.bcbits.com/img/a{image_id}_10.jpg"
+
+
+def _with_derived_cover_url(item: dict[str, Any]) -> dict[str, Any]:
+    if _string(item.get("cover_url")):
+        return item
+    raw = _mapping(item.get("raw"))
+    primary_image = _mapping(item.get("primary_image")) or _mapping(
+        raw.get("primary_image")
+    )
+    image_id = _int_or_none(
+        item.get("art_id") or item.get("image_id") or primary_image.get("image_id")
+    )
+    cover_url = _cover_url_from_image_id(image_id)
+    return {**item, "cover_url": cover_url} if cover_url else item
 
 
 def _artist_url_from_item_url(item_url: str) -> str:

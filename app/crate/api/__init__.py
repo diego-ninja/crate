@@ -238,6 +238,9 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    from crate.observability import init_sentry
+
+    init_sentry("api")
     app = FastAPI(
         title="Crate",
         version="0.1.0",

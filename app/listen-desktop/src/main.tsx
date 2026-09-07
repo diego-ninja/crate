@@ -9,10 +9,12 @@ import { Toaster } from "sonner";
 import { App } from "@/App";
 import { I18nProvider } from "@/i18n";
 import { primeOfflineRuntimeProfile } from "@/lib/offline";
+import { initSentry } from "@/lib/sentry";
 
 import { initTauriRuntime } from "./lib/tauri-init";
 
 initTauriRuntime();
+initSentry();
 void primeOfflineRuntimeProfile();
 
 createRoot(document.getElementById("root")!).render(

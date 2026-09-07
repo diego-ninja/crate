@@ -646,6 +646,8 @@
   "radar.empty.genreBody": "Crate mostrerà qui i prossimi concerti quando questo genere avrà artisti vicini nel tuo Radar.",
   "radar.empty.followTitle": "Segui qualche artista per sbloccare Radar",
   "radar.empty.followBody": "Appena seguirai degli artisti, Radar mostrerà qui i loro prossimi concerti e le nuove uscite.",
+  "radar.empty.noSignalsTitle": "Nessun nuovo segnale in Radar",
+  "radar.empty.noSignalsBody": "Non ci sono ancora nuove uscite o concerti vicini degli artisti che segui.",
   "radar.empty.filteredTitle": "Niente corrisponde ai tuoi filtri",
   "radar.empty.filteredBody": "Prova un'altra ricerca o passa tra concerti e uscite.",
   "home.radar.title": "Radar",

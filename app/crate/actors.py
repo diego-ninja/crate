@@ -945,7 +945,10 @@ def _make_actor_fn(task_type: str):
     """Create a closure that calls _execute_task for a specific task type."""
 
     def actor_fn(task_id: str):
-        _execute_task(task_type, task_id)
+        from crate.observability.sentry import task_scope
+
+        with task_scope(task_type, task_id, get_queue_for_task(task_type)):
+            _execute_task(task_type, task_id)
 
     actor_fn.__name__ = task_type
     actor_fn.__qualname__ = task_type

@@ -203,6 +203,44 @@ def test_get_upcoming_releases_excludes_release_day_rows(pg_db):
     assert rows == []
 
 
+def test_get_upcoming_releases_includes_recently_detected_past_release(pg_db):
+    from crate.db.queries.user import get_upcoming_releases
+    from crate.db.tx import transaction_scope
+
+    with transaction_scope() as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO new_releases (
+                    artist_name,
+                    album_title,
+                    status,
+                    detected_at,
+                    release_date,
+                    release_type
+                )
+                VALUES (
+                    'Recently Detected Artist',
+                    'Recent Album',
+                    'detected',
+                    '2026-05-20T09:00:00+00:00',
+                    '2026-05-10',
+                    'Album'
+                )
+                """
+            )
+        )
+
+    rows = get_upcoming_releases(
+        ["Recently Detected Artist"],
+        today=date(2026, 6, 1),
+        recent_cutoff="2026-05-01T00:00:00+00:00",
+        limit=10,
+    )
+
+    assert [row["album_title"] for row in rows] == ["Recent Album"]
+
+
 def test_home_upcoming_trims_preview_items_but_keeps_full_summary(monkeypatch):
     releases = [
         {

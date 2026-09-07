@@ -1,4 +1,4 @@
-import { useCallback, useContext, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 
 import { api, setAuthToken } from "@/lib/api";
@@ -9,6 +9,7 @@ import { useAuthOAuthSync } from "@/contexts/use-auth-oauth-sync";
 import { useAuthSession } from "@/contexts/use-auth-session";
 import { useAuthTokenRefresh } from "@/contexts/use-auth-token-refresh";
 import { useListenWarmup } from "@/hooks/use-listen-warmup";
+import { setSentryUser } from "@/lib/sentry";
 
 export function useAuth() {
   const value = useContext(AuthContext);
@@ -21,6 +22,10 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { user, loading, refetch, setUser } = useAuthSession();
+
+  useEffect(() => {
+    setSentryUser(user?.id ?? null);
+  }, [user?.id]);
 
   useAuthOAuthSync({ navigate, refetch });
   useAuthTokenRefresh(user);

@@ -47,6 +47,21 @@ describe("AppErrorBoundary", () => {
     expect(screen.getByText("Test error")).toBeInTheDocument();
   });
 
+  it("reports caught render errors when an error handler is provided", () => {
+    const onError = vi.fn();
+
+    render(
+      <AppErrorBoundary onError={onError}>
+        <ThrowError shouldThrow />
+      </AppErrorBoundary>,
+    );
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Test error" }),
+      expect.objectContaining({ componentStack: expect.any(String) }),
+    );
+  });
+
   it("calls onReset when reset button is clicked", async () => {
     const handleReset = vi.fn();
     // Mock window.location.href

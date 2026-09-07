@@ -195,6 +195,49 @@ describe("createApiClient", () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
+  it("reports failed requests without changing the thrown error", async () => {
+    mockFetchText(500, "Error");
+    const onError = vi.fn();
+    const api = createApiClient({ onError });
+
+    await expect(
+      api("/api/fail", "POST", { safe: true }),
+    ).rejects.toMatchObject({ status: 500 });
+
+    expect(onError).toHaveBeenCalledWith(expect.any(ApiError), {
+      method: "POST",
+      url: "/api/fail",
+      status: 500,
+    });
+  });
+
+  it("reports network failures with no HTTP status", async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.reject(new TypeError("Failed to fetch")),
+    ) as typeof globalThis.fetch;
+    const onError = vi.fn();
+    const api = createApiClient({ base: "https://api.example.test", onError });
+
+    await expect(api("/api/ping")).rejects.toThrow("Failed to fetch");
+
+    expect(onError).toHaveBeenCalledWith(expect.any(TypeError), {
+      method: "GET",
+      url: "https://api.example.test/api/ping",
+      status: undefined,
+    });
+  });
+
+  it("ignores telemetry callback failures", async () => {
+    mockFetchText(500, "Error");
+    const api = createApiClient({
+      onError: () => {
+        throw new Error("telemetry unavailable");
+      },
+    });
+
+    await expect(api("/api/fail")).rejects.toMatchObject({ status: 500 });
+  });
+
   it("deduplicates inflight GET requests", async () => {
     let calls = 0;
     globalThis.fetch = vi.fn(() => {

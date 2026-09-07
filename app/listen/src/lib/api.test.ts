@@ -5,6 +5,11 @@ const { redirectToLoginMock } = vi.hoisted(() => {
   return { redirectToLoginMock };
 });
 
+const { captureApiErrorMock } = vi.hoisted(() => {
+  const captureApiErrorMock = vi.fn();
+  return { captureApiErrorMock };
+});
+
 vi.mock("@/lib/auth-route-policy", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/auth-route-policy")>();
@@ -23,6 +28,11 @@ vi.mock("@/lib/platform", () => ({
 vi.mock("@/lib/listen-device", () => ({
   getListenDeviceFingerprint: () => "fp123",
   getListenDeviceLabel: () => "Test Device",
+}));
+
+vi.mock("@/lib/sentry", () => ({
+  captureApiError: captureApiErrorMock,
+  setSentryUser: vi.fn(),
 }));
 
 import {
@@ -82,6 +92,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   redirectToLoginMock.mockClear();
+  captureApiErrorMock.mockClear();
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -825,6 +836,32 @@ describe("apiFetch", () => {
 
     await apiFetch("/api/protected");
     expect(redirectToLoginMock).toHaveBeenCalled();
+  });
+
+  it("reports final apiFetch HTTP failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockFetchResponse(503));
+
+    await apiFetch("/api/health", { method: "POST" });
+
+    expect(captureApiErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 503 }),
+      expect.objectContaining({
+        method: "POST",
+        url: "/api/health",
+        status: 503,
+      }),
+    );
+  });
+
+  it("reports apiFetch network failures and rethrows them", async () => {
+    const error = new TypeError("Failed to fetch");
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(error);
+
+    await expect(apiFetch("/api/health")).rejects.toBe(error);
+    expect(captureApiErrorMock).toHaveBeenCalledWith(error, {
+      method: "GET",
+      url: "/api/health",
+    });
   });
 });
 
