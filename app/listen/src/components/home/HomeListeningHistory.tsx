@@ -121,7 +121,7 @@ function ListeningHistoryCard({
         <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-text-muted">
           {artists}
         </p>
-        <div className="home-history-meta mt-auto text-[10px] font-bold uppercase tracking-[0.14em]">
+        <div className="home-history-meta mt-auto text-xs font-bold uppercase tracking-[0.14em]">
           {t("common.playCount", { count: item.play_count })} ·{" "}
           {formatHistoryMinutes(item.minutes_listened)}
         </div>

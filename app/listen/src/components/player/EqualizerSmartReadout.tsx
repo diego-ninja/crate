@@ -15,7 +15,7 @@ export function EqualizerSmartReadout({
   const { t } = useTranslation();
   if (status === "loading") {
     return (
-      <div className="rounded-lg border border-accent-action/20 bg-accent-action/[0.07] px-3 py-2 text-[11px] text-accent-action/80">
+      <div className="rounded-lg border border-accent-action/20 bg-accent-action/[0.07] px-3 py-2 text-xs text-accent-action/80">
         {t("player.equalizer.smart.resolving")}
       </div>
     );
@@ -23,7 +23,7 @@ export function EqualizerSmartReadout({
 
   if (status === "unavailable" || !eq) {
     return (
-      <div className="rounded-lg border border-border-quiet bg-surface-control px-3 py-2 text-[11px] text-text-muted">
+      <div className="rounded-lg border border-border-quiet bg-surface-control px-3 py-2 text-xs text-text-muted">
         {t("player.equalizer.smart.waiting")}
       </div>
     );
@@ -40,14 +40,14 @@ export function EqualizerSmartReadout({
   return (
     <div className="eq-smart-surface rounded-lg border border-accent-action/25 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-action/35 bg-accent-action/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-action">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-action/35 bg-accent-action/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.18em] text-accent-action">
           <Brain size={10} />
           Smart
         </span>
         <span className="text-xs font-semibold text-text-primary">{label}</span>
       </div>
       {detail ? (
-        <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-text-muted">
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-muted">
           {detail}
         </p>
       ) : null}

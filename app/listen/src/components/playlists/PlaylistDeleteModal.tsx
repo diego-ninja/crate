@@ -40,7 +40,7 @@ export function PlaylistDeleteModal({
         </div>
         <ModalCloseButton onClick={onClose} disabled={deleting} />
       </ModalHeader>
-      <ModalBody className="px-5 py-5">
+      <ModalBody className="p-5 ">
         <p className="text-sm text-text-muted">
           {t("playlist.delete.confirmPrefix")}{" "}
           <span className="font-medium text-text-primary">{name}</span>{" "}

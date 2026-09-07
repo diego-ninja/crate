@@ -88,7 +88,7 @@ export function CrateLoader({
           alt=""
           aria-hidden="true"
           draggable={false}
-          className="crate-loader-logo relative z-30 h-[58%] w-[58%] select-none"
+          className="crate-loader-logo relative z-30 size-[58%] select-none"
         />
       </div>
       <p className="font-sans text-[0.9375rem] font-semibold tracking-[0.055em] text-text-accent/80">

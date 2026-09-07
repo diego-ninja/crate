@@ -111,13 +111,13 @@ export function RadioStationCard({
         <CrateImage
           src={artworkUrl}
           alt=""
-          className="aspect-square h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.04]"
+          className="aspect-square size-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.04]"
         />
       ) : (
         <div className="aspect-square" />
       )}
       <div className="home-radio-overlay absolute inset-0" />
-      <div className="home-radio-badge absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] backdrop-blur-md">
+      <div className="home-radio-badge absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-[0.16em] backdrop-blur-md">
         <Radio size={12} className="inline-block" /> {seedTypeLabel}
       </div>
       <div className="absolute inset-x-0 bottom-0 p-4">

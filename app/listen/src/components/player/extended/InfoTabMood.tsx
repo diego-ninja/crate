@@ -29,7 +29,7 @@ export function InfoTabMood({
           {topMoods.map((mood) => (
             <span
               key={mood.label}
-              className="info-tab-mood-pill rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em]"
+              className="info-tab-mood-pill rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.14em]"
             >
               {mood.label} {Math.round(mood.value * 100)}%
             </span>

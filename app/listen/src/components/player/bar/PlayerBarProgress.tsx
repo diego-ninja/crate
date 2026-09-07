@@ -30,7 +30,7 @@ export function PlayerBarProgress({
 }: PlayerBarProgressProps) {
   return (
     <div className="relative mt-2 flex w-full items-center gap-2">
-      <span className="w-9 text-right font-mono text-[10px] tabular-nums text-text-muted">
+      <span className="w-9 text-right font-mono text-xs tabular-nums text-text-muted">
         {formatPlayerTime(effectiveDisplayedTime)}
       </span>
       <div
@@ -95,7 +95,7 @@ export function PlayerBarProgress({
       >
         {seekHover && effectiveDisplayedDuration > 0 && (
           <div
-            className="listen-player-progress-tooltip pointer-events-none absolute -top-6 -translate-x-1/2 rounded border px-1.5 py-0.5 text-[10px] tabular-nums"
+            className="listen-player-progress-tooltip pointer-events-none absolute -top-6 -translate-x-1/2 rounded border px-1.5 py-0.5 text-xs tabular-nums"
             style={{ left: `${seekHover.pct * 100}%` }}
           >
             {seekHover.time}
@@ -103,18 +103,18 @@ export function PlayerBarProgress({
         )}
         <div className="listen-player-progress-track absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full" />
         <div
-          className="listen-player-progress-width-dynamic pointer-events-none absolute left-0 top-1/2 h-3 -translate-y-1/2 overflow-hidden rounded-full opacity-65 transition-[width] duration-150"
-          style={{ "--progress-width": `${progressPct}%` } as CSSProperties}
+          className="listen-player-progress-width-dynamic pointer-events-none absolute left-0 top-1/2 h-3 overflow-hidden rounded-full opacity-65"
+          style={{ "--progress-scale": progressPct / 100 } as CSSProperties}
         >
           <div className="listen-player-progress-glow absolute inset-0 blur-[3px]" />
           <div className="listen-player-progress-fill absolute inset-y-[5px] inset-x-0 rounded-full" />
         </div>
         <div
-          className="listen-player-progress-fill listen-player-progress-width-dynamic absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full transition-[width] duration-150"
-          style={{ "--progress-width": `${progressPct}%` } as CSSProperties}
+          className="listen-player-progress-fill listen-player-progress-width-dynamic absolute left-0 top-1/2 h-[3px] rounded-full"
+          style={{ "--progress-scale": progressPct / 100 } as CSSProperties}
         />
         <div
-          className={`listen-player-progress-thumb listen-player-progress-left-dynamic pointer-events-none absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full transition-[left,opacity] duration-150 ${
+          className={`listen-player-progress-thumb listen-player-progress-left-dynamic pointer-events-none absolute top-1/2 size-2 -translate-y-1/2 rounded-full transition-opacity duration-150 ${
             progressPct > 0 ? "opacity-[0.62]" : "opacity-0"
           }`}
           style={
@@ -124,7 +124,7 @@ export function PlayerBarProgress({
           }
         />
         <div
-          className="listen-player-progress-thumb-active listen-player-progress-left-active-dynamic absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border opacity-0 transition-[left,opacity] duration-150 group-hover:opacity-100"
+          className="listen-player-progress-thumb-active listen-player-progress-left-active-dynamic absolute top-1/2 size-2.5 -translate-y-1/2 rounded-full border opacity-0 transition-opacity duration-150 group-hover:opacity-100"
           style={
             {
               "--progress-left": `calc(${progressPct}% - 5px)`,
@@ -132,7 +132,7 @@ export function PlayerBarProgress({
           }
         />
       </div>
-      <span className="w-9 font-mono text-[10px] tabular-nums text-text-muted">
+      <span className="w-9 font-mono text-xs tabular-nums text-text-muted">
         {formatPlayerTime(effectiveDisplayedDuration)}
       </span>
     </div>

@@ -85,7 +85,7 @@ export function ReleaseCountdown({ releaseDate }: { releaseDate: string }) {
         aria-hidden="true"
         className="release-countdown-sheen pointer-events-none absolute inset-0 sm:hidden"
       />
-      <div className="relative flex items-baseline justify-between gap-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-action">
+      <div className="relative flex items-baseline justify-between gap-3 font-mono text-xs font-medium uppercase tracking-[0.16em] text-accent-action">
         <span>{t("album.releaseCountdown.title")}</span>
         <time dateTime={releaseDate} className="shrink-0 text-text-primary/55">
           {formattedDate}
@@ -105,7 +105,7 @@ export function ReleaseCountdown({ releaseDate }: { releaseDate: string }) {
               <dd className="font-mono text-[clamp(1.75rem,9vw,2.75rem)] font-bold leading-none tracking-[-0.075em] text-text-primary tabular-nums">
                 {pad(unit.value)}
               </dd>
-              <dt className="mt-2 truncate font-mono text-[9px] font-medium uppercase tracking-[0.13em] text-text-primary/48 sm:text-[10px]">
+              <dt className="mt-2 truncate font-mono text-xs font-medium uppercase tracking-[0.13em] text-text-primary/48 sm:text-xs">
                 {unit.label}
               </dt>
             </div>

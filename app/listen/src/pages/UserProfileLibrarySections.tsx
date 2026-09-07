@@ -46,10 +46,10 @@ function ContributionCard({
         <CrateImage
           src={coverUrl}
           alt=""
-          className="h-14 w-14 rounded-xl object-cover"
+          className=" size-14 rounded-xl object-cover"
         />
       ) : (
-        <div className="user-profile-accent-panel user-profile-accent-icon flex h-14 w-14 items-center justify-center rounded-xl">
+        <div className="user-profile-accent-panel user-profile-accent-icon flex size-14 items-center justify-center rounded-xl">
           <Disc3 size={20} />
         </div>
       )}
@@ -60,7 +60,7 @@ function ContributionCard({
         <div className="truncate text-xs text-text-muted">
           {contribution.artist_name}
         </div>
-        <div className="user-profile-accent-label mt-1 text-[10px] font-bold uppercase tracking-[0.16em]">
+        <div className="user-profile-accent-label mt-1 text-xs font-bold uppercase tracking-[0.16em]">
           {t("userProfile.contributions.via", { source })}
         </div>
       </div>
@@ -150,10 +150,10 @@ function UserProfilePlaylists({ data }: { data: PublicProfile }) {
                   <CrateImage
                     src={coverUrl}
                     alt={playlist.name}
-                    className="h-14 w-14 rounded-xl object-cover"
+                    className=" size-14 rounded-xl object-cover"
                   />
                 ) : (
-                  <div className="user-profile-placeholder flex h-14 w-14 items-center justify-center rounded-xl text-lg font-semibold">
+                  <div className="user-profile-placeholder flex size-14 items-center justify-center rounded-xl text-lg font-semibold">
                     {playlist.name.charAt(0).toUpperCase()}
                   </div>
                 )}

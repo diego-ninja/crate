@@ -69,7 +69,7 @@ export const AlbumCard = memo(function AlbumCard({
         "group/card relative snap-start rounded-xl text-left transition-colors",
         layout === "grid"
           ? "listen-deferred-grid-item w-full min-w-0"
-          : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
+          : `shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
       )}
       onContextMenu={model.actionMenu.handleContextMenu}
       {...model.actionMenu.longPressHandlers}

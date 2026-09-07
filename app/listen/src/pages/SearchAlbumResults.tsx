@@ -42,13 +42,13 @@ export function SearchAlbumResults({ albums }: { albums: SearchAlbum[] }) {
                     )}
                     alt={album.name}
                     loading="lazy"
-                    className="h-full w-full object-cover"
+                    className=" size-full object-cover"
                     onError={(event) => {
                       (event.target as HTMLImageElement).style.display = "none";
                     }}
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center">
+                  <div className="flex size-full items-center justify-center">
                     <Disc3 size={32} className="text-text-primary/25" />
                   </div>
                 )}

@@ -61,7 +61,7 @@ function FullscreenPlayerTransportControls({
         onClick={actions.goPrevWithFeedback}
         disabled={state.jamQueueLocked}
         aria-label={t("player.previous")}
-        className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full text-text-secondary transition-colors active:bg-surface-control active:text-text-primary disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
+        className="flex size-12 touch-manipulation items-center justify-center rounded-full text-text-secondary transition-colors active:bg-surface-control active:text-text-primary disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
       >
         <SkipBack size={CRATE_ICON_SIZE.xl} fill="currentColor" />
       </button>
@@ -93,7 +93,7 @@ function FullscreenPlayerTransportControls({
         onClick={actions.goNextWithFeedback}
         disabled={state.jamTransportDisabled}
         aria-label={t("player.next")}
-        className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full text-text-secondary transition-colors active:bg-surface-control active:text-text-primary disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
+        className="flex size-12 touch-manipulation items-center justify-center rounded-full text-text-secondary transition-colors active:bg-surface-control active:text-text-primary disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
       >
         <SkipForward size={CRATE_ICON_SIZE.xl} fill="currentColor" />
       </button>
@@ -138,7 +138,7 @@ function FullscreenPlayerUtilityControls({
         type="button"
         onClick={() => void actions.toggleLikeWithFeedback()}
         aria-label={state.liked ? "Unlike track" : "Like track"}
-        className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
+        className="flex size-12 touch-manipulation items-center justify-center rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
       >
         {state.liked ? (
           <HeartBold
@@ -177,7 +177,7 @@ function FullscreenPlayerUtilityControls({
         title={
           state.surfaceMode === "cd" ? "Show album cover" : "Show spinning CD"
         }
-        className="flex h-12 w-12 touch-manipulation items-center justify-center rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
+        className="flex size-12 touch-manipulation items-center justify-center rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
       >
         {state.surfaceMode === "cd" ? (
           <Square size={CRATE_ICON_SIZE.lg} />
@@ -187,7 +187,7 @@ function FullscreenPlayerUtilityControls({
       </button>
       <PlayerTrackMenu
         currentTrack={player.currentTrack}
-        className="h-12 w-12 rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
+        className=" size-12 rounded-full border border-border-subtle bg-surface-control text-text-secondary transition-colors active:bg-surface-control-hover active:text-text-primary"
       />
     </div>
   );

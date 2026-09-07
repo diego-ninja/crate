@@ -82,14 +82,14 @@ export function Paths() {
   };
 
   return (
-    <div className="animate-page-in space-y-6 px-4 py-6 sm:px-6">
+    <div className="animate-page-in space-y-6 px-4  sm:p-6">
       <div className="flex items-center gap-3">
         <Route size={22} className="text-accent-action" />
         <div>
           <h1 className="text-2xl font-bold text-text-primary">
             {t("paths.title")}
           </h1>
-          <p className="text-[13px] text-text-primary/40">
+          <p className="text-[0.8125rem] text-text-primary/40">
             {t("paths.subtitle")}
           </p>
         </div>
@@ -112,7 +112,7 @@ export function Paths() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
         <div className="flex-1">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-primary/35">
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-text-primary/35">
             {t("paths.length")}
           </div>
           <div className="flex items-center gap-3">
@@ -125,7 +125,7 @@ export function Paths() {
               onChange={(event) => setSteps(Number(event.target.value))}
               className="flex-1 accent-primary"
             />
-            <span className="w-16 text-right font-mono text-[12px] tabular-nums text-text-primary/50">
+            <span className="w-16 text-right font-mono text-[0.75rem] tabular-nums text-text-primary/50">
               {t("common.trackCountLabel", { count: steps })}
             </span>
           </div>
@@ -146,7 +146,7 @@ export function Paths() {
 
       {paths && paths.length > 0 ? (
         <div className="space-y-2 pt-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-text-primary/30">
+          <div className="text-xs font-semibold uppercase tracking-wider text-text-primary/30">
             {t("paths.saved")}
           </div>
           {paths.map((path) => (

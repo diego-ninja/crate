@@ -79,10 +79,10 @@ function FullscreenQueueRow({
           src={track.albumCover}
           alt=""
           loading="lazy"
-          className="h-8 w-8 shrink-0 rounded object-cover"
+          className=" size-8 shrink-0 rounded object-cover"
         />
       ) : (
-        <div className="h-8 w-8 shrink-0 rounded bg-surface-control-hover" />
+        <div className=" size-8 shrink-0 rounded bg-surface-control-hover" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -90,7 +90,7 @@ function FullscreenQueueRow({
             {track.title}
           </p>
           {track.isSuggested ? (
-            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-accent-action">
+            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-action">
               Suggested
             </span>
           ) : null}
@@ -101,7 +101,7 @@ function FullscreenQueueRow({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-11 w-11 shrink-0 opacity-85 transition-opacity hover:opacity-100"
+        className=" size-11 shrink-0 opacity-85 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}
@@ -165,7 +165,7 @@ export function FullscreenPlayerPlayerTab({
           albumClassName="text-xs"
         />
         <div className="mx-auto mt-4 w-full max-w-[360px]">
-          <div className="fullscreen-player-time mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums">
+          <div className="fullscreen-player-time mb-1.5 flex items-center justify-between text-xs font-medium tabular-nums">
             <span>{formatPlayerTime(player.displayedTime)}</span>
             <span>-{formatPlayerTime(player.effectiveRemainingTime)}</span>
           </div>

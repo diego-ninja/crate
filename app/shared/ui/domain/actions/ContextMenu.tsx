@@ -122,7 +122,7 @@ function ContextMenuMediaHeaderView({
   }, [header.imageUrl]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-border-quiet px-4 py-4">
+    <div className="flex items-center gap-3 border-b border-border-quiet p-4 ">
       <div
         className={cn(
           "relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden bg-text-primary/5",
@@ -159,7 +159,7 @@ function ContextMenuMediaHeaderView({
               setImageFailed(true);
               header.imageOnError?.();
             }}
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
           />
         ) : FallbackIcon ? (
           <FallbackIcon
@@ -184,7 +184,7 @@ function ContextMenuMediaHeaderView({
           </div>
         ) : null}
         {header.detail ? (
-          <div className="truncate text-[11px] text-text-primary/55">
+          <div className="truncate text-xs text-text-primary/55">
             {header.detail}
           </div>
         ) : null}
@@ -243,7 +243,7 @@ function ContextMenuItems({
           return (
             <div
               key={entry.key}
-              className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-text-primary/40"
+              className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-text-primary/40"
             >
               {entry.label}
             </div>

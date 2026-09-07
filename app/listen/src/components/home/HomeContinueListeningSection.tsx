@@ -18,7 +18,7 @@ export function ContinueListeningSection({
     return (
       <div className="home-playback-empty-card overflow-hidden rounded-[12px] p-6">
         <div className="max-w-2xl space-y-3">
-          <div className="home-playback-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider">
+          <div className="home-playback-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wider">
             <Sparkles size={12} />
             Start listening
           </div>
@@ -43,7 +43,7 @@ export function ContinueListeningSection({
       />
 
       <div className="home-playback-panel overflow-hidden rounded-[12px] p-4">
-        <div className="home-playback-panel-kicker mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider">
+        <div className="home-playback-panel-kicker mb-3 flex items-center gap-2 text-xs uppercase tracking-wider">
           <Clock3 size={12} />
           Recent listens
         </div>

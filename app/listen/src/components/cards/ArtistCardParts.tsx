@@ -113,9 +113,7 @@ function resolveArtistCardVisuals({
     "group/card snap-start text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl",
     layout === "grid"
       ? "listen-deferred-grid-item w-full min-w-0"
-      : `flex-shrink-0 ${
-          compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"
-        }`,
+      : `shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`,
   );
 
   return {
@@ -309,7 +307,7 @@ export function ArtistCardArtwork({
           aria-hidden="true"
           data-testid="artist-artwork-placeholder"
           data-placeholder-style="flat-disc"
-          className="grid h-full w-full place-items-center rounded-full bg-surface-elevated"
+          className="grid size-full place-items-center rounded-full bg-surface-elevated"
         >
           <span className="text-sm font-semibold text-text-primary/75">
             {monogram}
@@ -377,10 +375,10 @@ export function ArtistCardInlineActions({
       className="pointer-events-none absolute left-1/2 top-0 z-10 flex aspect-square -translate-x-1/2 items-center justify-center rounded-full bg-surface-canvas/0 transition-colors group-hover/card:bg-surface-canvas/42"
       style={{ width: artworkWidth }}
     >
-      <div className="pointer-events-none flex translate-y-2 items-center justify-center gap-2 opacity-0 transition-[transform,opacity] group-hover/card:translate-y-0 group-hover/card:opacity-100">
+      <div className="pointer-events-none flex translate-y-2 items-center justify-center gap-2 opacity-0 transition-[transform,opacity] group-focus-within/card:translate-y-0 group-focus-within/card:opacity-100 group-hover/card:translate-y-0 group-hover/card:opacity-100">
         <button
           type="button"
-          className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-lg"
+          className="pointer-events-auto inline-flex size-10 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-lg"
           onClick={handlePlayTopTracks}
           aria-label={t("actions.artist.playTopTracksFrom", {
             name: artistName,

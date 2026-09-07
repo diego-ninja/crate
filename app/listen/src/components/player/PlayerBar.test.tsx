@@ -454,7 +454,7 @@ describe("PlayerBar mobile mini-player", () => {
       .find((button) => button.className.includes("h-12"));
     const nextButton = screen
       .getAllByRole("button", { name: "Next track" })
-      .find((button) => button.className.includes("h-12"));
+      .find((button) => button.className.includes("size-12"));
 
     expect(playButton).toBeDefined();
     expect(nextButton).toBeDefined();
@@ -496,7 +496,7 @@ describe("PlayerBar mobile mini-player", () => {
       .find((button) => button.className.includes("h-12"));
     const nextButton = screen
       .getAllByRole("button", { name: "Next track" })
-      .find((button) => button.className.includes("h-12"));
+      .find((button) => button.className.includes("size-12"));
 
     fireEvent.click(playButton!);
     fireEvent.click(nextButton!);

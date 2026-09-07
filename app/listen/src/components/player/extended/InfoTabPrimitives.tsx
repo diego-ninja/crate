@@ -19,10 +19,10 @@ export function MetricBar({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-text-muted">
+        <span className="text-xs font-medium uppercase tracking-[0.16em] text-text-muted">
           {label}
         </span>
-        <span className="text-[11px] font-medium tabular-nums text-text-secondary">
+        <span className="text-xs font-medium tabular-nums text-text-secondary">
           {Math.round(percent)}%
         </span>
       </div>
@@ -50,15 +50,13 @@ export function StatCard({
 }) {
   return (
     <div className="info-tab-stat-card rounded-lg px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle">
         {label}
       </p>
       <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
         {value}
       </p>
-      {helper ? (
-        <p className="mt-1 text-[11px] text-text-muted">{helper}</p>
-      ) : null}
+      {helper ? <p className="mt-1 text-xs text-text-muted">{helper}</p> : null}
     </div>
   );
 }
@@ -78,18 +76,18 @@ export function SectionCard({
     <section className="info-tab-section-card overflow-hidden rounded-[12px]">
       <div className="info-tab-section-header flex items-start justify-between gap-4 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">
             {title}
           </p>
           {subtitle ? (
-            <p className="mt-1 text-[12px] text-text-muted">{subtitle}</p>
+            <p className="mt-1 text-[0.75rem] text-text-muted">{subtitle}</p>
           ) : null}
         </div>
         <div className="info-tab-section-icon rounded-full p-2 text-text-secondary">
           <Icon size={CRATE_ICON_SIZE.md} />
         </div>
       </div>
-      <div className="space-y-4 px-4 py-4">{children}</div>
+      <div className="space-y-4 p-4 ">{children}</div>
     </section>
   );
 }

@@ -56,7 +56,7 @@ function CrateMark({
         src={logoSrc}
         alt=""
         aria-hidden="true"
-        className="h-4 w-4 opacity-95 drop-shadow-artwork-compact-mark"
+        className=" size-4 opacity-95 drop-shadow-artwork-compact-mark"
       />
     </div>
   );
@@ -101,7 +101,7 @@ export function PlaylistArtwork({
         {artworkImage({
           src: coverDataUrl,
           alt: name,
-          className: "w-full h-full object-cover",
+          className: "size-full object-cover",
         })}
         {crateMark}
       </div>
@@ -117,7 +117,7 @@ export function PlaylistArtwork({
           {artworkImage({
             src: collageSources[0],
             alt: name,
-            className: "w-full h-full object-cover",
+            className: "size-full object-cover",
           })}
           {crateMark}
         </div>
@@ -133,13 +133,13 @@ export function PlaylistArtwork({
       <div
         className={`relative overflow-hidden bg-text-primary/5 ${className}`}
       >
-        <div className={`grid h-full w-full ${collageClassName} gap-[2px]`}>
+        <div className={`grid size-full ${collageClassName} gap-[2px]`}>
           {collageSources.map((source, index) =>
             artworkImage({
               key: `${source}-${index}`,
               src: source,
               alt: "",
-              className: `w-full h-full object-cover ${
+              className: `size-full object-cover ${
                 collageSources.length === 3 && index === 2 ? "col-span-2" : ""
               }`,
             }),

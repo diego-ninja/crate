@@ -78,7 +78,7 @@ function JamQueueHeader({ t, queueMode, queueItems }: JamQueueHeaderProps) {
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <div className="jam-chip rounded-full px-2.5 py-1 text-[11px] text-text-muted">
+        <div className="jam-chip rounded-full px-2.5 py-1 text-xs text-text-muted">
           {t("jam.room.queueTrackCount", { count: queueItems.length })}
         </div>
       </div>
@@ -175,10 +175,10 @@ function JamAutoDjSuggestions({
                   <CrateImage
                     src={track.albumCover}
                     alt=""
-                    className="h-9 w-9 shrink-0 rounded-md object-cover"
+                    className=" size-9 shrink-0 rounded-md object-cover"
                   />
                 ) : (
-                  <div className="jam-artwork-placeholder flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
+                  <div className="jam-artwork-placeholder flex size-9 shrink-0 items-center justify-center rounded-md">
                     <ListMusic size={14} />
                   </div>
                 )}
@@ -186,7 +186,7 @@ function JamAutoDjSuggestions({
                   <div className="truncate text-xs font-medium text-text-primary">
                     {track.title}
                   </div>
-                  <div className="truncate text-[11px] text-text-muted">
+                  <div className="truncate text-xs text-text-muted">
                     {track.artist}
                   </div>
                 </div>
@@ -227,7 +227,7 @@ function JamQueueSearch(props: JamQueueSearchProps) {
               ? t("jam.room.queueSearchPlaceholder")
               : t("jam.room.queueSearchDisabledPlaceholder")
           }
-          className="h-8 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
+          className="h-8 min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
         />
         {queueSearchLoading ? (
           <Loader2 size={15} className="animate-spin text-accent-action" />
@@ -261,10 +261,10 @@ function JamQueueSearch(props: JamQueueSearchProps) {
                   <CrateImage
                     src={playable.albumCover}
                     alt=""
-                    className="h-10 w-10 rounded-lg object-cover"
+                    className=" size-10 rounded-lg object-cover"
                   />
                 ) : (
-                  <div className="jam-artwork-placeholder flex h-10 w-10 items-center justify-center rounded-lg">
+                  <div className="jam-artwork-placeholder flex size-10 items-center justify-center rounded-lg">
                     <ListMusic size={15} />
                   </div>
                 )}
@@ -277,7 +277,7 @@ function JamQueueSearch(props: JamQueueSearchProps) {
                     {playable.album ? ` · ${playable.album}` : ""}
                   </div>
                 </div>
-                <span className="jam-accent-text text-[11px] font-medium">
+                <span className="jam-accent-text text-xs font-medium">
                   {canAddToQueue
                     ? t("jam.room.addToQueue")
                     : t("jam.room.suggestTrack")}

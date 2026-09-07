@@ -13,7 +13,7 @@ export function InfoTabHeroArtwork({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="info-tab-artwork relative h-24 w-24 shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28">
+    <div className="info-tab-artwork relative size-24 shrink-0 overflow-hidden rounded-xl sm:size-28">
       {currentTrack.albumCover ? (
         <CrateImage
           src={currentTrack.albumCover}
@@ -23,10 +23,10 @@ export function InfoTabHeroArtwork({
           width={112}
           height={112}
           loading="lazy"
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-text-muted">
+        <div className="flex size-full items-center justify-center text-text-muted">
           <Music4 size={28} />
         </div>
       )}

@@ -38,13 +38,13 @@ export function LibraryBandcampPurchases({
             key={`${item.id}-${item.item_url}`}
             className="flex items-center gap-3 rounded-xl border border-text-primary/8 bg-text-primary/[0.03] p-3"
           >
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
               {coverUrl ? (
                 <CrateImage
                   src={coverUrl}
                   alt=""
                   loading="lazy"
-                  className="h-full w-full object-cover"
+                  className=" size-full object-cover"
                 />
               ) : (
                 <BandcampLogo size={22} className="text-accent-action/70" />

@@ -25,19 +25,19 @@ export function UpcomingEventRowArtwork({
         />
       ) : null}
       <div className="upcoming-event-row-scrim absolute inset-0" />
-      <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-border-quiet bg-text-primary/5">
+      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border-quiet bg-text-primary/5">
         {coverUrl ? (
           <CrateImage
             src={coverUrl}
             alt=""
             loading="lazy"
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
             onError={(event) => {
               (event.target as HTMLImageElement).style.display = "none";
             }}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-accent-action">
+          <div className="flex size-full items-center justify-center text-accent-action">
             <Disc3 size={24} />
           </div>
         )}
@@ -57,7 +57,7 @@ export function UpcomingEventRowDetails({
 }) {
   return (
     <div className="min-w-0">
-      <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-accent-action/15 bg-accent-action/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-accent-action">
+      <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-accent-action/15 bg-accent-action/10 px-2.5 py-1 text-xs font-medium uppercase tracking-[0.16em] text-accent-action">
         <Disc3 size={11} />
         {badgeLabel}
       </div>
@@ -87,7 +87,7 @@ export function UpcomingEventRowActions({
   t: TFunction;
 }) {
   return (
-    <div className="flex flex-shrink-0 flex-wrap items-center gap-2 md:justify-end">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
       {dateLabel ? (
         <div className="inline-flex items-center gap-2 rounded-lg border border-border-quiet bg-text-primary/[0.06] px-3 py-2 text-sm font-semibold text-accent-action backdrop-blur">
           <Calendar size={14} />

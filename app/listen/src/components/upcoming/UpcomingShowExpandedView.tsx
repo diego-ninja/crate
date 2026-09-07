@@ -33,13 +33,13 @@ function ExpandedShowBackground({ backgroundUrl }: { backgroundUrl?: string }) {
         <CrateImage
           src={backgroundUrl}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover brightness-[0.4] saturate-[0.7]"
+          className="absolute inset-0 size-full object-cover brightness-[0.4] saturate-[0.7]"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-surface-canvas via-surface-canvas/60 to-transparent" />
+      <div className="absolute inset-0 bg-linear-to-t from-surface-canvas via-surface-canvas/60 to-transparent" />
     </div>
   );
 }
@@ -65,12 +65,12 @@ function ExpandedShowHeader({
   const support = (item.lineup || []).slice(1);
 
   return (
-    <div className="relative h-[130px] flex-shrink-0">
+    <div className="relative h-[130px] shrink-0">
       {showClose ? (
         <button
           onClick={onClose}
           aria-label={t("radar.show.closeDetails")}
-          className="absolute top-2.5 left-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-surface-canvas/40 text-text-primary/60 backdrop-blur-sm transition-colors hover:text-text-primary"
+          className="absolute top-2.5 left-2.5 z-10 flex size-7 items-center justify-center rounded-lg bg-surface-canvas/40 text-text-primary/60 backdrop-blur-sm transition-colors hover:text-text-primary"
         >
           <X size={14} />
         </button>
@@ -78,15 +78,15 @@ function ExpandedShowHeader({
 
       <div className="absolute top-2.5 right-3 z-10 text-right">
         {timeRemaining ? (
-          <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-action">
+          <div className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-accent-action">
             {timeRemaining}
           </div>
         ) : null}
-        <div className="text-[10px] font-bold tracking-wide text-accent-action/70">
+        <div className="text-xs font-bold tracking-wide text-accent-action/70">
           {dateLabel}
         </div>
         {timeLabel && (
-          <div className="text-[10px] text-text-primary/40">{timeLabel}</div>
+          <div className="text-xs text-text-primary/40">{timeLabel}</div>
         )}
       </div>
 
@@ -96,7 +96,7 @@ function ExpandedShowHeader({
             <CrateImage
               src={artistPhotoUrl}
               alt={item.artist}
-              className="h-9 w-9 flex-shrink-0 rounded-full object-cover ring-2 ring-primary/25"
+              className=" size-9 shrink-0 rounded-full object-cover ring-2 ring-primary/25"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}
@@ -113,7 +113,7 @@ function ExpandedShowHeader({
               {item.artist}
             </Link>
             {support.length > 0 && (
-              <div className="truncate text-[10px] text-text-primary/40">
+              <div className="truncate text-xs text-text-primary/40">
                 {t("radar.show.withSupportPrefix")}{" "}
                 {support.slice(0, 4).join(" · ")}
                 {support.length > 4 && " +" + (support.length - 4)}
@@ -161,7 +161,7 @@ function ExpandedShowActions({
         }}
         disabled={!item.id || savingAttendance}
         className={cn(
-          "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 text-[11px] font-semibold transition-colors",
+          "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 text-xs font-semibold transition-colors",
           attending
             ? "border-accent-action/30 bg-accent-action/10 text-accent-action"
             : "border-border-quiet text-text-muted hover:border-accent-action/20 hover:text-accent-action",
@@ -179,7 +179,7 @@ function ExpandedShowActions({
       <button
         onClick={() => void onPlaySetlist()}
         disabled={!item.probable_setlist?.length || playingSetlist}
-        className="flex items-center justify-center gap-1.5 rounded-lg border border-accent-action/20 py-2.5 text-[11px] font-semibold text-accent-action transition-colors hover:bg-accent-action/8 disabled:opacity-25"
+        className="flex items-center justify-center gap-1.5 rounded-lg border border-accent-action/20 py-2.5 text-xs font-semibold text-accent-action transition-colors hover:bg-accent-action/8 disabled:opacity-25"
       >
         {playingSetlist ? (
           <Loader2 size={13} className="animate-spin" />
@@ -193,7 +193,7 @@ function ExpandedShowActions({
           href={directionsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-border-quiet py-2.5 text-[11px] font-semibold text-text-muted transition-colors hover:border-accent-action/20 hover:text-accent-action"
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-border-quiet py-2.5 text-xs font-semibold text-text-muted transition-colors hover:border-accent-action/20 hover:text-accent-action"
         >
           <MapPin size={13} />
           {t("radar.show.directions")}
@@ -206,12 +206,12 @@ function ExpandedShowActions({
         onClick={(e) => {
           if (!item.url) e.preventDefault();
         }}
-        className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-action/10 py-2.5 text-[11px] font-semibold text-accent-action transition-colors hover:bg-accent-action/18"
+        className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-action/10 py-2.5 text-xs font-semibold text-accent-action transition-colors hover:bg-accent-action/18"
       >
         <ExternalLink size={13} />
         {t("radar.show.getTickets")}
         {item.status === "onsale" && (
-          <span className="h-[5px] w-[5px] rounded-full bg-state-success" />
+          <span className="size-[5px] rounded-full bg-state-success" />
         )}
       </a>
     </div>
@@ -230,11 +230,8 @@ function ExpandedShowDetails(props: ExpandedShowActionProps) {
 
   return (
     <div className="relative flex-1 px-3 pt-2.5 pb-3">
-      <div className="flex items-start gap-2 text-[11px] text-text-muted">
-        <MapPin
-          size={11}
-          className="mt-0.5 flex-shrink-0 text-accent-action/60"
-        />
+      <div className="flex items-start gap-2 text-xs text-text-muted">
+        <MapPin size={11} className="mt-0.5 shrink-0 text-accent-action/60" />
         <div className="min-w-0">
           <span className="font-medium text-text-primary/70">{item.venue}</span>
           {addressLabel && (

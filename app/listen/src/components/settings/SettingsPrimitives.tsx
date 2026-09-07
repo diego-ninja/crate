@@ -99,14 +99,14 @@ export function ToggleRow({
         aria-label={label}
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-colors ${
+        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
           checked
             ? "border-accent-action/50 bg-accent-action/25"
             : "border-border-quiet/10 bg-text-primary/[0.03]"
         }`}
       >
         <span
-          className={`inline-block h-5 w-5 rounded-full bg-text-primary shadow-sm transition-transform ${
+          className={`inline-block size-5 rounded-full bg-text-primary shadow-sm transition-transform ${
             checked ? "translate-x-6" : "translate-x-1"
           }`}
         />

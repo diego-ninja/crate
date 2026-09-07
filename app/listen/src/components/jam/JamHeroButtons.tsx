@@ -24,7 +24,7 @@ export function HeroActionButton({
       aria-label={label}
       title={label}
       disabled={disabled || loading}
-      className={`jam-hero-action h-11 w-11 text-text-muted disabled:opacity-35 ${className}`}
+      className={`jam-hero-action size-11 text-text-muted disabled:opacity-35 ${className}`}
       {...props}
     >
       {loading ? <Loader2 size={16} className="animate-spin" /> : children}

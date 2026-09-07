@@ -67,7 +67,7 @@ function ExtendedPlayerCoverArt({
             <CrateImage
               src={crossfadeTransition.outgoing.albumCover}
               alt=""
-              className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-player-artwork-layered"
+              className="absolute inset-0 size-full rounded-xl object-cover shadow-player-artwork-layered"
               style={{ ...imageStyle, opacity: 1 - state.crossfadeProgress }}
             />
           ) : null}
@@ -75,7 +75,7 @@ function ExtendedPlayerCoverArt({
             <CrateImage
               src={crossfadeTransition.incoming.albumCover}
               alt=""
-              className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-player-artwork-layered"
+              className="absolute inset-0 size-full rounded-xl object-cover shadow-player-artwork-layered"
               style={{ ...imageStyle, opacity: state.crossfadeProgress }}
             />
           ) : null}
@@ -84,7 +84,7 @@ function ExtendedPlayerCoverArt({
         <CrateImage
           src={currentTrack.albumCover}
           alt=""
-          className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-player-artwork-layered"
+          className="absolute inset-0 size-full rounded-xl object-cover shadow-player-artwork-layered"
           style={imageStyle}
         />
       ) : (
@@ -119,7 +119,7 @@ function ExtendedPlayerVisualizerCanvas({
     >
       <canvas
         ref={refs.canvasRef}
-        className="h-full w-full"
+        className=" size-full"
         data-viz-reference-size={
           state.canvasRect ? String(state.canvasRect.referenceSize) : undefined
         }

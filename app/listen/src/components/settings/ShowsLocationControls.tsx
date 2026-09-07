@@ -100,14 +100,14 @@ function LocationModeOption({
         <div className="text-xs text-text-muted">{description}</div>
       </div>
       <div
-        className={`h-4 w-4 rounded-full border-2 ${
+        className={` size-4 rounded-full border-2 ${
           active
             ? "border-accent-action bg-accent-action"
             : "border-border-quiet/20"
         }`}
       >
         {active ? (
-          <div className="h-full w-full scale-[0.4] rounded-full bg-text-primary" />
+          <div className=" size-full scale-[0.4] rounded-full bg-text-primary" />
         ) : null}
       </div>
     </button>
@@ -151,7 +151,7 @@ export function FixedCityPicker({
           type="button"
           onClick={() => detectFromIp()}
           disabled={detecting}
-          className="flex items-center gap-1 text-[11px] text-accent-action hover:underline disabled:opacity-50"
+          className="flex items-center gap-1 text-xs text-accent-action hover:underline disabled:opacity-50"
         >
           {detecting ? (
             <Loader2 size={10} className="animate-spin" />
@@ -173,7 +173,7 @@ export function FixedCityPicker({
           onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
           onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder={t("settings.shows.cityPlaceholder")}
-          className="h-10 w-full rounded-lg border border-border-quiet/10 bg-text-primary/5 px-3 text-sm text-text-primary outline-none placeholder:text-text-primary/40 focus:border-accent-action/40"
+          className="h-10 w-full rounded-lg border border-border-quiet/10 bg-text-primary/5 px-3 text-base text-text-primary outline-none placeholder:text-text-primary/40 focus:border-accent-action/40"
         />
         {searching ? (
           <Loader2
@@ -182,7 +182,7 @@ export function FixedCityPicker({
           />
         ) : null}
         {showDropdown && searchResults.length > 0 ? (
-          <div className="absolute inset-x-0 top-full z-app-dropdown mt-1 overflow-hidden rounded-xl border border-border-quiet/10 bg-surface-overlay shadow-xl">
+          <div className="absolute inset-x-0 top-full z-app-dropdown mt-1 overflow-hidden rounded-xl border border-border-quiet/10 bg-surface-overlay">
             {searchResults.map((result) => (
               <button
                 key={`${result.latitude}-${result.longitude}`}
@@ -190,10 +190,7 @@ export function FixedCityPicker({
                 onMouseDown={() => selectCity(result)}
                 className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-text-primary transition-colors hover:bg-text-primary/5"
               >
-                <MapPin
-                  size={12}
-                  className="flex-shrink-0 text-accent-action/60"
-                />
+                <MapPin size={12} className="shrink-0 text-accent-action/60" />
                 <span>{result.display_name}</span>
               </button>
             ))}
@@ -219,7 +216,7 @@ export function RadiusPicker({
         <div className="text-sm font-medium text-text-primary">
           {t("settings.shows.searchRadius")}
         </div>
-        <div className="rounded-full border border-border-quiet/10 bg-text-primary/[0.03] px-2.5 py-1 text-xs text-text-primary/70">
+        <div className="rounded-full border border-border-quiet/10 bg-text-primary/[0.03] px-3 py-2 text-xs text-text-primary/70">
           {radius} km
         </div>
       </div>

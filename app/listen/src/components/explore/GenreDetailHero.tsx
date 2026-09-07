@@ -22,7 +22,7 @@ import type { UpcomingItem } from "@/components/upcoming/UpcomingRows";
 import type { GenreDetail } from "./explore-model";
 
 const GENRE_SECONDARY_ACTION_CLASS =
-  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
+  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-xs font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
 export interface GenreHeroProps {
   artistCount: number;
@@ -53,13 +53,13 @@ export function GenreHero({
           alt={t("genre.coverAlt", { name: data.name })}
           decoding="async"
           fetchPriority="high"
-          className="absolute inset-0 h-full w-full scale-[1.02] object-cover brightness-[0.66] contrast-110 opacity-[0.68] saturate-125"
+          className="absolute inset-0 size-full scale-[1.02] object-cover brightness-[0.66] contrast-110 opacity-[0.68] saturate-125"
           onError={onCoverError}
         />
       ) : null}
       <div className="explore-genre-hero-scrim absolute inset-0" />
       <div className="explore-genre-hero-gradient absolute inset-0" />
-      <div className="relative mx-auto flex h-full w-full max-w-[1480px] flex-col px-4 pb-6 pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pt-6">
+      <div className="relative mx-auto flex size-full max-w-[1480px] flex-col px-4 pb-6 pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pt-6">
         <div className="mt-auto max-w-3xl pb-1">
           <h1 className="text-4xl font-black leading-none tracking-tight text-text-primary sm:text-6xl">
             {data.name}
@@ -67,7 +67,7 @@ export function GenreHero({
           <p className="mt-4 max-w-2xl text-sm leading-6 text-text-primary/68 sm:text-base sm:leading-7">
             {description}
           </p>
-          <div className="mt-5 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-text-primary/56">
+          <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-text-primary/56">
             <span>{t("common.artistCountLabel", { count: artistCount })}</span>
             <span className="text-text-primary/20">/</span>
             <span>{t("common.albumCountLabel", { count: albumCount })}</span>
@@ -138,7 +138,7 @@ export function GenreActionBar({
               ref={genreMenu.triggerRef}
               type="button"
               data-testid="genre-mobile-hero-menu"
-              className="flex h-11 w-11 touch-manipulation items-center justify-center text-text-primary/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover"
+              className="flex size-11 touch-manipulation items-center justify-center text-text-primary/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover"
               onClick={genreMenu.openFromTrigger}
               onContextMenu={genreMenu.handleContextMenu}
               aria-label={t("common.more")}
@@ -178,7 +178,7 @@ export function GenreActionBar({
               onClick={onPlayGenreRadio}
               disabled={startingRadio}
               aria-label={t("genre.actions.playRadio")}
-              className="explore-genre-primary-action flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-accent-action-glow transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-accent-action/90 hover:shadow-accent-action-strong disabled:cursor-wait disabled:opacity-70 md:px-7 md:text-[15px]"
+              className="explore-genre-primary-action flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-accent-action-glow transition-[background-color,box-shadow] hover:bg-accent-action/90 hover:shadow-accent-action-strong disabled:cursor-wait disabled:opacity-70 md:px-7 md:text-[0.9375rem]"
             >
               {startingRadio ? (
                 <Loader2 size={17} className="animate-spin" />

@@ -21,7 +21,7 @@ export function TrackCoverThumb({
       alt={alt}
       className={`${className ?? ""} overflow-hidden bg-text-primary/5`.trim()}
       fallback={
-        <div className="flex h-full w-full items-center justify-center">
+        <div className="flex size-full items-center justify-center">
           <ListMusic size={iconSize} className="text-text-primary/25" />
         </div>
       }

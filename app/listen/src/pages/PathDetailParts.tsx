@@ -22,7 +22,7 @@ export function PathRouteVisualization({
 
   return (
     <div className="mb-6 rounded-xl border border-text-primary/8 bg-surface-canvas/20 p-4">
-      <div className="mb-2 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em]">
+      <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.14em]">
         <span className="flex items-center gap-1 text-accent-action/60">
           <MapPin size={9} /> {path.origin.label}
         </span>
@@ -51,7 +51,7 @@ export function PathRouteVisualization({
                   key={track.step}
                   onClick={() => onPlayFromStep(index)}
                   title={`${track.title} — ${track.artist}`}
-                  className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
+                  className="group relative flex size-4 shrink-0 items-center justify-center"
                 >
                   <div
                     className={`rounded-full transition-all duration-300 ${
@@ -75,13 +75,13 @@ export function PathRouteVisualization({
             }}
           >
             <div className="absolute -inset-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-action/20 blur-md" />
-            <div className="path-traveler-node h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-action" />
+            <div className="path-traveler-node size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-action" />
           </div>
         </div>
       </div>
 
       {activeTrack ? (
-        <div className="rounded-xl border border-accent-action/20 bg-accent-action/5 p-3">
+        <div className="border-y border-accent-action/20 bg-accent-action/5 p-3">
           <div className="flex items-center gap-3">
             {activeTrack.album_id ? (
               <CrateImage
@@ -94,19 +94,19 @@ export function PathRouteVisualization({
                   { size: 80 },
                 )}
                 alt=""
-                className="h-10 w-10 flex-shrink-0 rounded-lg bg-text-primary/5 object-cover shadow-md"
+                className=" size-10 shrink-0 rounded-lg bg-text-primary/5 object-cover shadow-md"
               />
             ) : null}
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-text-primary">
                 {activeTrack.title}
               </div>
-              <div className="truncate text-[11px] text-text-primary/50">
+              <div className="truncate text-xs text-text-primary/50">
                 {activeTrack.artist}
                 {activeTrack.album ? <> · {activeTrack.album}</> : null}
               </div>
             </div>
-            <span className="font-mono text-[10px] tabular-nums text-accent-action/70">
+            <span className="font-mono text-xs tabular-nums text-accent-action/70">
               {activeStep + 1}/{nodeCount}
             </span>
           </div>
@@ -150,11 +150,11 @@ export function PathTrackList({
                 : "border-transparent hover:bg-text-primary/[0.03]"
             }`}
           >
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center">
+            <div className="flex size-7 shrink-0 items-center justify-center">
               {isActive ? (
-                <div className="path-node-active h-2.5 w-2.5 rounded-full bg-accent-action" />
+                <div className="path-node-active size-2.5 rounded-full bg-accent-action" />
               ) : (
-                <span className="font-mono text-[10px] tabular-nums text-text-primary/20">
+                <span className="font-mono text-xs tabular-nums text-text-primary/20">
                   {index + 1}
                 </span>
               )}
@@ -171,10 +171,10 @@ export function PathTrackList({
                   { size: 80 },
                 )}
                 alt=""
-                className="h-10 w-10 flex-shrink-0 rounded-md bg-text-primary/5 object-cover"
+                className=" size-10 shrink-0 rounded-md bg-text-primary/5 object-cover"
               />
             ) : (
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-text-primary/5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-text-primary/5">
                 <MapPin size={14} className="text-text-primary/15" />
               </div>
             )}
@@ -189,13 +189,13 @@ export function PathTrackList({
               >
                 {track.title}
               </div>
-              <div className="truncate text-[11px] text-text-primary/40">
+              <div className="truncate text-xs text-text-primary/40">
                 {track.artist}
                 {track.album ? <> · {track.album}</> : null}
               </div>
             </div>
 
-            <span className="flex-shrink-0 rounded-full border border-text-primary/6 bg-text-primary/[0.02] px-2 py-0.5 font-mono text-[9px] tabular-nums text-text-primary/25">
+            <span className="shrink-0 rounded-full border border-text-primary/6 bg-text-primary/[0.02] px-2 py-0.5 font-mono text-xs tabular-nums text-text-primary/25">
               {track.distance.toFixed(3)}
             </span>
           </div>

@@ -87,7 +87,7 @@ export function PathDetail() {
   }
 
   return (
-    <div className="animate-page-in px-4 py-6 sm:px-6">
+    <div className="animate-page-in px-4  sm:p-6">
       <button
         onClick={() => navigate("/paths")}
         className="mb-5 flex items-center gap-1.5 text-sm text-text-primary/40 transition hover:text-text-primary"
@@ -98,7 +98,7 @@ export function PathDetail() {
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">{path.name}</h1>
-          <div className="mt-1.5 flex items-center gap-2 text-[12px] text-text-primary/40">
+          <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-text-primary/40">
             <span className="font-medium text-accent-action/70">
               {path.origin.label}
             </span>
@@ -114,7 +114,7 @@ export function PathDetail() {
         </div>
         <button
           onClick={() => playFromStep(0)}
-          className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-accent-action-strong transition hover:bg-accent-action/90"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-accent-action-strong transition hover:bg-accent-action/90"
         >
           <Play size={18} className="ml-0.5 fill-current" />
         </button>
@@ -131,7 +131,7 @@ export function PathDetail() {
         <button
           onClick={() => void regenerate()}
           disabled={regenerating}
-          className="flex items-center gap-1.5 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-[11px] font-medium text-text-primary/60 transition hover:border-text-primary/20 hover:text-text-primary disabled:opacity-30"
+          className="flex items-center gap-1.5 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-xs font-medium text-text-primary/60 transition hover:border-text-primary/20 hover:text-text-primary disabled:opacity-30"
         >
           {regenerating ? (
             <Loader2 size={11} className="animate-spin" />
@@ -146,7 +146,7 @@ export function PathDetail() {
             toast.success(t("paths.toasts.deleted"));
             navigate("/paths");
           }}
-          className="flex items-center gap-1.5 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-[11px] font-medium text-text-primary/60 transition hover:border-state-danger/30 hover:text-state-danger-text"
+          className="flex items-center gap-1.5 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-xs font-medium text-text-primary/60 transition hover:border-state-danger/30 hover:text-state-danger-text"
         >
           <Trash2 size={11} /> {t("common.delete")}
         </button>

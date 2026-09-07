@@ -22,7 +22,7 @@ export function SearchEmptyState({
   return (
     <div className="mx-auto max-w-2xl rounded-[12px] border border-border-quiet bg-text-primary/[0.035] p-6 shadow-card sm:p-8">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-accent-action/15 bg-accent-action/8 text-text-accent">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-full border border-accent-action/15 bg-accent-action/8 text-text-accent">
           <Search size={18} />
         </div>
         <div>
@@ -43,7 +43,7 @@ export function SearchEmptyState({
           onChange={(event) => onChange(event.target.value)}
           placeholder={t("search.placeholder")}
           aria-label={t("search.placeholder")}
-          className="h-11 min-w-0 flex-1 rounded-md border border-text-primary/12 bg-surface-canvas/20 px-3 text-sm text-text-primary outline-none placeholder:text-text-muted focus-visible:border-accent-action/50"
+          className="h-11 min-w-0 flex-1 rounded-md border border-text-primary/12 bg-surface-canvas/20 px-3 text-base text-text-primary outline-none placeholder:text-text-muted focus-visible:border-accent-action/50"
         />
         <button
           type="submit"

@@ -41,7 +41,7 @@ export function AccountProfileForm({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+          className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
           placeholder={t("auth.register.namePlaceholder")}
         />
       </div>
@@ -54,7 +54,7 @@ export function AccountProfileForm({
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "-"))}
-          className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+          className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
           placeholder={t("settings.account.usernamePlaceholder")}
         />
         <p className="text-xs text-text-muted">
@@ -69,7 +69,7 @@ export function AccountProfileForm({
           id="settings-bio"
           value={bio}
           onChange={(e) => setBio(e.target.value)}
-          className="min-h-24 w-full rounded-lg bg-text-primary/5 px-3 py-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+          className="min-h-24 w-full rounded-lg bg-text-primary/5 p-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
           placeholder={t("settings.account.bioPlaceholder")}
         />
       </div>
@@ -132,7 +132,7 @@ export function ConnectedAccounts({
         return (
           <div
             key={provider}
-            className="flex items-center justify-between gap-4 rounded-lg border border-border-quiet/10 px-3 py-3"
+            className="flex items-center justify-between gap-4 rounded-lg border border-border-quiet/10 p-3 "
           >
             <div>
               <div className="text-sm font-medium capitalize text-text-primary">
@@ -208,7 +208,7 @@ export function PasswordChangeForm({
         value={currentPassword}
         onChange={(e) => setCurrentPassword(e.target.value)}
         placeholder={t("settings.account.currentPassword")}
-        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
         autoComplete="current-password"
       />
       <input
@@ -216,7 +216,7 @@ export function PasswordChangeForm({
         value={newPassword}
         onChange={(e) => setNewPassword(e.target.value)}
         placeholder={t("settings.account.newPassword")}
-        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
         autoComplete="new-password"
       />
       <input
@@ -224,7 +224,7 @@ export function PasswordChangeForm({
         value={confirmPassword}
         onChange={(e) => setConfirmPassword(e.target.value)}
         placeholder={t("settings.account.confirmPassword")}
-        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-sm text-text-primary outline-none focus:bg-text-primary/8"
+        className="h-10 w-full rounded-lg bg-text-primary/5 px-3 text-base text-text-primary outline-none focus:bg-text-primary/8"
         autoComplete="new-password"
       />
       <div className="flex gap-2 pt-1">

@@ -40,7 +40,7 @@ export function MixArtwork({
         className,
       )}
     >
-      <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+      <div className="grid size-full grid-cols-2 grid-rows-2">
         {Array.from({ length: 4 }).map((_, index) => {
           const artist = artists[index];
           const photoUrl = artist ? tilePhoto(artist) : null;
@@ -53,7 +53,7 @@ export function MixArtwork({
                 <CrateImage
                   src={photoUrl}
                   alt={artist?.artist_name || ""}
-                  className="h-full w-full object-cover"
+                  className=" size-full object-cover"
                 />
               ) : null}
               <div className="mix-artwork-tile-scrim absolute inset-0" />
@@ -70,7 +70,7 @@ export function MixArtwork({
           src="/icons/logo.svg"
           alt=""
           aria-hidden="true"
-          className="h-4.5 w-4.5 opacity-95 drop-shadow-artwork-compact-mark"
+          className=" size-4.5 opacity-95 drop-shadow-artwork-compact-mark"
         />
       </div>
     </div>

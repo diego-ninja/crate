@@ -48,7 +48,7 @@ export function PlayerTrackIdentity({
       {sourceLabel ? (
         <p
           className={cn(
-            "mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle",
+            "mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle",
             sourceClassName,
           )}
         >
@@ -143,17 +143,17 @@ export function PlayerTrackIdentity({
             <CrateImage
               src={artistAvatarUrl}
               alt={currentTrack.artist}
-              className="h-7 w-7 rounded-full object-cover"
+              className=" size-7 rounded-full object-cover"
               onError={onArtistAvatarError}
             />
           ) : (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-control-hover text-[11px] font-semibold text-text-secondary">
+            <div className="flex size-7 items-center justify-center rounded-full bg-surface-control-hover text-xs font-semibold text-text-secondary">
               {currentTrack.artist.slice(0, 1).toUpperCase()}
             </div>
           )}
           <span
             className={cn(
-              "truncate text-[12px] font-medium text-text-primary",
+              "truncate text-[0.75rem] font-medium text-text-primary",
               badgeTextClassName,
               badgeMaxWidthClassName ?? "max-w-[240px]",
             )}

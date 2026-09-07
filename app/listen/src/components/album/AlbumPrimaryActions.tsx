@@ -23,7 +23,7 @@ export function AlbumPrimaryActions({
       className="grid grid-cols-2 gap-3 md:flex md:shrink-0 md:items-center md:gap-3"
     >
       <button
-        className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-action-solid transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-accent-action/90 hover:shadow-action-solid-hover disabled:cursor-not-allowed disabled:opacity-45 md:px-7 md:text-[15px]"
+        className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-action-solid transition-[background-color,box-shadow] hover:bg-accent-action/90 hover:shadow-action-solid-hover disabled:cursor-not-allowed disabled:opacity-45 md:px-7 md:text-[0.9375rem]"
         onClick={onPlay}
         disabled={!playerTracksAvailable}
         aria-label={t("player.play")}

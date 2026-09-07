@@ -23,13 +23,13 @@ export function SpinningDiscArtwork({
         <CrateImage
           src={crossfadeOutgoingCover}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 size-full object-cover"
           style={{ opacity: 1 - crossfadeProgress }}
         />
         <CrateImage
           src={crossfadeIncomingCover}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 size-full object-cover"
           style={{ opacity: crossfadeProgress }}
         />
       </>
@@ -41,7 +41,7 @@ export function SpinningDiscArtwork({
       <CrateImage
         src={albumCover}
         alt=""
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 size-full object-cover"
       />
     );
   }

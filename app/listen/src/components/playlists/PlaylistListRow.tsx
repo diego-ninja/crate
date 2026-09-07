@@ -152,7 +152,7 @@ export function PlaylistListRow({
         coverDataUrl={coverDataUrl}
         tracks={artworkTracks}
         showCrateMark={crateManaged}
-        className="h-12 w-12 flex-shrink-0 rounded-md"
+        className=" size-12 shrink-0 rounded-md"
       />
 
       <PlaylistListRowInfo

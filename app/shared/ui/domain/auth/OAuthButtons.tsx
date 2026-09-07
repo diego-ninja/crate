@@ -118,7 +118,7 @@ export function OAuthButtons({
             aria-label={labels?.google ?? "Continue with Google"}
             title={labels?.google ?? "Continue with Google"}
           >
-            <GoogleIcon className="h-5 w-5" />
+            <GoogleIcon className=" size-5" />
           </button>
         ) : null}
         {apple?.enabled ? (
@@ -137,7 +137,7 @@ export function OAuthButtons({
                 : labels?.appleUnavailable ?? "Apple Sign In — coming soon"
             }
           >
-            <AppleIcon className="h-5 w-5" />
+            <AppleIcon className=" size-5" />
           </button>
         ) : null}
       </div>

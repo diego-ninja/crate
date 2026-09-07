@@ -24,7 +24,7 @@ export function QueueTabUpcoming({
 
   return (
     <div>
-      <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+      <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-text-muted">
         {t("player.queue.nextUpFrom", {
           source: sourceName,
           count: tracks.length,

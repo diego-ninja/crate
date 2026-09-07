@@ -12,7 +12,7 @@ function ProfileMiniStat({ label, value }: { label: string; value: string }) {
       <div className="truncate text-lg font-black text-text-primary">
         {value}
       </div>
-      <div className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-[0.14em] text-text-muted">
+      <div className="mt-0.5 truncate text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
         {label}
       </div>
     </div>
@@ -31,7 +31,7 @@ export function ProfileTasteSummary({ data }: { data: PublicProfile }) {
   return (
     <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
       <div className="user-profile-accent-panel rounded-xl p-4">
-        <div className="user-profile-accent-label text-[10px] font-bold uppercase tracking-[0.18em]">
+        <div className="user-profile-accent-label text-xs font-bold uppercase tracking-[0.18em]">
           {t("userProfile.topSound")}
         </div>
         <div className="mt-2 truncate text-lg font-black text-text-primary">
@@ -71,7 +71,7 @@ function ProfileBadges({ badges }: { badges: PublicProfile["badges"] }) {
   const { t } = useTranslation();
   return (
     <div className="user-profile-card rounded-xl p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">
+      <div className="text-xs font-bold uppercase tracking-[0.18em] text-text-muted">
         {t("userProfile.badges.title")}
       </div>
       {badges.length ? (
@@ -80,7 +80,7 @@ function ProfileBadges({ badges }: { badges: PublicProfile["badges"] }) {
             <span
               key={badge.key}
               className={
-                "rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] " +
+                "rounded-full border px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em] " +
                 badgeTone(badge.tone)
               }
             >

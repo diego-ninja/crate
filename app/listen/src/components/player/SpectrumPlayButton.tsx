@@ -67,7 +67,7 @@ export const SpectrumPlayButton = forwardRef<
           active && "animate-crate-play-core-pulse",
         )}
       />
-      <span className="spectrum-play-button-icon relative z-30 flex h-full w-full items-center justify-center rounded-full text-text-primary">
+      <span className="spectrum-play-button-icon relative z-30 flex size-full items-center justify-center rounded-full text-text-primary">
         {children}
       </span>
     </button>

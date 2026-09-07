@@ -313,8 +313,7 @@ describe("ArtistHeroSection", () => {
       "hidden",
       "sm:block",
       "rounded-full",
-      "h-40",
-      "w-40",
+      "size-40",
     );
   });
 

@@ -47,7 +47,7 @@ function getArtworkInteractionProps({
       : hasAlbum
         ? "Open album"
         : undefined,
-    className: `listen-player-artwork relative h-10 w-10 shrink-0 overflow-hidden rounded-md md:h-12 md:w-12 ${
+    className: `listen-player-artwork relative size-10 shrink-0 overflow-hidden rounded-md md:size-12 ${
       isDesktop && hasAlbum ? "cursor-pointer" : ""
     }`,
   };
@@ -85,7 +85,7 @@ function PlayerBarArtworkImage({
           <CrateImage
             src={displayCrossfadeTransition.outgoing.albumCover}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 size-full object-cover"
             style={{ opacity: 1 - crossfadeProgress }}
           />
         ) : null}
@@ -93,7 +93,7 @@ function PlayerBarArtworkImage({
           <CrateImage
             src={displayCrossfadeTransition.incoming.albumCover}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 size-full object-cover"
             style={{ opacity: crossfadeProgress }}
           />
         ) : null}
@@ -106,12 +106,12 @@ function PlayerBarArtworkImage({
       <CrateImage
         src={displayTrack.albumCover}
         alt=""
-        className="h-full w-full object-cover"
+        className=" size-full object-cover"
       />
     );
   }
 
-  return <div className="listen-player-artwork-placeholder h-full w-full" />;
+  return <div className="listen-player-artwork-placeholder size-full" />;
 }
 
 function PlayerBarLikedIndicator({ liked }: { liked: boolean }) {
@@ -120,7 +120,7 @@ function PlayerBarLikedIndicator({ liked }: { liked: boolean }) {
   return (
     <span
       aria-label="Liked track"
-      className="listen-player-liked-indicator absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full backdrop-blur-md"
+      className="listen-player-liked-indicator absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full backdrop-blur-md"
     >
       <HeartBold size={10} className="animate-crate-icon-active-pulse" />
     </span>

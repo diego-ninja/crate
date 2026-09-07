@@ -44,15 +44,15 @@ export function UpcomingPreviewRow({
           src={artworkUrl}
           alt=""
           loading="lazy"
-          className="absolute inset-0 h-full w-full object-cover opacity-20 grayscale transition-opacity group-hover:opacity-30"
+          className="absolute inset-0 size-full object-cover opacity-20 grayscale transition-opacity group-hover:opacity-30"
           onError={(event) => {
             (event.target as HTMLImageElement).style.display = "none";
           }}
         />
       ) : null}
       <div className="home-upcoming-row-scrim absolute inset-0" />
-      <div className="relative flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-border-quiet bg-text-primary/[0.03]">
-        <span className="text-[10px] uppercase tracking-wide text-text-primary/40">
+      <div className="relative flex size-11 shrink-0 flex-col items-center justify-center rounded-xl border border-border-quiet bg-text-primary/[0.03]">
+        <span className="text-xs uppercase tracking-wide text-text-primary/40">
           {dateLabel.split(" ")[0]}
         </span>
         <span className="text-sm font-semibold text-text-primary">
@@ -65,7 +65,7 @@ export function UpcomingPreviewRow({
             {item.type === "show" ? item.artist : item.title}
           </span>
           {item.user_attending && item.type === "show" ? (
-            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-2 py-0.5 text-[10px] font-medium text-accent-action">
+            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-2 py-0.5 text-xs font-medium text-accent-action">
               {t("radar.show.going")}
             </span>
           ) : null}
@@ -76,7 +76,7 @@ export function UpcomingPreviewRow({
             : `${item.artist} · ${item.title}`}
         </div>
       </div>
-      <div className="relative shrink-0 rounded-full border border-accent-action/15 bg-accent-action/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-accent-action">
+      <div className="relative shrink-0 rounded-full border border-accent-action/15 bg-accent-action/10 px-2 py-1 text-xs font-medium uppercase tracking-[0.14em] text-accent-action">
         {item.type === "show"
           ? t("home.radar.itemType.show")
           : t("home.radar.itemType.release")}
@@ -142,7 +142,7 @@ export function FeaturedPlaylistCard({
       }}
       onContextMenu={actionMenu.handleContextMenu}
       {...actionMenu.longPressHandlers}
-      className="group w-[180px] flex-shrink-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl"
+      className="group w-[180px] shrink-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl"
     >
       <div className="relative">
         <EditorialPlaylistArtwork
@@ -160,7 +160,7 @@ export function FeaturedPlaylistCard({
         <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-text-muted">
           {description || meta}
         </div>
-        <div className="mt-2 text-[11px] uppercase tracking-wider text-text-primary/40">
+        <div className="mt-2 text-xs uppercase tracking-wider text-text-primary/40">
           {meta}
         </div>
       </div>
@@ -197,10 +197,10 @@ export function ContinueListeningCard({
         <TrackCoverThumb
           src={track.albumCover}
           iconSize={24}
-          className="h-16 w-16 shrink-0 rounded-xl sm:h-20 sm:w-20"
+          className="size-16 shrink-0 rounded-xl sm:size-20"
         />
         <div className="min-w-0 flex-1">
-          <div className="mb-2 inline-flex max-w-full items-center gap-2 truncate rounded-full border border-border-quiet bg-text-primary/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-text-muted">
+          <div className="mb-2 inline-flex max-w-full items-center gap-2 truncate rounded-full border border-border-quiet bg-text-primary/[0.04] px-3 py-2 text-xs uppercase tracking-wider text-text-muted">
             <Clock3 size={11} />
             Continue listening
           </div>
@@ -218,7 +218,7 @@ export function ContinueListeningCard({
         </div>
         <button
           onClick={onPlay}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-lg transition-transform group-hover:scale-105 sm:h-11 sm:w-11"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent-action text-accent-action-foreground shadow-lg transition-transform group-hover:scale-105 sm:size-11"
         >
           <Play size={18} fill="currentColor" className="ml-0.5" />
         </button>

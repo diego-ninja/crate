@@ -51,7 +51,7 @@ export function AlbumHeroContent({
   return (
     <div
       data-testid="album-hero-content"
-      className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-[calc(var(--album-mobile-action-overlap)+var(--album-mobile-info-action-gap))] pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pb-6 sm:pt-0"
+      className="relative mx-auto flex size-full max-w-[1480px] items-end px-4 pb-[calc(var(--album-mobile-action-overlap)+var(--album-mobile-info-action-gap))] pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pb-6 sm:pt-0"
     >
       <div className="flex w-full flex-col gap-6 sm:flex-row sm:items-end">
         <AlbumHeroCover

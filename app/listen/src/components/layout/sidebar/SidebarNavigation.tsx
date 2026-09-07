@@ -94,7 +94,9 @@ export function SidebarNavigation({
         <NavLink to="/" end title={t("nav.music")} className={navLinkClass}>
           <Music size={CRATE_ICON_SIZE.nav} />
           {expanded && (
-            <span className="text-[13px] font-medium">{t("nav.music")}</span>
+            <span className="text-[0.8125rem] font-medium">
+              {t("nav.music")}
+            </span>
           )}
         </NavLink>
         <NavLink
@@ -104,19 +106,25 @@ export function SidebarNavigation({
         >
           <Search size={CRATE_ICON_SIZE.nav} />
           {expanded && (
-            <span className="text-[13px] font-medium">{t("nav.explore")}</span>
+            <span className="text-[0.8125rem] font-medium">
+              {t("nav.explore")}
+            </span>
           )}
         </NavLink>
         <NavLink to="/upcoming" title={t("nav.radar")} className={navLinkClass}>
           <Radar size={CRATE_ICON_SIZE.nav} />
           {expanded && (
-            <span className="text-[13px] font-medium">{t("nav.radar")}</span>
+            <span className="text-[0.8125rem] font-medium">
+              {t("nav.radar")}
+            </span>
           )}
         </NavLink>
         <NavLink to="/stats" title={t("nav.stats")} className={navLinkClass}>
           <Activity size={CRATE_ICON_SIZE.nav} />
           {expanded && (
-            <span className="text-[13px] font-medium">{t("nav.stats")}</span>
+            <span className="text-[0.8125rem] font-medium">
+              {t("nav.stats")}
+            </span>
           )}
         </NavLink>
 
@@ -135,7 +143,7 @@ export function SidebarNavigation({
             <Collection size={CRATE_ICON_SIZE.nav} />
             {expanded && (
               <>
-                <span className="flex-1 text-left text-[13px] font-medium">
+                <span className="flex-1 text-left text-[0.8125rem] font-medium">
                   {t("nav.collection")}
                 </span>
                 <ChevronRight
@@ -168,7 +176,9 @@ export function SidebarNavigation({
                   }`}
                 >
                   <Icon size={17} />
-                  <span className="text-[12px] font-medium">{t(labelKey)}</span>
+                  <span className="text-[0.75rem] font-medium">
+                    {t(labelKey)}
+                  </span>
                 </button>
               ))}
             </div>

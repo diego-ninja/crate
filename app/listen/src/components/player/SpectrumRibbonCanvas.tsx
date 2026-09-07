@@ -130,7 +130,7 @@ export const SpectrumRibbonCanvas = memo(function SpectrumRibbonCanvas({
       ref={canvasRef}
       aria-hidden="true"
       data-testid="spectrum-ribbon-canvas"
-      className={cn("absolute inset-0 h-full w-full bg-transparent", className)}
+      className={cn("absolute inset-0 size-full bg-transparent", className)}
     />
   );
 });

@@ -66,7 +66,7 @@ export function TopTracksPanel({
                 <div className="text-sm font-black text-text-primary">
                   {item.play_count}
                 </div>
-                <div className="text-[11px] text-text-muted">
+                <div className="text-xs text-text-muted">
                   {formatStatsMinutes(item.minutes_listened)}
                 </div>
               </div>
@@ -141,7 +141,7 @@ function TopArtistCard({ item, index }: { item: StatsArtist; index: number }) {
         <CrateImage
           src={photo}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover grayscale opacity-55 transition duration-500 group-hover:scale-105 group-hover:opacity-70"
+          className="absolute inset-0 size-full object-cover grayscale opacity-55 transition duration-500 group-hover:scale-105 group-hover:opacity-70"
           loading="lazy"
         />
       ) : (
@@ -152,14 +152,14 @@ function TopArtistCard({ item, index }: { item: StatsArtist; index: number }) {
         {String(index + 1).padStart(2, "0")}
       </div>
       <div className="relative z-10 flex min-h-32 flex-col justify-between">
-        <div className="text-[10px] font-black uppercase tracking-[0.22em] text-accent-action">
+        <div className="text-xs font-black uppercase tracking-[0.22em] text-accent-action">
           {t("stats.rank", { rank: index + 1 })}
         </div>
         <div>
           <div className="stats-artist-title line-clamp-2 text-3xl font-black uppercase leading-[0.86] tracking-[-0.08em]">
             {item.artist_name}
           </div>
-          <div className="stats-artist-meta mt-3 flex flex-wrap gap-2 text-[11px] font-bold uppercase tracking-[0.12em]">
+          <div className="stats-artist-meta mt-3 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.12em]">
             <span>{t("common.playCount", { count: item.play_count })}</span>
             <span>{formatStatsMinutes(item.minutes_listened)}</span>
           </div>
@@ -226,15 +226,15 @@ export function TopAlbumsPanel({
                       { size: 384 },
                     )}
                     alt=""
-                    className="h-full w-full object-cover transition group-hover:scale-105"
+                    className=" size-full object-cover transition group-hover:scale-105"
                     loading="lazy"
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-accent-action">
+                  <div className="flex size-full items-center justify-center text-accent-action">
                     <Disc3 size={28} />
                   </div>
                 )}
-                <div className="stats-album-rank absolute left-2 top-2 rounded-full px-2 py-1 text-[10px] font-black">
+                <div className="stats-album-rank absolute left-2 top-2 rounded-full px-2 py-1 text-xs font-black">
                   #{index + 1}
                 </div>
               </div>
@@ -311,11 +311,11 @@ export function TrackCover({
         <CrateImage
           src={cover}
           alt=""
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
           loading="lazy"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-accent-action">
+        <div className="flex size-full items-center justify-center text-accent-action">
           <Music2 size={size === "sm" ? 16 : 18} />
         </div>
       )}

@@ -110,7 +110,7 @@ export function ArtistTopTracks() {
                 }),
               )
             }
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-border-quiet text-text-primary/70 transition-colors hover:bg-text-primary/5 hover:text-text-primary"
+            className="flex size-10 items-center justify-center rounded-full border border-border-quiet text-text-primary/70 transition-colors hover:bg-text-primary/5 hover:text-text-primary"
           >
             <ArrowLeft size={18} />
           </button>

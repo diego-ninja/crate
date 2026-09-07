@@ -132,7 +132,7 @@ export function Library() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`flex min-h-11 flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                className={`flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   tab === key
                     ? "bg-accent-action text-accent-action-foreground"
                     : "bg-text-primary/5 text-text-muted hover:bg-text-primary/10 hover:text-text-primary"

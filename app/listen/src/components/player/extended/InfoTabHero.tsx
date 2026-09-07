@@ -31,7 +31,7 @@ export function InfoTabHero({
 
   return (
     <section
-      className="info-tab-hero relative overflow-hidden rounded-[12px] px-4 py-4 sm:px-5"
+      className="info-tab-hero relative overflow-hidden rounded-[12px] p-4 sm:px-5"
       style={
         {
           "--info-tab-palette-primary": cssColor(palette.primary),
@@ -40,8 +40,8 @@ export function InfoTabHero({
         } as CSSProperties
       }
     >
-      <div className="info-tab-hero-secondary pointer-events-none absolute -top-16 -right-12 h-40 w-40 rounded-full blur-3xl" />
-      <div className="info-tab-hero-accent pointer-events-none absolute -bottom-12 left-0 h-32 w-32 rounded-full blur-3xl" />
+      <div className="info-tab-hero-secondary pointer-events-none absolute -top-16 -right-12 size-40 rounded-full blur-3xl" />
+      <div className="info-tab-hero-accent pointer-events-none absolute -bottom-12 left-0 size-32 rounded-full blur-3xl" />
 
       <div className="relative flex items-start gap-4">
         <InfoTabHeroArtwork currentTrack={currentTrack} albumName={albumName} />

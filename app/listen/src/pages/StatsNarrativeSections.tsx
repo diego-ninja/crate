@@ -61,7 +61,7 @@ export function ScopeLink({
     <Link
       to={to}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em] transition-colors",
+        "rounded-full border px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] transition-colors",
         active
           ? "border-accent-action/30 bg-accent-action/15 text-accent-action"
           : "stats-scope-link-inactive",
@@ -89,11 +89,11 @@ export function AffinityCard({
     <section className="stats-affinity-card mt-8 overflow-hidden rounded-[12px] p-5 sm:p-6">
       <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-accent-action/25 bg-accent-action/15 text-accent-action">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border border-accent-action/25 bg-accent-action/15 text-accent-action">
             <Users size={20} />
           </div>
           <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-accent-action">
+            <div className="text-xs font-black uppercase tracking-[0.22em] text-accent-action">
               {t("stats.affinity.title")}
             </div>
             <h2 className="mt-2 text-3xl font-black uppercase leading-none tracking-[-0.06em] text-text-primary">
@@ -146,7 +146,7 @@ function NarrativeTile({
         NARRATIVE_TONES[index % NARRATIVE_TONES.length],
       )}
     >
-      <div className="stats-muted-label text-[10px] font-black uppercase tracking-[0.22em]">
+      <div className="stats-muted-label text-xs font-black uppercase tracking-[0.22em]">
         {t("stats.narrative.signal", {
           number: String(index + 1).padStart(2, "0"),
         })}

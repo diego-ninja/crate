@@ -49,7 +49,7 @@ export function LibraryAlbumsTab() {
     <div className="space-y-4">
       {!isDesktop ? (
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-primary/40">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-text-primary/40">
             {t("library.sort.label")}
           </span>
           <CollectionSortDropdown

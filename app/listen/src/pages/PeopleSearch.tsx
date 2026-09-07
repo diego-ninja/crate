@@ -10,7 +10,7 @@ function UserAvatar({
   name,
   avatar,
   userId,
-  className = "h-11 w-11",
+  className = " size-11",
 }: {
   name: string;
   avatar?: string | null;
@@ -55,13 +55,13 @@ export function PeopleSearch({
 
   return (
     <section className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5 sm:p-6">
-      <div className="flex items-center gap-3 rounded-lg border border-border-quiet bg-surface-canvas/20 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-border-quiet px-1 py-3">
         <Search size={16} className="text-text-muted" />
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t("people.search.placeholder")}
-          className="h-7 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-primary/40"
+          className="h-7 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-primary/40"
         />
       </div>
 
@@ -74,13 +74,13 @@ export function PeopleSearch({
         ) : null}
 
         {!trimmedQuery ? (
-          <div className="rounded-lg border border-dashed border-border-quiet px-4 py-8 text-center text-sm text-text-muted">
+          <div className="border-y border-dashed border-border-quiet px-4 py-8 text-center text-sm text-text-muted">
             {t("people.search.emptyPrompt")}
           </div>
         ) : null}
 
         {trimmedQuery && !searching && results.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border-quiet px-4 py-8 text-center text-sm text-text-muted">
+          <div className="border-y border-dashed border-border-quiet px-4 py-8 text-center text-sm text-text-muted">
             {t("people.search.noMatches", { query: trimmedQuery })}
           </div>
         ) : null}

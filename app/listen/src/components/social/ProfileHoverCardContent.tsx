@@ -95,13 +95,13 @@ function ProfileAvatar({ card }: { card: ProfileCardPayload }) {
         src={avatarUrl}
         alt=""
         onError={handleAvatarError}
-        className="profile-hover-avatar h-16 w-16 rounded-xl object-cover"
+        className="profile-hover-avatar size-16 rounded-xl object-cover"
       />
     );
   }
 
   return (
-    <div className="profile-hover-avatar-placeholder flex h-16 w-16 items-center justify-center rounded-xl border text-2xl font-black">
+    <div className="profile-hover-avatar-placeholder flex size-16 items-center justify-center rounded-xl border text-2xl font-black">
       {label.trim().charAt(0).toUpperCase() || "U"}
     </div>
   );
@@ -147,13 +147,13 @@ export function ProfileCardBody({
               </div>
             </div>
             {card.relationship_state.is_friend ? (
-              <span className="profile-hover-friend rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em]">
+              <span className="profile-hover-friend rounded-full border px-2 py-0.5 text-xs font-bold uppercase tracking-[0.16em]">
                 {t("profileHover.friend")}
               </span>
             ) : null}
           </div>
 
-          <div className="profile-hover-main-badge mt-3 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em]">
+          <div className="profile-hover-main-badge mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-black uppercase tracking-[0.18em]">
             {mainBadge(card)}
           </div>
         </div>
@@ -167,14 +167,14 @@ export function ProfileCardBody({
           >
             {card.affinity_score}
           </div>
-          <div className="profile-hover-score-label text-[10px] font-bold uppercase tracking-[0.18em]">
+          <div className="profile-hover-score-label text-xs font-bold uppercase tracking-[0.18em]">
             Match
           </div>
         </div>
       </div>
 
-      <div className="profile-hover-top-panel relative mt-4 rounded-xl border p-3">
-        <div className="profile-hover-top-label text-[10px] font-bold uppercase tracking-[0.18em]">
+      <div className="profile-hover-top-panel relative mt-4 border-t border-border-quiet pt-3">
+        <div className="profile-hover-top-label text-xs font-bold uppercase tracking-[0.18em]">
           Top sound
         </div>
         <div className="profile-hover-top-genre mt-1 truncate text-sm font-bold">
@@ -200,7 +200,7 @@ export function ProfileCardBody({
             <span
               key={badge.key}
               className={cn(
-                "rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em]",
+                "rounded-full border px-2 py-1 text-xs font-bold uppercase tracking-[0.12em]",
                 badgeTone(badge.tone),
               )}
             >
@@ -250,11 +250,11 @@ export function ProfileCardBody({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="profile-hover-stat rounded-xl border px-2 py-2">
+    <div className="profile-hover-stat rounded-xl border p-2 ">
       <div className="profile-hover-stat-value truncate text-sm font-black">
         {value}
       </div>
-      <div className="profile-hover-stat-label mt-0.5 truncate text-[9px] font-bold uppercase tracking-[0.14em]">
+      <div className="profile-hover-stat-label mt-0.5 truncate text-xs font-bold uppercase tracking-[0.14em]">
         {label}
       </div>
     </div>

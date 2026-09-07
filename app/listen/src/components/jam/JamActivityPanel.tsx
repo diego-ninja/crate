@@ -50,7 +50,7 @@ export function JamActivityPanel({ t, room, user }: JamActivityPanelProps) {
                       <div className="truncate text-sm font-medium text-text-primary">
                         {eventActivityText(event, actor.name, t)}
                       </div>
-                      <div className="shrink-0 text-[11px] text-text-muted">
+                      <div className="shrink-0 text-xs text-text-muted">
                         {new Date(event.created_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -63,10 +63,10 @@ export function JamActivityPanel({ t, room, user }: JamActivityPanelProps) {
                           <CrateImage
                             src={track.albumCover}
                             alt=""
-                            className="h-9 w-9 rounded-lg object-cover"
+                            className=" size-9 rounded-lg object-cover"
                           />
                         ) : (
-                          <div className="jam-artwork-placeholder flex h-9 w-9 items-center justify-center rounded-lg">
+                          <div className="jam-artwork-placeholder flex size-9 items-center justify-center rounded-lg">
                             <ListMusic size={14} />
                           </div>
                         )}
@@ -74,7 +74,7 @@ export function JamActivityPanel({ t, room, user }: JamActivityPanelProps) {
                           <div className="truncate text-xs font-medium text-text-primary">
                             {track.title}
                           </div>
-                          <div className="truncate text-[11px] text-text-muted">
+                          <div className="truncate text-xs text-text-muted">
                             {track.artist}
                           </div>
                         </div>

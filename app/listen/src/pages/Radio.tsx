@@ -11,7 +11,7 @@ export function RadioPage() {
   const radio = useRadioController();
 
   return (
-    <div className="radio-page animate-page-in space-y-7 px-4 py-6 sm:px-6">
+    <div className="radio-page animate-page-in space-y-7 px-4  sm:p-6">
       <RadioHero
         starting={radio.starting}
         discoveryAvailable={radio.discoveryAvailable}

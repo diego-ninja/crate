@@ -39,7 +39,7 @@ function ExtendedPlayerTrackDetails({
       />
       {state.vizCfg.trackVizProfile.hasAnalysis &&
       state.vizCfg.trackVizProfile.summary ? (
-        <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-text-muted">
+        <p className="mt-2 text-xs font-medium uppercase tracking-[0.22em] text-text-muted">
           {state.vizCfg.trackVizProfile.summary}
         </p>
       ) : null}

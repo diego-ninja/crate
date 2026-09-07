@@ -73,5 +73,5 @@ export const WaveformCanvas = memo(function WaveformCanvas({
     };
   }, [isPlaying, sampleRate]);
 
-  return <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />;
+  return <canvas ref={canvasRef} className="absolute inset-0 size-full" />;
 });

@@ -73,7 +73,7 @@ function PlaybackTargetGroupView({
 }) {
   return (
     <div className="pb-2 last:pb-0">
-      <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle">
+      <div className="px-2 py-1 text-xs font-medium uppercase tracking-[0.14em] text-text-subtle">
         {group.label}
       </div>
       {group.targets.map((target) => (
@@ -145,7 +145,7 @@ function PlaybackTargetRow({
       </span>
       <span
         className={cn(
-          "mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+          "mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium",
           target.active
             ? "border-border-interactive bg-surface-control text-accent-action"
             : target.available

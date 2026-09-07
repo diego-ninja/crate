@@ -36,7 +36,7 @@ export function HomeReplaySection({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
         <div className="home-replay-card overflow-hidden rounded-[12px] p-5">
-          <div className="home-replay-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em]">
+          <div className="home-replay-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.18em]">
             <Sparkles size={12} />
             Crate DNA
           </div>
@@ -48,7 +48,7 @@ export function HomeReplaySection({
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <div className="home-replay-metric-card rounded-lg px-3 py-2">
-              <div className="home-replay-metric-label text-[10px] uppercase tracking-[0.16em]">
+              <div className="home-replay-metric-label text-xs uppercase tracking-[0.16em]">
                 Tracks
               </div>
               <div className="mt-1 text-sm font-semibold text-text-primary">
@@ -56,7 +56,7 @@ export function HomeReplaySection({
               </div>
             </div>
             <div className="home-replay-metric-card rounded-lg px-3 py-2">
-              <div className="home-replay-metric-label text-[10px] uppercase tracking-[0.16em]">
+              <div className="home-replay-metric-label text-xs uppercase tracking-[0.16em]">
                 Time listened
               </div>
               <div className="mt-1 text-sm font-semibold text-text-primary">
@@ -74,7 +74,7 @@ export function HomeReplaySection({
         </div>
 
         <div className="home-replay-panel overflow-hidden rounded-[12px] p-4">
-          <div className="home-replay-panel-kicker mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider">
+          <div className="home-replay-panel-kicker mb-3 flex items-center gap-2 text-xs uppercase tracking-wider">
             <Clock3 size={12} />
             Month replay
           </div>

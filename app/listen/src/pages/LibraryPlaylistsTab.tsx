@@ -178,7 +178,7 @@ export function LibraryPlaylistsTab() {
 
       {followedCurated && followedCurated.length > 0 ? (
         <div className="space-y-1">
-          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-text-primary/40">
+          <div className="px-1 pb-1 text-xs font-bold uppercase tracking-wider text-text-primary/40">
             {t("explore.fromCrate.title")}
           </div>
           {followedCurated.map((playlist) => (
@@ -217,7 +217,7 @@ export function LibraryPlaylistsTab() {
         ) : null
       ) : (
         <div className="space-y-1">
-          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-text-primary/40">
+          <div className="px-1 pb-1 text-xs font-bold uppercase tracking-wider text-text-primary/40">
             {t("library.playlists.yours")}
           </div>
           {playlists.map((pl) => (
@@ -291,7 +291,7 @@ export function LibraryPlaylistsTab() {
             disabled={deleting}
           />
         </ModalHeader>
-        <ModalBody className="px-5 py-5">
+        <ModalBody className="p-5 ">
           <p className="text-sm text-text-muted">
             {t("playlist.delete.confirmPrefix")}{" "}
             <span className="font-medium text-text-primary">

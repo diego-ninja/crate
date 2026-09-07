@@ -15,7 +15,7 @@ export function PlayerSurfaceFallback({
           bottom: "calc(var(--listen-mobile-bottom-chrome-height) + 0.75rem)",
         }}
       >
-        <div className="listen-player-surface-fallback flex items-center gap-2 rounded-full px-3 py-2 text-[11px] backdrop-blur-xl">
+        <div className="listen-player-surface-fallback flex items-center gap-2 rounded-full px-3 py-2 text-xs backdrop-blur-xl">
           <Loader2
             size={CRATE_ICON_SIZE.sm}
             className="animate-spin text-accent-action"

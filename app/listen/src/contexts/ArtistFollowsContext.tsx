@@ -20,6 +20,33 @@ interface FollowedArtist {
   created_at: string;
 }
 
+type ArtistFollowMutation = "followed" | "unfollowed";
+
+function artistReferenceKeys(
+  artistId?: number | null,
+  globalArtistUid?: string | null,
+): string[] {
+  return [
+    ...(globalArtistUid ? [`global:${globalArtistUid}`] : []),
+    ...(artistId != null ? [`local:${artistId}`] : []),
+  ];
+}
+
+function followedArtistReferenceKeys(artist: FollowedArtist): string[] {
+  return artistReferenceKeys(artist.artist_id, artist.global_artist_uid);
+}
+
+function matchesFollowedArtist(
+  artist: FollowedArtist,
+  artistId?: number | null,
+  globalArtistUid?: string | null,
+): boolean {
+  const requestedKeys = new Set(artistReferenceKeys(artistId, globalArtistUid));
+  return followedArtistReferenceKeys(artist).some((key) =>
+    requestedKeys.has(key),
+  );
+}
+
 interface ArtistFollowsContextValue {
   followedArtists: FollowedArtist[];
   loading: boolean;
@@ -51,6 +78,9 @@ const ArtistFollowsContext = createContext<ArtistFollowsContextValue | null>(
 export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
   const [followedArtists, setFollowedArtists] = useState<FollowedArtist[]>([]);
   const [loading, setLoading] = useState(true);
+  const [optimisticMutations, setOptimisticMutations] = useState<
+    Record<string, ArtistFollowMutation>
+  >({});
   const requestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
@@ -68,7 +98,25 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
           signal: controller.signal,
         },
       );
-      setFollowedArtists(Array.isArray(artists) ? artists : []);
+      if (requestRef.current !== controller) return;
+      const nextArtists = Array.isArray(artists) ? artists : [];
+      const serverKeys = new Set(
+        nextArtists.flatMap((artist) => followedArtistReferenceKeys(artist)),
+      );
+      setFollowedArtists(nextArtists);
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const [key, mutation] of Object.entries(current)) {
+          const present = serverKeys.has(key);
+          if (
+            (mutation === "followed" && present) ||
+            (mutation === "unfollowed" && !present)
+          ) {
+            delete next[key];
+          }
+        }
+        return next;
+      });
     } catch (error) {
       if (controller.signal.aborted || (error as Error).name === "AbortError") {
         return;
@@ -119,11 +167,16 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
 
   const isFollowing = useCallback(
     (artistId?: number | null, globalArtistUid?: string | null) => {
+      const keys = artistReferenceKeys(artistId, globalArtistUid);
+      const preferredKey = keys[0];
+      const mutation = preferredKey ? optimisticMutations[preferredKey] : null;
+      if (mutation === "followed") return true;
+      if (mutation === "unfollowed") return false;
       if (globalArtistUid) return followedGlobalUids.has(globalArtistUid);
       if (artistId == null) return false;
       return followedIds.has(artistId);
     },
-    [followedGlobalUids, followedIds],
+    [followedGlobalUids, followedIds, optimisticMutations],
   );
 
   const followArtist = useCallback(
@@ -133,6 +186,7 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
       artistName?: string | null,
     ) => {
       if (artistId == null && !globalArtistUid) return false;
+      const keys = artistReferenceKeys(artistId, globalArtistUid);
       // Optimistic: stamp the follow locally before the request resolves. If the
       // request fails we roll back. Avoids the global loading flash from refetch().
       const placeholder: FollowedArtist = {
@@ -141,12 +195,15 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
         artist_name: artistName || "",
         created_at: new Date().toISOString(),
       };
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const key of keys) next[key] = "followed";
+        return next;
+      });
       setFollowedArtists((prev) => {
         if (
           prev.some((artist) =>
-            globalArtistUid
-              ? artist.global_artist_uid === globalArtistUid
-              : artist.artist_id === artistId,
+            matchesFollowedArtist(artist, artistId, globalArtistUid),
           )
         )
           return prev;
@@ -163,11 +220,17 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
         }
         return true;
       } catch (error) {
+        setOptimisticMutations((current) => {
+          const next = { ...current };
+          for (const key of keys) {
+            if (next[key] === "followed") delete next[key];
+          }
+          return next;
+        });
         setFollowedArtists((prev) =>
-          prev.filter((artist) =>
-            globalArtistUid
-              ? artist.global_artist_uid !== globalArtistUid
-              : artist.artist_id !== artistId,
+          prev.filter(
+            (artist) =>
+              !matchesFollowedArtist(artist, artistId, globalArtistUid),
           ),
         );
         throw error;
@@ -179,12 +242,16 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
   const unfollowArtist = useCallback(
     async (artistId?: number | null, globalArtistUid?: string | null) => {
       if (artistId == null && !globalArtistUid) return false;
+      const keys = artistReferenceKeys(artistId, globalArtistUid);
       const previous = followedArtists;
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const key of keys) next[key] = "unfollowed";
+        return next;
+      });
       setFollowedArtists((prev) =>
-        prev.filter((artist) =>
-          globalArtistUid
-            ? artist.global_artist_uid !== globalArtistUid
-            : artist.artist_id !== artistId,
+        prev.filter(
+          (artist) => !matchesFollowedArtist(artist, artistId, globalArtistUid),
         ),
       );
       try {
@@ -198,6 +265,13 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
         }
         return true;
       } catch (error) {
+        setOptimisticMutations((current) => {
+          const next = { ...current };
+          for (const key of keys) {
+            if (next[key] === "unfollowed") delete next[key];
+          }
+          return next;
+        });
         setFollowedArtists(previous);
         throw error;
       }
@@ -212,16 +286,12 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
       artistName?: string | null,
     ) => {
       if (artistId == null && !globalArtistUid) return false;
-      if (
-        globalArtistUid
-          ? followedGlobalUids.has(globalArtistUid)
-          : artistId != null && followedIds.has(artistId)
-      ) {
+      if (isFollowing(artistId, globalArtistUid)) {
         return unfollowArtist(artistId, globalArtistUid);
       }
       return followArtist(artistId, globalArtistUid, artistName);
     },
-    [followArtist, followedGlobalUids, followedIds, unfollowArtist],
+    [followArtist, isFollowing, unfollowArtist],
   );
 
   const value = useMemo<ArtistFollowsContextValue>(

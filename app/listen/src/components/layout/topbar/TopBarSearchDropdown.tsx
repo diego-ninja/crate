@@ -31,7 +31,7 @@ export function SearchResultThumb({ item }: { item: TopBarSearchItem }) {
     return (
       <User
         size={CRATE_ICON_SIZE.md}
-        className="h-8 w-8 shrink-0 rounded-full bg-text-primary/5 p-1.5 text-text-primary/30"
+        className=" size-8 shrink-0 rounded-full bg-text-primary/5 p-1.5 text-text-primary/30"
       />
     );
   }
@@ -39,14 +39,14 @@ export function SearchResultThumb({ item }: { item: TopBarSearchItem }) {
     return (
       <Disc
         size={CRATE_ICON_SIZE.md}
-        className="h-8 w-8 shrink-0 rounded bg-text-primary/5 p-1.5 text-text-primary/30"
+        className=" size-8 shrink-0 rounded bg-text-primary/5 p-1.5 text-text-primary/30"
       />
     );
   }
   return (
     <Music
       size={CRATE_ICON_SIZE.md}
-      className="h-8 w-8 shrink-0 rounded bg-text-primary/5 p-1.5 text-text-primary/30"
+      className=" size-8 shrink-0 rounded bg-text-primary/5 p-1.5 text-text-primary/30"
     />
   );
 }
@@ -114,16 +114,16 @@ export function TopBarSearchDropdown({
             >
               <SearchResultThumb item={item} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] text-text-primary/80">
+                <p className="truncate text-[0.8125rem] text-text-primary/80">
                   {item.label}
                 </p>
                 {item.sublabel ? (
-                  <p className="truncate text-[11px] text-text-primary/40">
+                  <p className="truncate text-xs text-text-primary/40">
                     {item.sublabel}
                   </p>
                 ) : null}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 text-[10px]">
+              <div className="flex shrink-0 items-center gap-1.5 text-xs">
                 {item.origin === "remote" ? (
                   <span className="rounded-full border border-accent-action/15 bg-accent-action/8 px-1.5 py-0.5 text-accent-action/80">
                     {item.nodeName || t("search.remoteSource")}
@@ -161,7 +161,7 @@ export function TopBarSearchDropdown({
       ) : null}
       {showRecents ? (
         <>
-          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-text-primary/40">
+          <p className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-text-primary/40">
             {t("search.recent")}
           </p>
           {recents.map((recent, index) => (
@@ -183,7 +183,7 @@ export function TopBarSearchDropdown({
                 size={CRATE_ICON_SIZE.xs}
                 className="shrink-0 text-text-primary/20"
               />
-              <span className="truncate text-[13px] text-text-primary/60">
+              <span className="truncate text-[0.8125rem] text-text-primary/60">
                 {recent.label}
               </span>
             </button>

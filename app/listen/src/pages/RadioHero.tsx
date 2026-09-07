@@ -17,7 +17,7 @@ export function RadioHero({
       <div className="radio-page-hero-glow pointer-events-none absolute inset-0" />
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="radio-page-icon flex h-14 w-14 shrink-0 items-center justify-center rounded-xl">
+          <div className="radio-page-icon flex size-14 shrink-0 items-center justify-center rounded-xl">
             <RadioIcon size={24} />
           </div>
           <div className="min-w-0">

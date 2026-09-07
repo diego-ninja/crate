@@ -40,7 +40,7 @@ export function TranslationOverlay() {
         {hoveredMarker ? (
           <div className="absolute right-4 bottom-4 rounded-md border border-accent-action/25 bg-surface-canvas/55 px-3 py-2 text-xs text-text-accent shadow-translation-marker backdrop-blur-xl">
             <div className="font-semibold">Translation Mode</div>
-            <code className="mt-1 block font-mono text-[11px] text-text-accent/85">
+            <code className="mt-1 block font-mono text-xs text-text-accent/85">
               {hoveredMarker.key}
             </code>
           </div>
@@ -60,7 +60,7 @@ export function TranslationOverlay() {
           <div className="flex items-start justify-between gap-3 border-b border-border-quiet px-4 py-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold">Edit translation</div>
-              <code className="mt-1 block truncate font-mono text-[11px] text-text-accent/85">
+              <code className="mt-1 block truncate font-mono text-xs text-text-accent/85">
                 {selectedTarget.key}
               </code>
             </div>
@@ -74,20 +74,20 @@ export function TranslationOverlay() {
             </button>
           </div>
 
-          <div className="space-y-3 px-4 py-4">
+          <div className="space-y-3 p-4 ">
             <Field label="Locale" value={selectedTarget.locale} />
             <Field label="English source" value={selectedTarget.sourceValue} />
             <Field label="Quality status" value="Not checked locally" />
 
             <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-text-primary/35">
+              <span className="mb-1 block text-xs font-bold uppercase tracking-[0.12em] text-text-primary/35">
                 Current value
               </span>
               <textarea
                 aria-label="Current value"
                 value={draftValue}
                 onChange={(event) => setDraftValue(event.target.value)}
-                className="min-h-24 w-full resize-y rounded-md border border-border-quiet bg-surface-canvas/24 px-3 py-2 text-sm text-text-primary outline-none transition-colors placeholder:text-text-primary/28 focus:border-accent-action/45"
+                className="min-h-24 w-full resize-y rounded-md border border-border-quiet bg-surface-canvas/24 px-3 py-2 text-base text-text-primary outline-none transition-colors placeholder:text-text-primary/28 focus:border-accent-action/45"
               />
             </label>
 
@@ -126,7 +126,7 @@ export function TranslationOverlay() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-text-primary/35">
+      <div className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-text-primary/35">
         {label}
       </div>
       <div className="rounded-md border border-text-primary/8 bg-text-primary/[0.04] px-3 py-2 text-sm text-text-primary/80">

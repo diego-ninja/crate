@@ -42,10 +42,10 @@ function ArtistAlbumArtwork({
           alt={album.display_name || album.name}
           loading="lazy"
           decoding="async"
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center">
+        <div className="flex size-full items-center justify-center">
           <Disc3 size={32} className="text-text-primary/25" />
         </div>
       )}

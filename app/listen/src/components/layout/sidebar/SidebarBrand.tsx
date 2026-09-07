@@ -41,7 +41,7 @@ export function SidebarBrand({
             <img
               src="/icons/logo.svg"
               alt="Crate"
-              className="relative z-10 h-8 w-8 shrink-0 transition-[filter] duration-300"
+              className="relative z-10 size-8 shrink-0 transition-[filter] duration-300"
               style={{
                 filter: discoveryRadioActive
                   ? `drop-shadow(0 0 ${
@@ -80,7 +80,7 @@ export function SidebarBrand({
       ) : (
         <button
           onClick={onExpand}
-          className="relative flex h-10 w-10 items-center justify-center transition-[filter,transform] hover:-translate-y-px hover:drop-shadow-accent-action"
+          className="relative flex size-10 items-center justify-center transition-[filter,transform] hover:-translate-y-px hover:drop-shadow-accent-action"
           aria-label={expandLabel}
         >
           <span
@@ -96,7 +96,7 @@ export function SidebarBrand({
           <img
             src="/icons/logo.svg"
             alt="Crate"
-            className="relative z-10 h-6 w-6 transition-[filter] duration-300"
+            className="relative z-10 size-6 transition-[filter] duration-300"
             style={{
               filter: discoveryRadioActive
                 ? `drop-shadow(0 0 ${

@@ -20,13 +20,13 @@ export function OverviewCard({
     <div className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-text-primary/40">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-text-primary/40">
             {label}
           </p>
           <p className="mt-3 text-2xl font-bold text-text-primary">{value}</p>
           {hint ? <p className="mt-2 text-sm text-text-muted">{hint}</p> : null}
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-accent-action/15 bg-accent-action/10 text-accent-action">
+        <div className="flex size-10 items-center justify-center rounded-xl border border-accent-action/15 bg-accent-action/10 text-accent-action">
           <Icon size={18} />
         </div>
       </div>
@@ -66,7 +66,7 @@ export function WindowPicker({
   const { t } = useTranslation();
 
   return (
-    <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-border-quiet bg-surface-canvas/25 p-1 shadow-2xl shadow-black/20 backdrop-blur">
+    <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-border-quiet bg-surface-canvas/25 p-1 backdrop-blur">
       {STATS_WINDOW_OPTIONS.map((option) => (
         <button
           key={option.value}

@@ -56,7 +56,7 @@ export function PlaylistCollaboratorsModal({
         </div>
         <ModalCloseButton onClick={onClose} />
       </ModalHeader>
-      <ModalBody className="space-y-5 px-5 py-5">
+      <ModalBody className="space-y-5 p-5 ">
         {data.is_collaborative && isOwner ? (
           <div className="rounded-xl border border-accent-action/15 bg-accent-action/5 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -92,7 +92,7 @@ export function PlaylistCollaboratorsModal({
                   />
                 </div>
                 <div className="space-y-3">
-                  <div className="break-all rounded-lg border border-border-quiet bg-surface-canvas/20 px-4 py-3 text-xs text-text-muted">
+                  <div className="break-all border-l-2 border-border-quiet px-4 py-3 text-xs text-text-muted">
                     {inviteLink}
                   </div>
                   <button
@@ -143,7 +143,7 @@ export function PlaylistCollaboratorsModal({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="rounded-full border border-border-quiet px-2.5 py-1 text-[11px] text-text-muted">
+                  <div className="rounded-full border border-border-quiet px-2.5 py-1 text-xs text-text-muted">
                     {member.role === "owner"
                       ? t("playlist.collaborators.owner")
                       : t("playlist.collaborators.collab")}
@@ -153,7 +153,7 @@ export function PlaylistCollaboratorsModal({
                       type="button"
                       onClick={() => onRemoveMember(member.user_id)}
                       disabled={removingMemberId === member.user_id}
-                      className="inline-flex items-center gap-1 rounded-full border border-state-danger/20 px-2.5 py-1 text-[11px] text-state-danger-text transition-colors hover:bg-state-danger/10 disabled:opacity-60"
+                      className="inline-flex items-center gap-1 rounded-full border border-state-danger/20 px-2.5 py-1 text-xs text-state-danger-text transition-colors hover:bg-state-danger/10 disabled:opacity-60"
                     >
                       {removingMemberId === member.user_id ? (
                         <Loader2 size={12} className="animate-spin" />

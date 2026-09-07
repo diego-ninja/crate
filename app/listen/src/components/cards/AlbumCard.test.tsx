@@ -102,6 +102,16 @@ describe("AlbumCard", () => {
     expect(image.closest("article")).toHaveClass("listen-deferred-grid-item");
   });
 
+  it("keeps the save heart circular at desktop sizes", () => {
+    renderWithListenProviders(
+      <AlbumCard artist="Hum" album="Inlet" albumId={42} layout="grid" />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Add to collection" }),
+    ).toHaveClass("size-10", "rounded-full", "right-4", "top-4");
+  });
+
   it("opens the desktop action menu when the album only has stable route identifiers", async () => {
     renderWithListenProviders(
       <AlbumCard

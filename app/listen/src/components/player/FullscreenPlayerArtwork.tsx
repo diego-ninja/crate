@@ -52,7 +52,7 @@ export function FullscreenPlayerArtwork({
                 <CrateImage
                   src={crossfadeTransition.outgoing.albumCover}
                   alt=""
-                  className="fullscreen-player-artwork absolute inset-0 h-full w-full object-cover"
+                  className="fullscreen-player-artwork absolute inset-0 size-full object-cover"
                   style={{ opacity: 1 - crossfadeProgress }}
                 />
               ) : null}
@@ -60,7 +60,7 @@ export function FullscreenPlayerArtwork({
                 <CrateImage
                   src={crossfadeTransition.incoming.albumCover}
                   alt=""
-                  className="fullscreen-player-artwork absolute inset-0 h-full w-full object-cover"
+                  className="fullscreen-player-artwork absolute inset-0 size-full object-cover"
                   style={{ opacity: crossfadeProgress }}
                 />
               ) : null}
@@ -69,10 +69,10 @@ export function FullscreenPlayerArtwork({
             <CrateImage
               src={currentTrack.albumCover}
               alt=""
-              className="fullscreen-player-artwork h-full w-full object-cover"
+              className="fullscreen-player-artwork size-full object-cover"
             />
           ) : (
-            <div className="fullscreen-player-artwork-placeholder flex h-full w-full items-center justify-center">
+            <div className="fullscreen-player-artwork-placeholder flex size-full items-center justify-center">
               <ListMusic size={64} className="fullscreen-player-artwork-icon" />
             </div>
           )}

@@ -32,13 +32,13 @@ function CollapsedShowArtwork({
   artistImageUrl?: string;
 }) {
   return (
-    <div className="h-full w-[88px] flex-shrink-0 bg-text-primary/5">
+    <div className="h-full w-[88px] shrink-0 bg-text-primary/5">
       {artistImageUrl && (
         <CrateImage
           src={artistImageUrl}
           alt={item.artist}
           loading="lazy"
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
@@ -61,28 +61,28 @@ function CollapsedShowDetails({
   return (
     <div className="min-w-0 flex-1 px-3 py-2.5">
       <div className="flex items-center gap-1.5">
-        <span className="truncate text-[13px] font-semibold text-text-primary">
+        <span className="truncate text-[0.8125rem] font-semibold text-text-primary">
           {item.artist}
         </span>
         {attending && (
           <span
-            className="h-[6px] w-[6px] flex-shrink-0 rounded-full bg-accent-action"
+            className="size-[6px] shrink-0 rounded-full bg-accent-action"
             title={t("radar.show.attending")}
           />
         )}
       </div>
-      <div className="mt-1 flex items-center gap-1 text-[11px] text-text-primary/40">
-        <MapPin size={10} className="flex-shrink-0 text-accent-action/60" />
+      <div className="mt-1 flex items-center gap-1 text-xs text-text-primary/40">
+        <MapPin size={10} className="shrink-0 text-accent-action/60" />
         <span className="truncate">{item.venue}</span>
         {item.city && (
           <>
             <span className="text-text-primary/15">&middot;</span>
-            <span className="flex-shrink-0">{item.city}</span>
+            <span className="shrink-0">{item.city}</span>
           </>
         )}
       </div>
       {support.length > 0 && (
-        <div className="mt-0.5 truncate text-[10px] text-text-primary/40">
+        <div className="mt-0.5 truncate text-xs text-text-primary/40">
           {t("radar.show.withSupportPrefix")} {support.slice(0, 3).join(", ")}
           {support.length > 3 && ` +${support.length - 3}`}
         </div>
@@ -108,14 +108,14 @@ function CollapsedShowDate({
     : "";
 
   return (
-    <div className="flex flex-shrink-0 flex-col items-center justify-center px-2">
-      <span className="text-[8px] font-bold leading-none tracking-[0.12em] text-accent-action/55">
+    <div className="flex shrink-0 flex-col items-center justify-center px-2">
+      <span className="text-xs font-bold leading-none tracking-[0.12em] text-accent-action/55">
         {month}
       </span>
-      <span className="text-[20px] font-black leading-tight text-accent-action">
+      <span className="text-[1.25rem] font-black leading-tight text-accent-action">
         {day}
       </span>
-      <span className="text-[8px] font-medium leading-none text-text-primary/40">
+      <span className="text-xs font-medium leading-none text-text-primary/40">
         {weekday}
       </span>
     </div>
@@ -132,7 +132,7 @@ function CollapsedShowActions({
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-shrink-0 flex-col items-center gap-1 pr-2">
+    <div className="flex shrink-0 flex-col items-center gap-1 pr-2">
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -144,7 +144,7 @@ function CollapsedShowActions({
             ? t("radar.show.attending")
             : t("actions.show.markAttending")
         }
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-text-primary/30 transition-colors hover:bg-text-primary/8 hover:text-text-primary/60 disabled:opacity-30"
+        className="flex size-8 items-center justify-center rounded-lg text-text-primary/30 transition-colors hover:bg-text-primary/8 hover:text-text-primary/60 disabled:opacity-30"
       >
         {savingAttendance ? (
           <Loader2 size={15} className="animate-spin" />
@@ -158,7 +158,7 @@ function CollapsedShowActions({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.onOpen}
-        className="h-7 w-7 opacity-40 transition-opacity hover:opacity-80"
+        className=" size-7 opacity-40 transition-opacity hover:opacity-80"
       />
     </div>
   );

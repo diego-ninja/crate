@@ -102,7 +102,7 @@ export function useSeekBarModel(
     trackRef,
     sliderStyle,
     glowTrackClass: thin ? "h-[3px]" : "h-1",
-    glowWidthStyle: { "--progress-width": `${progress}%` },
+    glowWidthStyle: { "--progress-scale": `${progress / 100}` },
     glowLeftStyle: { "--progress-left": `calc(${progress}% - 4px)` },
     beginScrubbing,
     endScrubbing,

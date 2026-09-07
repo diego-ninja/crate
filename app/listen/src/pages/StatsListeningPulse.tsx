@@ -82,7 +82,7 @@ export function ListeningPulseCard({
           <PulseConstellation points={points} />
 
           <div className="stats-dark-card mt-4 rounded-xl p-4">
-            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-accent-action">
+            <div className="text-xs font-black uppercase tracking-[0.22em] text-accent-action">
               {t("stats.rhythm.cadence")}
             </div>
             <p className="mt-2 text-sm leading-6 text-text-muted">
@@ -128,14 +128,14 @@ function PulseConstellation({ points }: { points: StatsTrendPoint[] }) {
     <div className="stats-pulse-surface mt-5 rounded-[12px] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-accent-action">
+          <div className="text-xs font-black uppercase tracking-[0.22em] text-accent-action">
             {t("stats.rhythm.dailySignalMap")}
           </div>
           <p className="mt-1 text-xs text-text-muted">
             {t("stats.rhythm.dailySignalDescription")}
           </p>
         </div>
-        <div className="stats-muted-pill rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em]">
+        <div className="stats-muted-pill rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.14em]">
           {t("stats.rhythm.dayCount", { count: visible.length })}
         </div>
       </div>
@@ -143,7 +143,7 @@ function PulseConstellation({ points }: { points: StatsTrendPoint[] }) {
       <div className="stats-pulse-plot relative h-36 rounded-xl">
         <div className="stats-pulse-grid pointer-events-none absolute inset-3 rounded-xl opacity-50" />
         <svg
-          className="pointer-events-none absolute inset-0 h-full w-full"
+          className="pointer-events-none absolute inset-0 size-full"
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           aria-hidden="true"
@@ -229,11 +229,11 @@ function PulseConstellation({ points }: { points: StatsTrendPoint[] }) {
                     <div className="stats-pulse-tooltip-title text-sm font-black">
                       {formatTrendDay(point.day, i18n.language)}
                     </div>
-                    <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-accent-action">
+                    <div className="mt-0.5 text-xs font-black uppercase tracking-[0.18em] text-accent-action">
                       {formatShortWeekday(point.day, i18n.language)}
                     </div>
                   </div>
-                  <div className="rounded-full border border-accent-action/20 bg-accent-action/10 px-2.5 py-1 text-[10px] font-black text-accent-action">
+                  <div className="rounded-full border border-accent-action/20 bg-accent-action/10 px-2.5 py-1 text-xs font-black text-accent-action">
                     {formatStatsMinutes(point.minutes_listened)}
                   </div>
                 </div>
@@ -281,7 +281,7 @@ function PulseConstellation({ points }: { points: StatsTrendPoint[] }) {
 function TooltipMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="stats-tooltip-metric rounded-xl px-2.5 py-2">
-      <div className="stats-tooltip-label text-[9px] font-black uppercase tracking-[0.16em]">
+      <div className="stats-tooltip-label text-xs font-black uppercase tracking-[0.16em]">
         {label}
       </div>
       <div className="stats-tooltip-value mt-1 text-sm font-black">{value}</div>
@@ -293,7 +293,7 @@ function TooltipMeter({ label, value }: { label: string; value: number }) {
   const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
   return (
     <div>
-      <div className="stats-tooltip-meter-label mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em]">
+      <div className="stats-tooltip-meter-label mb-1 flex items-center justify-between text-xs font-bold uppercase tracking-[0.12em]">
         <span>{label}</span>
         <span>{percent}%</span>
       </div>

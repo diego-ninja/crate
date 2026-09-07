@@ -28,7 +28,7 @@ export function OpsPageHero({
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-accent-action/20 bg-accent-action/12 text-accent-action shadow-accent-action-status">
+            <div className="flex size-12 items-center justify-center rounded-md border border-accent-action/20 bg-accent-action/12 text-accent-action shadow-accent-action-status">
               <Icon size={22} />
             </div>
             <div>

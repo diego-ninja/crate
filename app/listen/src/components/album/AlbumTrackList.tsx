@@ -129,7 +129,7 @@ export function AlbumTrackList({
       {isDesktop && selectedAlbumTracks.length > 0 ? (
         <div
           ref={selectionBarRef}
-          className="listen-glass-panel mb-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-3"
+          className="listen-glass-panel mb-3 flex flex-wrap items-center gap-2 rounded-lg p-3 "
         >
           <div className="mr-auto min-w-0 px-1">
             <p className="text-sm font-semibold text-text-primary">
@@ -179,7 +179,7 @@ export function AlbumTrackList({
             {t("playlist.actions.create")}
           </button>
           <button
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-text-primary/12 bg-text-primary/6 text-text-muted transition-colors hover:bg-text-primary/10 hover:text-text-primary"
+            className="inline-flex size-9 items-center justify-center rounded-full border border-text-primary/12 bg-text-primary/6 text-text-muted transition-colors hover:bg-text-primary/10 hover:text-text-primary"
             onClick={onClearSelection}
             aria-label={t("album.selection.clear")}
           >

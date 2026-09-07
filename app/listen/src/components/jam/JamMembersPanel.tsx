@@ -31,7 +31,7 @@ export function JamMembersPanel({
             <div className="jam-warning-text text-sm font-medium">
               {t("jam.room.pendingRequests")}
             </div>
-            <div className="jam-request-count rounded-full px-2 py-0.5 text-[11px]">
+            <div className="jam-request-count rounded-full px-2 py-0.5 text-xs">
               {pendingRequests.length}
             </div>
           </div>
@@ -45,7 +45,7 @@ export function JamMembersPanel({
                   <div className="truncate text-xs font-medium text-text-primary">
                     {request.track.title}
                   </div>
-                  <div className="truncate text-[11px] text-text-muted">
+                  <div className="truncate text-xs text-text-muted">
                     {request.track.artist}
                     {request.requester_name
                       ? ` · ${request.requester_name}`
@@ -57,20 +57,20 @@ export function JamMembersPanel({
                     <button
                       type="button"
                       onClick={() => handleResolveRequest(request.id, true)}
-                      className="jam-request-action rounded-md px-2 py-1 text-[11px] font-medium"
+                      className="jam-request-action rounded-md px-2 py-1 text-xs font-medium"
                     >
                       {t("jam.room.approveRequest")}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleResolveRequest(request.id, false)}
-                      className="jam-secondary-action rounded-md px-2 py-1 text-[11px] text-text-muted transition-colors"
+                      className="jam-secondary-action rounded-md px-2 py-1 text-xs text-text-muted transition-colors"
                     >
                       {t("jam.room.rejectRequest")}
                     </button>
                   </>
                 ) : (
-                  <span className="jam-warning-text text-[11px]">
+                  <span className="jam-warning-text text-xs">
                     {t("jam.room.waitingForHost")}
                   </span>
                 )}
@@ -107,7 +107,7 @@ export function JamMembersPanel({
                 </div>
               </div>
             </div>
-            <div className="jam-chip rounded-full px-2.5 py-1 text-[11px] text-text-muted">
+            <div className="jam-chip rounded-full px-2.5 py-1 text-xs text-text-muted">
               {member.user_id === room.host_user_id
                 ? t("jam.room.roles.host")
                 : t("jam.room.roles.collab")}

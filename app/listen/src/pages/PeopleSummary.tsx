@@ -75,7 +75,7 @@ export function PeopleSummary({
             {data?.following_count ?? "—"}
           </div>
         </Link>
-        <div className="rounded-xl border border-border-quiet bg-text-primary/[0.03] p-4">
+        <div className="border-t border-border-quiet p-4">
           <div className="text-xs uppercase tracking-wide text-text-muted">
             {t("people.friends")}
           </div>

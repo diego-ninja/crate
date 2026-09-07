@@ -85,7 +85,7 @@ export function PlayerBarDesktopActionButtons({
           >
             <ListMusic size={CRATE_ICON_SIZE.md} />
             {displayQueue.length > 1 && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-accent-action text-[8px] font-bold text-accent-action-foreground">
+              <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-accent-action text-xs font-bold text-accent-action-foreground">
                 {displayQueue.length - displayCurrentIndex - 1}
               </span>
             )}

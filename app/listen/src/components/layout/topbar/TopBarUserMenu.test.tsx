@@ -174,7 +174,7 @@ describe("TopBarUserMenu", () => {
       screen.getByPlaceholderText("High Vis, Denzel Curry, ..."),
     ).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("Bandcamp, Tidal, Spotify, YouTube..."),
+      screen.getByPlaceholderText("Bandcamp, Tidal, Spotify, YouTube…"),
     ).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("¿Por qué debería estar en Crate?"),

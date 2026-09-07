@@ -84,10 +84,10 @@ export function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
         <div className="flex flex-col items-center pb-4">
-          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16 mb-2" />
+          <img src="/icons/logo.svg" alt="Crate" className=" size-16 mb-2" />
           <h1 className="text-2xl font-bold text-text-primary">
             {t("auth.register.title")}
           </h1>
@@ -127,7 +127,7 @@ export function Register() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-text-primary/5 border border-border-quiet text-text-primary text-sm focus:outline-none focus:border-accent-action/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder={t("auth.register.namePlaceholder")}
           />
         </div>
@@ -144,7 +144,7 @@ export function Register() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-text-primary/5 border border-border-quiet text-text-primary text-sm focus:outline-none focus:border-accent-action/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder="you@example.com"
           />
         </div>
@@ -162,7 +162,7 @@ export function Register() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full h-10 px-3 rounded-lg bg-text-primary/5 border border-border-quiet text-text-primary text-sm focus:outline-none focus:border-accent-action/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder={t("auth.register.passwordPlaceholder")}
           />
         </div>

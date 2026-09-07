@@ -74,7 +74,7 @@ export function QueueTabRow({
           : "hover:bg-surface-control focus-visible:bg-surface-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring/40"
       } ${faded && !locked ? "opacity-50" : ""}`}
     >
-      <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-text-faint">
+      <span className="w-4 shrink-0 text-right text-xs tabular-nums text-text-faint">
         {indexLabel}
       </span>
       {track.albumCover ? (
@@ -82,35 +82,35 @@ export function QueueTabRow({
           src={track.albumCover}
           alt=""
           loading="lazy"
-          className={`h-8 w-8 shrink-0 rounded object-cover ${
+          className={` size-8 shrink-0 rounded object-cover ${
             locked ? "grayscale" : ""
           }`}
         />
       ) : (
-        <div className="h-8 w-8 shrink-0 rounded bg-surface-control-hover" />
+        <div className=" size-8 shrink-0 rounded bg-surface-control-hover" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p
-            className={`min-w-0 flex-1 truncate text-[12px] ${
+            className={`min-w-0 flex-1 truncate text-[0.75rem] ${
               faded || locked ? "text-text-secondary" : "text-text-primary"
             }`}
           >
             {track.title}
           </p>
           {track.isSuggested ? (
-            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-accent-action">
+            <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-action">
               {t("player.queue.suggested")}
             </span>
           ) : null}
         </div>
-        <p className="truncate text-[10px] text-text-muted">{track.artist}</p>
+        <p className="truncate text-xs text-text-muted">{track.artist}</p>
       </div>
       <ItemActionMenuButton
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-9 w-9 shrink-0 opacity-80 transition-opacity hover:opacity-100"
+        className=" size-9 shrink-0 opacity-80 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}

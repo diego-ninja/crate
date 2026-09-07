@@ -45,7 +45,7 @@ interface BandcampActionState {
 }
 
 const SECONDARY_ACTION_CLASS =
-  "inline-flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
+  "inline-flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-xs font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
 function linkUrlForType(
   entityType: "artist" | "album",

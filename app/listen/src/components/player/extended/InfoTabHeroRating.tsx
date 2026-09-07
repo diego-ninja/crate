@@ -15,7 +15,7 @@ export function InfoTabHeroRating({
   return mobile ? (
     <div className="info-tab-rating-card relative mt-3 rounded-lg px-3 py-2 sm:hidden">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle">
           {t("player.info.rating")}
         </p>
         <StarRating rating={Math.round(rating)} />
@@ -23,7 +23,7 @@ export function InfoTabHeroRating({
     </div>
   ) : (
     <div className="info-tab-rating-card hidden shrink-0 rounded-lg px-3 py-2 sm:block">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle">
         {t("player.info.rating")}
       </p>
       <div className="mt-2">

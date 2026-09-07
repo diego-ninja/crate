@@ -242,7 +242,7 @@ export function PlaylistCreateModal({
           <ModalCloseButton onClick={onClose} disabled={submitting} />
         </ModalHeader>
 
-        <ModalBody className="space-y-5 px-5 py-5">
+        <ModalBody className="space-y-5 p-5 ">
           <PlaylistIdentitySection
             state={{
               name,

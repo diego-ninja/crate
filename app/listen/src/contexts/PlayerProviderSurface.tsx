@@ -40,7 +40,7 @@ export function PlayerProviderSurface({
             <div className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--listen-player-bottom-offset,5.5rem)+env(safe-area-inset-bottom))] z-[1600] flex justify-center sm:bottom-28">
               <button
                 type="button"
-                className="pointer-events-auto rounded-full border border-accent-action/30 bg-surface-canvas/95 px-4 py-3 text-sm font-semibold text-text-primary shadow-2xl shadow-cyan-950/40 backdrop-blur"
+                className="pointer-events-auto rounded-full border border-accent-action/30 bg-surface-canvas/95 px-4 py-3 text-sm font-semibold text-text-primary backdrop-blur"
                 onClick={resumeAfterUserGesture}
               >
                 Tap to resume playback

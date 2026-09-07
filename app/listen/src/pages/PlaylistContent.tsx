@@ -35,18 +35,18 @@ function PlaylistBadges({
     <>
       <OfflineBadge state={offlineState} />
       {data.is_smart ? (
-        <span className="inline-flex items-center rounded-md border border-accent-action/30 px-1.5 py-0 text-[10px] font-medium text-accent-action">
+        <span className="inline-flex items-center rounded-md border border-accent-action/30 px-1.5 py-0 text-xs font-medium text-accent-action">
           <Sparkles size={10} className="mr-0.5" />
           {t("playlist.badges.smart")}
         </span>
       ) : null}
-      <span className="inline-flex items-center rounded-md border border-border-quiet px-1.5 py-0 text-[10px] font-medium text-text-primary/60">
+      <span className="inline-flex items-center rounded-md border border-border-quiet px-1.5 py-0 text-xs font-medium text-text-primary/60">
         {data.visibility === "public"
           ? t("playlist.visibility.public")
           : t("playlist.visibility.private")}
       </span>
       {data.is_collaborative ? (
-        <span className="inline-flex items-center rounded-md border border-accent-action/20 bg-accent-action/10 px-1.5 py-0 text-[10px] font-medium text-text-accent">
+        <span className="inline-flex items-center rounded-md border border-accent-action/20 bg-accent-action/10 px-1.5 py-0 text-xs font-medium text-text-accent">
           {t("playlist.badges.collaborative")}
         </span>
       ) : null}

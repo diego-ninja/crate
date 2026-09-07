@@ -27,12 +27,12 @@ export function AlbumHeroContributor({
     <>
       {visibleContributor ? (
         <div className="mt-3 flex items-center gap-2 text-xs text-text-muted">
-          <span className="inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-text-primary/8 ring-1 ring-text-primary/10">
+          <span className="inline-flex size-6 items-center justify-center overflow-hidden rounded-full bg-text-primary/8 ring-1 ring-text-primary/10">
             {visibleContributor.user_avatar ? (
               <CrateImage
                 src={visibleContributor.user_avatar}
                 alt=""
-                className="h-full w-full object-cover"
+                className=" size-full object-cover"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}

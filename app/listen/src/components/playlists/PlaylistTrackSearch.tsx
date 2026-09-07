@@ -28,7 +28,7 @@ export function PlaylistTrackSearch({
           placeholder={t("playlistComposer.searchPlaceholder")}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
+          className="w-full bg-transparent text-base text-text-primary placeholder:text-text-muted focus:outline-none"
         />
         {searching ? (
           <Loader2 size={14} className="text-accent-action animate-spin" />

@@ -10,7 +10,7 @@ export function SeekBarTimes({
   safeDuration,
 }: Pick<SeekBarModel, "displayedTime" | "safeDuration">) {
   return (
-    <div className="flex items-center justify-between text-[11px] tabular-nums text-text-muted">
+    <div className="flex items-center justify-between text-xs tabular-nums text-text-muted">
       <span>{formatPlayerTime(displayedTime)}</span>
       <span>{formatPlayerTime(safeDuration)}</span>
     </div>
@@ -27,7 +27,7 @@ export function SeekBarTooltip({
   if (hoverTime == null || hoverPercent == null) return null;
   return (
     <div
-      className={`listen-player-progress-tooltip pointer-events-none absolute -translate-x-1/2 rounded border px-1.5 py-0.5 text-[10px] tabular-nums ${className}`}
+      className={`listen-player-progress-tooltip pointer-events-none absolute -translate-x-1/2 rounded border px-1.5 py-0.5 text-xs tabular-nums ${className}`}
       style={{ left: `${hoverPercent * 100}%` }}
     >
       {hoverTime}
@@ -151,18 +151,18 @@ export function GlowSeekBar({
           className={`listen-player-progress-track absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full ${model.glowTrackClass}`}
         />
         <div
-          className="listen-player-progress-width-dynamic pointer-events-none absolute left-0 top-1/2 h-3 -translate-y-1/2 overflow-hidden rounded-full opacity-65 transition-[width] duration-150"
+          className="listen-player-progress-width-dynamic pointer-events-none absolute left-0 top-1/2 h-3 overflow-hidden rounded-full opacity-65"
           style={model.glowWidthStyle}
         >
           <div className="listen-player-progress-glow absolute inset-0 blur-[3px]" />
           <div className="listen-player-progress-fill absolute inset-y-[5px] inset-x-0 rounded-full" />
         </div>
         <div
-          className={`listen-player-progress-fill listen-player-progress-width-dynamic absolute left-0 top-1/2 -translate-y-1/2 rounded-full transition-[width] duration-150 ${model.glowTrackClass}`}
+          className={`listen-player-progress-fill listen-player-progress-width-dynamic absolute left-0 top-1/2 rounded-full ${model.glowTrackClass}`}
           style={model.glowWidthStyle}
         />
         <div
-          className={`listen-player-progress-thumb listen-player-progress-left-dynamic pointer-events-none absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full transition-[left,opacity] duration-150 ${
+          className={`listen-player-progress-thumb listen-player-progress-left-dynamic pointer-events-none absolute top-1/2 size-2 -translate-y-1/2 rounded-full transition-opacity duration-150 ${
             model.progress > 0 ? "opacity-[0.62]" : "opacity-0"
           }`}
           style={{
@@ -170,7 +170,7 @@ export function GlowSeekBar({
           }}
         />
         <div
-          className="listen-player-progress-thumb-active listen-player-progress-left-active-dynamic absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border opacity-0 transition-[left,opacity] duration-150 group-hover:opacity-100"
+          className="listen-player-progress-thumb-active listen-player-progress-left-active-dynamic absolute top-1/2 size-2.5 -translate-y-1/2 rounded-full border opacity-0 transition-opacity duration-150 group-hover:opacity-100"
           style={
             {
               "--progress-left": `calc(${model.progress}% - 5px)`,

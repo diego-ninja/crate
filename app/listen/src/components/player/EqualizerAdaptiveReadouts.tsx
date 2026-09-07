@@ -38,14 +38,14 @@ export function AdaptiveFeatureChips({
   const { t } = useTranslation();
   if (status === "loading") {
     return (
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-muted">
         {t("player.equalizer.adaptive.loading")}
       </div>
     );
   }
   if (status === "unavailable" || !features) {
     return (
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-muted">
         {t("player.equalizer.adaptive.unavailable")}
       </div>
     );
@@ -54,7 +54,7 @@ export function AdaptiveFeatureChips({
   const chips = getAdaptiveFeatureChipData(features);
   if (chips.length === 0) {
     return (
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-muted">
         {t("player.equalizer.adaptive.empty")}
       </div>
     );
@@ -62,7 +62,7 @@ export function AdaptiveFeatureChips({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-wider text-text-subtle">
+      <span className="text-xs uppercase tracking-wider text-text-subtle">
         {t("player.equalizer.track")}
       </span>
       {chips.map(({ key, ...chip }) => (
@@ -82,14 +82,14 @@ export function GenreResolutionChip({
   const { t } = useTranslation();
   if (status === "loading") {
     return (
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-muted">
         {t("player.equalizer.genre.loading")}
       </div>
     );
   }
   if (status === "unavailable" || !genre?.primary) {
     return (
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-muted">
         {t("player.equalizer.genre.unavailable")}
       </div>
     );
@@ -101,7 +101,7 @@ export function GenreResolutionChip({
 
   if (!canonical) {
     return (
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-secondary">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-secondary">
         <Tag size={10} className="opacity-70" />
         <span className="font-medium capitalize text-text-primary/80">
           {primaryName}
@@ -115,7 +115,7 @@ export function GenreResolutionChip({
 
   if (!preset) {
     return (
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-[10px] text-text-secondary">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border-quiet bg-surface-control px-2.5 py-1.5 text-xs text-text-secondary">
         <Tag size={10} className="opacity-70" />
         <span className="font-medium capitalize text-text-primary/80">
           {primaryName}
@@ -129,7 +129,7 @@ export function GenreResolutionChip({
 
   const isInherited = preset.source === "inherited";
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-accent-action/30 bg-accent-action/10 px-2.5 py-1.5 text-[10px] text-accent-action">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-accent-action/30 bg-accent-action/10 px-2.5 py-1.5 text-xs text-accent-action">
       <Tag size={10} />
       <span className="font-medium capitalize">{primaryName}</span>
       <span className="opacity-70">

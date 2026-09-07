@@ -27,7 +27,7 @@ export function AlbumActions({
     <>
       <div
         data-testid="album-action-row"
-        className="relative z-10 -mt-[var(--album-mobile-action-overlap)] px-4 pb-4 pt-0 sm:mt-0 sm:px-0 sm:py-4"
+        className="relative z-10 -mt-[var(--album-mobile-action-overlap)] p-4 pb-4 pt-0 sm:mt-0 sm:px-0"
       >
         <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5 sm:px-6 md:flex-row md:items-center md:justify-between md:gap-6">
           <AlbumPrimaryActions

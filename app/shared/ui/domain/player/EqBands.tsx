@@ -73,7 +73,7 @@ function Band({
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="font-mono text-[9px] tabular-nums text-text-muted">
+      <span className="font-mono text-xs tabular-nums text-text-muted">
         {formatGain(gain)}
       </span>
       <div
@@ -93,13 +93,13 @@ function Band({
         <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-border-quiet" />
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border-interactive" />
         <div
-          className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-accent-action shadow-accent-action-indicator ${
+          className={`absolute left-1/2 size-3 -translate-x-1/2 rounded-full bg-accent-action shadow-accent-action-indicator ${
             dragging ? "" : "transition-all duration-500"
           }`}
           style={{ top: `calc(${100 - pct}% - 6px)` }}
         />
       </div>
-      <span className="font-mono text-[9px] text-text-muted">{label}</span>
+      <span className="font-mono text-xs text-text-muted">{label}</span>
     </div>
   );
 }

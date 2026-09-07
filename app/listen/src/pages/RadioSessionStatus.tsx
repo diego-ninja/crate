@@ -18,11 +18,11 @@ export function RadioSessionStatus({
     return (
       <div className="radio-session-status rounded-xl px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="radio-session-dot h-2 w-2 animate-pulse rounded-full" />
+          <div className="radio-session-dot size-2 animate-pulse rounded-full" />
           <span className="radio-session-label text-sm font-medium">
             {t("radio.discovery")}
           </span>
-          <span className="radio-session-muted text-[11px]">
+          <span className="radio-session-muted text-xs">
             {t("common.playing")}
           </span>
         </div>
@@ -35,15 +35,15 @@ export function RadioSessionStatus({
   return (
     <div className="radio-session-status rounded-xl px-4 py-3">
       <div className="flex items-center gap-2">
-        <div className="radio-session-dot h-2 w-2 animate-pulse rounded-full" />
+        <div className="radio-session-dot size-2 animate-pulse rounded-full" />
         <span className="radio-session-label text-sm font-medium">
           {seedLabel} Radio
         </span>
-        <span className="radio-session-muted text-[11px]">
+        <span className="radio-session-muted text-xs">
           {t("common.playing")}
         </span>
       </div>
-      <div className="radio-session-muted mt-1.5 flex items-center gap-1 text-[11px]">
+      <div className="radio-session-muted mt-1.5 flex items-center gap-1 text-xs">
         <ThumbsUp size={10} /> {t("radio.feedback.likePrefix")}{" "}
         <ThumbsDown size={10} /> {t("radio.feedback.dislikeSuffix")}
       </div>

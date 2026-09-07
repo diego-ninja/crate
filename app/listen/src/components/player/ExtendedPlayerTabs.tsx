@@ -41,7 +41,7 @@ export function ExtendedPlayerTabs({
               actions.onTabChange(item.id);
             }}
             className={cn(
-              "rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors",
+              "rounded-full px-3.5 py-1.5 text-[0.75rem] font-medium transition-colors",
               state.tab === item.id
                 ? "bg-surface-control text-text-primary"
                 : "text-text-muted hover:text-text-secondary",

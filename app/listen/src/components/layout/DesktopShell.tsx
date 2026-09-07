@@ -26,7 +26,7 @@ export function DesktopShell({
   sidebarW,
 }: DesktopShellProps) {
   return (
-    <div className="flex min-h-screen bg-surface-canvas">
+    <div className="flex min-h-dvh bg-surface-canvas">
       <Sidebar />
       <div
         data-testid="listen-header"

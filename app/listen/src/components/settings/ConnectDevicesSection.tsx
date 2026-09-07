@@ -196,7 +196,7 @@ function ConnectDevicesSectionContent() {
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <span
-              className={`h-2 w-2 rounded-full ${
+              className={` size-2 rounded-full ${
                 connectEnabled ? "bg-accent-action" : "bg-text-primary/35"
               }`}
             />
@@ -222,7 +222,7 @@ function ConnectDevicesSectionContent() {
             return (
               <div
                 key={device.device_id}
-                className="flex items-start justify-between gap-4 rounded-lg border border-border-quiet px-3 py-3"
+                className="flex items-start justify-between gap-4 rounded-lg border border-border-quiet p-3 "
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -231,12 +231,12 @@ function ConnectDevicesSectionContent() {
                       <span className="truncate">{label}</span>
                     </div>
                     {isCurrent ? (
-                      <span className="rounded-full border border-accent-action/30 bg-accent-action/10 px-2 py-0.5 text-[11px] font-medium text-text-accent">
+                      <span className="rounded-full border border-accent-action/30 bg-accent-action/10 px-2 py-0.5 text-xs font-medium text-text-accent">
                         {t("common.current")}
                       </span>
                     ) : null}
                     <span
-                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                         device.active
                           ? "border-state-success/30 bg-state-success/10 text-state-success-text"
                           : "border-border-quiet bg-text-primary/5 text-text-primary/50"
@@ -251,7 +251,7 @@ function ConnectDevicesSectionContent() {
                     })}
                   </div>
                   {meta ? (
-                    <div className="mt-1 text-[11px] text-text-primary/40">
+                    <div className="mt-1 text-xs text-text-primary/40">
                       {meta}
                     </div>
                   ) : null}

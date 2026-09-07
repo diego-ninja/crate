@@ -16,7 +16,7 @@ export function SearchErrorState({
         {t("search.resultsFor", { query })}
       </h1>
       <div className="mx-auto max-w-sm rounded-[12px] border border-state-warning/12 bg-text-primary/[0.035] px-6 py-10 text-center shadow-card">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-state-warning/15 bg-state-warning/8 text-state-warning-text">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-state-warning/15 bg-state-warning/8 text-state-warning-text">
           <Search size={18} />
         </div>
         <p className="mt-4 text-base font-semibold text-text-primary">

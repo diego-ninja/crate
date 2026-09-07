@@ -55,7 +55,7 @@ export function AlbumHero({
           data-testid="album-hero-background"
           src={coverUrl}
           alt=""
-          className="absolute inset-0 h-full w-full scale-[1.04] object-cover brightness-[0.72] contrast-110 opacity-[0.82] sm:grayscale sm:brightness-[0.42] sm:opacity-[0.42]"
+          className="absolute inset-0 size-full scale-[1.04] object-cover brightness-[0.72] contrast-110 opacity-[0.82] sm:grayscale sm:brightness-[0.42] sm:opacity-[0.42]"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}

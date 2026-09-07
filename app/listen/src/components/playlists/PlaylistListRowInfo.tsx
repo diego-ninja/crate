@@ -28,7 +28,7 @@ export function PlaylistListRowInfo({
           {name}
         </span>
         {badgeLabel ? (
-          <span className="inline-flex items-center rounded-md border border-accent-action/30 px-1.5 py-0 text-[10px] font-medium text-accent-action">
+          <span className="inline-flex items-center rounded-md border border-accent-action/30 px-1.5 py-0 text-xs font-medium text-accent-action">
             <Sparkles size={10} className="mr-0.5" />
             {badgeLabel}
           </span>
@@ -54,7 +54,7 @@ export function PlaylistListRowInfo({
         ) : null}
       </div>
       {description ? (
-        <div className="mt-1 truncate text-[11px] text-text-primary/40">
+        <div className="mt-1 truncate text-xs text-text-primary/40">
           {description}
         </div>
       ) : null}

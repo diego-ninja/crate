@@ -152,14 +152,14 @@ export function EndpointPanel({
           <CrateImage
             src={selected.imageUrl}
             alt=""
-            className="h-full w-full object-cover opacity-20 blur-sm"
+            className=" size-full object-cover opacity-20 blur-sm"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-surface-canvas/90 via-surface-canvas/70 to-surface-canvas/50" />
+          <div className="absolute inset-0 bg-linear-to-t from-surface-canvas/90 via-surface-canvas/70 to-surface-canvas/50" />
         </div>
       ) : null}
 
       <div className="relative p-5">
-        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-action/60">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-accent-action/60">
           <MapPin size={10} className="mr-1 inline" />
           {label}
         </div>
@@ -167,18 +167,18 @@ export function EndpointPanel({
         {selected ? (
           <div>
             {selected.imageUrl ? (
-              <div className="mb-3 h-24 w-24 overflow-hidden rounded-xl bg-text-primary/5 shadow-lg">
+              <div className="mb-3 size-24 overflow-hidden rounded-xl bg-text-primary/5 shadow-lg">
                 <CrateImage
                   src={selected.imageUrl}
                   alt=""
-                  className="h-full w-full object-cover"
+                  className=" size-full object-cover"
                 />
               </div>
             ) : null}
             <div className="text-lg font-bold text-text-primary">
               {selected.label}
             </div>
-            <div className="mt-0.5 text-[11px] text-accent-action/70">
+            <div className="mt-0.5 text-xs text-accent-action/70">
               {selected.type}
             </div>
             <button
@@ -187,7 +187,7 @@ export function EndpointPanel({
                 setQuery("");
                 setResults([]);
               }}
-              className="mt-3 text-[11px] text-text-primary/40 underline-offset-2 hover:text-text-primary/60 hover:underline"
+              className="mt-3 text-xs text-text-primary/40 underline-offset-2 hover:text-text-primary/60 hover:underline"
             >
               {t("common.change")}
             </button>
@@ -202,7 +202,7 @@ export function EndpointPanel({
                 void search(event.target.value);
               }}
               placeholder={t("paths.endpoint.placeholder")}
-              className="h-11 w-full rounded-lg border border-border-quiet bg-surface-canvas/30 px-4 text-sm text-text-primary placeholder:text-text-primary/25 focus:border-accent-action/30 focus:outline-none"
+              className="h-11 w-full rounded-lg border border-border-quiet bg-surface-canvas/30 px-4 text-base text-text-primary placeholder:text-text-primary/25 focus:border-accent-action/30 focus:outline-none"
             />
             {searching ? (
               <Loader2
@@ -226,20 +226,22 @@ export function EndpointPanel({
                       <CrateImage
                         src={result.imageUrl}
                         alt=""
-                        className={`h-8 w-8 flex-shrink-0 bg-text-primary/5 object-cover ${
+                        className={` size-8 shrink-0 bg-text-primary/5 object-cover ${
                           result.type === "artist"
                             ? "rounded-full"
                             : "rounded-md"
                         }`}
                       />
                     ) : (
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-accent-action/10 text-accent-action">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-action/10 text-accent-action">
                         <Music size={14} />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px]">{result.label}</div>
-                      <div className="text-[10px] text-text-primary/30">
+                      <div className="truncate text-[0.8125rem]">
+                        {result.label}
+                      </div>
+                      <div className="text-xs text-text-primary/30">
                         {result.type}
                       </div>
                     </div>
@@ -273,16 +275,16 @@ export function PathCard({
           type="button"
           aria-label={path.name}
           onClick={() => navigate(`/paths/${path.id}`)}
-          className="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent p-0 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent px-0 py-1 text-left"
         >
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-accent-action/10 text-accent-action">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-action/10 text-accent-action">
             <Route size={16} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-text-primary">
               {path.name}
             </div>
-            <div className="mt-0.5 text-[11px] text-text-primary/40">
+            <div className="mt-0.5 text-xs text-text-primary/40">
               {t("common.trackCountLabel", { count: path.track_count })} ·{" "}
               {new Date(path.created_at).toLocaleDateString()}
             </div>
@@ -295,7 +297,7 @@ export function PathCard({
             event.stopPropagation();
             onPlay();
           }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-action/15 text-accent-action transition hover:bg-accent-action/25"
+          className="flex size-9 items-center justify-center rounded-full bg-accent-action/15 text-accent-action transition hover:bg-accent-action/25"
         >
           <Play size={14} className="ml-0.5 fill-current" />
         </button>
@@ -306,7 +308,7 @@ export function PathCard({
             event.stopPropagation();
             onDelete();
           }}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-text-primary/15 transition hover:bg-text-primary/5 hover:text-text-primary/40"
+          className="flex size-9 items-center justify-center rounded-full text-text-primary/15 transition hover:bg-text-primary/5 hover:text-text-primary/40"
         >
           <Trash2 size={13} />
         </button>

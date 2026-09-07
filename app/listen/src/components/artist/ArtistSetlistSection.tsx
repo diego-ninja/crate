@@ -71,7 +71,7 @@ export function ArtistSetlistModal({
               <h3 className="text-sm font-semibold text-text-primary">
                 {t("artist.setlist.title")}
               </h3>
-              <p className="text-[11px] text-text-muted">
+              <p className="text-xs text-text-muted">
                 {artistName} ·{" "}
                 {t("artist.setlist.songCount", { count: setlist.length })}
               </p>
@@ -86,7 +86,7 @@ export function ArtistSetlistModal({
         </div>
 
         {/* Track list */}
-        <div className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="flex-1 overflow-y-auto p-2 ">
           {setlist.map((track, i) => (
             <div
               key={[
@@ -111,11 +111,11 @@ export function ArtistSetlistModal({
                       style={{ width: `${Math.round(track.frequency * 100)}%` }}
                     />
                   </div>
-                  <span className="text-[10px] tabular-nums text-text-primary/40">
+                  <span className="text-xs tabular-nums text-text-primary/40">
                     {Math.round(track.frequency * 100)}%
                   </span>
                   {track.play_count > 0 && (
-                    <span className="text-[10px] text-text-primary/20">
+                    <span className="text-xs text-text-primary/20">
                       {t("common.playCount", { count: track.play_count })}
                     </span>
                   )}

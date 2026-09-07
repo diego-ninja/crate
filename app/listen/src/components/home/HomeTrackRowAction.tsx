@@ -40,7 +40,7 @@ export function HomeTrackRowAction({
       onContextMenu={actionMenu.handleContextMenu}
       className="home-playback-row group/row flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
     >
-      <div className="relative h-11 w-11 shrink-0">
+      <div className="relative size-11 shrink-0">
         <TrackCoverThumb
           src={track.albumCover}
           iconSize={16}
@@ -64,7 +64,7 @@ export function HomeTrackRowAction({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+        className=" size-8 opacity-80 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}

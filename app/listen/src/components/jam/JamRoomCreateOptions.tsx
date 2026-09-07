@@ -63,7 +63,7 @@ export function RoomVisibilityOptions({
       <button
         type="button"
         onClick={() => setRoomVisibility("private")}
-        className={`jam-toggle-option flex items-center gap-2 rounded-lg px-3 py-3 text-left text-sm transition-colors ${
+        className={`jam-toggle-option flex items-center gap-2 rounded-lg p-3 text-left text-sm transition-colors ${
           roomVisibility === "private" ? "" : "text-text-muted"
         }`}
         data-active={roomVisibility === "private" ? "true" : "false"}
@@ -74,7 +74,7 @@ export function RoomVisibilityOptions({
       <button
         type="button"
         onClick={() => setRoomVisibility("public")}
-        className={`jam-toggle-option flex items-center gap-2 rounded-lg px-3 py-3 text-left text-sm transition-colors ${
+        className={`jam-toggle-option flex items-center gap-2 rounded-lg p-3 text-left text-sm transition-colors ${
           roomVisibility === "public" ? "" : "text-text-muted"
         }`}
         data-active={roomVisibility === "public" ? "true" : "false"}

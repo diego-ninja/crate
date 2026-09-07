@@ -20,7 +20,7 @@ export function QueueTabPastTracks({
 
   return (
     <div className="mb-4">
-      <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+      <p className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-text-muted">
         {t("player.queue.history")}
       </p>
       {tracks.map((track, i) => {

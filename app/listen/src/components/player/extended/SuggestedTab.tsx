@@ -87,7 +87,7 @@ export function SuggestedTab() {
             !currentTrack ||
             !hasPlayableTrackReference(currentTrack)
           }
-          className="inline-flex items-center gap-2 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-[11px] font-medium text-text-primary/80 transition hover:bg-text-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-full border border-border-quiet bg-text-primary/5 px-3 py-1.5 text-xs font-medium text-text-primary/80 transition hover:bg-text-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {startingRadio ? (
             <Loader2 size={12} className="animate-spin" />

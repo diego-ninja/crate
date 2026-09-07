@@ -19,7 +19,7 @@ function UserAvatar({
   name,
   avatar,
   userId,
-  className = "h-11 w-11",
+  className = " size-11",
 }: {
   name: string;
   avatar?: string | null;
@@ -124,7 +124,7 @@ export function UserConnections() {
             })}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-border-quiet px-4 py-10 text-center text-sm text-text-muted">
+          <div className="border-y border-dashed border-border-quiet px-4 py-10 text-center text-sm text-text-muted">
             {mode === "following"
               ? t("userConnections.empty.following")
               : t("userConnections.empty.followers")}

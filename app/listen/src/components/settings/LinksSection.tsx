@@ -19,27 +19,27 @@ export function LinksSection() {
       <div className="flex flex-col gap-2">
         <Link
           to={publicProfilePath}
-          className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
+          className="flex items-center gap-3 rounded-xl p-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
         >
           <Users size={18} className="text-text-muted" />{" "}
           {t("settings.links.profile")}
         </Link>
         <Link
           to="/people"
-          className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
+          className="flex items-center gap-3 rounded-xl p-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
         >
           <Users size={18} className="text-text-muted" />{" "}
           {t("settings.links.people")}
         </Link>
         <Link
           to="/upload"
-          className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
+          className="flex items-center gap-3 rounded-xl p-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5"
         >
           <Upload size={18} className="text-text-muted" /> {t("upload.badge")}
         </Link>
         <Link
           to="/stats"
-          className="hidden items-center gap-3 rounded-xl px-3 py-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5 md:flex"
+          className="hidden items-center gap-3 rounded-xl p-3 text-sm text-text-primary transition-colors hover:bg-text-primary/5 md:flex"
         >
           <BarChart3 size={18} className="text-text-muted" />{" "}
           {t("settings.links.stats")}
@@ -47,7 +47,7 @@ export function LinksSection() {
         <button
           type="button"
           onClick={logout}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-state-danger transition-colors hover:bg-text-primary/5"
+          className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-sm text-state-danger transition-colors hover:bg-text-primary/5"
         >
           <LogOut size={18} /> {t("auth.logout")}
         </button>

@@ -63,7 +63,7 @@ export function QualityBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none whitespace-nowrap border ${variantClass}`}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold tracking-wider leading-none whitespace-nowrap border ${variantClass}`}
       title={title}
     >
       {Icon && <Icon size={9} />}

@@ -103,7 +103,7 @@ function RoomCardHeader({
         <RoomCardBadges room={room} mode={mode} t={t} />
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2 pr-12">
-        <div className="jam-chip flex h-9 w-9 items-center justify-center rounded-full text-text-muted">
+        <div className="jam-chip flex size-9 items-center justify-center rounded-full text-text-muted">
           {joining ? (
             <Loader2 size={15} className="jam-accent-text animate-spin" />
           ) : (
@@ -125,7 +125,7 @@ function RoomCardBadges({
   t: TFunction;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+    <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
       <span className="jam-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-text-muted">
         {room.visibility === "public" ? (
           <Globe2 size={11} />
@@ -162,14 +162,15 @@ function RoomCardBadges({
 function RoomCardMembers({ room, t }: { room: JamRoom; t: TFunction }) {
   return (
     <div className="mt-4 flex items-center justify-between gap-3">
-      <div className="flex -space-x-2">
-        {room.members.slice(0, 5).map((member) => (
+      <div className="flex">
+        {room.members.slice(0, 5).map((member, index) => (
           <JamAvatarBubble
             key={`${room.id}-${member.user_id}`}
             name={displayName(member)}
             avatar={member.avatar}
             userId={member.user_id}
             size="sm"
+            className={index === 0 ? "" : "-ml-2"}
           />
         ))}
       </div>
@@ -200,7 +201,7 @@ function RoomCardDeleteButton({
       disabled={deleting}
       title={t("jam.delete.title")}
       aria-label={t("jam.delete.aria", { name: room.name })}
-      className="jam-danger-control absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors disabled:opacity-50"
+      className="jam-danger-control absolute right-4 top-4 z-10 inline-flex size-9 items-center justify-center rounded-full transition-colors disabled:opacity-50"
     >
       {deleting ? (
         <Loader2 size={13} className="animate-spin" />

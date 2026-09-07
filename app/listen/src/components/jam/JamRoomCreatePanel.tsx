@@ -52,20 +52,20 @@ export function JamRoomCreatePanel({
           value={roomName}
           onChange={(event) => setRoomName(event.target.value)}
           placeholder={t("jam.lobby.namePlaceholder")}
-          className="jam-input h-11 w-full rounded-lg px-4 text-sm text-text-primary"
+          className="jam-input h-11 w-full rounded-lg px-4 text-base text-text-primary"
         />
         <textarea
           value={roomDescription}
           onChange={(event) => setRoomDescription(event.target.value)}
           placeholder={t("jam.lobby.descriptionPlaceholder")}
           rows={3}
-          className="jam-input w-full resize-none rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted"
+          className="jam-input w-full resize-none rounded-lg px-4 py-3 text-base text-text-primary placeholder:text-text-muted"
         />
         <input
           value={roomTagsInput}
           onChange={(event) => setRoomTagsInput(event.target.value)}
           placeholder={t("jam.lobby.tagsPlaceholder")}
-          className="jam-input h-11 w-full rounded-lg px-4 text-sm text-text-primary placeholder:text-text-muted"
+          className="jam-input h-11 w-full rounded-lg px-4 text-base text-text-primary placeholder:text-text-muted"
         />
         <PlaybackModeSelect
           roomQueueMode={roomQueueMode}
@@ -100,7 +100,7 @@ export function JamRoomCreatePanel({
             type="checkbox"
             checked={roomPermanent}
             onChange={(event) => setRoomPermanent(event.target.checked)}
-            className="h-4 w-4 accent-[var(--accent-action)]"
+            className=" size-4 accent-[var(--accent-action)]"
           />
         </label>
         <Button

@@ -125,7 +125,7 @@ function PlaylistCardFollowButton({
     <ActionIconButton
       variant="card"
       active={isFollowed}
-      className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100"
+      className="absolute top-2 right-2 z-10 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action"
       onClick={async (event) => {
         event.stopPropagation();
         setTogglingFollow(true);
@@ -157,7 +157,7 @@ function PlaylistCardPlayButton({
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-surface-canvas/0 transition-colors group-hover:bg-surface-canvas/40">
       <button
-        className="flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-accent-action opacity-0 shadow-lg transition-[transform,opacity] group-hover:translate-y-0 group-hover:opacity-100"
+        className="flex size-10 translate-y-2 items-center justify-center rounded-full bg-accent-action opacity-0 shadow-lg transition-[transform,opacity] focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100"
         onClick={async (event) => {
           event.stopPropagation();
           setPlaying(true);
@@ -264,7 +264,7 @@ export function PlaylistCard({
       {...actionMenu.longPressHandlers}
       className={cn(
         "group cursor-pointer rounded-xl p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl",
-        layout === "grid" ? "w-full min-w-0" : "w-[160px] flex-shrink-0",
+        layout === "grid" ? "w-full min-w-0" : "w-[160px] shrink-0",
         getPlaylistOfflineSurfaceClass(offlineState),
       )}
     >
@@ -284,7 +284,7 @@ export function PlaylistCard({
         ) : null}
         {onPlay ? <PlaylistCardPlayButton onPlay={onPlay} /> : null}
         {badge && !crateManaged ? (
-          <div className="absolute left-2 top-2 rounded-full border border-accent-action/20 bg-surface-canvas/85 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent-action backdrop-blur-md">
+          <div className="absolute left-2 top-2 rounded-full border border-accent-action/20 bg-surface-canvas/85 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-accent-action backdrop-blur-md">
             {badge}
           </div>
         ) : null}

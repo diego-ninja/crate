@@ -26,8 +26,8 @@ export function LyricsLine({
         isActive
           ? "lyrics-active-line bg-accent-action/10 text-[17px] font-semibold text-accent-action"
           : isPast
-            ? "text-[14px] text-text-faint"
-            : "text-[14px] text-text-secondary"
+            ? "text-[0.875rem] text-text-faint"
+            : "text-[0.875rem] text-text-secondary"
       }`}
     >
       {line.text}

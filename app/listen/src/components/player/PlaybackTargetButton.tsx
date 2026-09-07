@@ -36,7 +36,7 @@ export function PlaybackTargetButton({
     >
       <Airplay size={CRATE_ICON_SIZE.md} />
       {hasRemoteTarget ? (
-        <span className="absolute right-0 top-0 h-1.5 w-1.5 rounded-full bg-accent-action shadow-accent-action-indicator-active" />
+        <span className="absolute right-0 top-0 size-1.5 rounded-full bg-accent-action shadow-accent-action-indicator-active" />
       ) : null}
     </button>
   );

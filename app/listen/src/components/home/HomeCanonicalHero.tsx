@@ -177,7 +177,7 @@ export function DesktopHeroNavigation({
         <button
           type="button"
           aria-label={t("home.hero.previousArtist")}
-          className="home-hero-nav-control-plain flex h-8 w-8 items-center justify-center border-0 bg-transparent p-0 shadow-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action"
+          className="home-hero-nav-control-plain flex size-8 items-center justify-center border-0 bg-transparent p-0 shadow-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action"
           onClick={onPrevious}
         >
           <ChevronUp size={20} />
@@ -185,7 +185,7 @@ export function DesktopHeroNavigation({
         <button
           type="button"
           aria-label={t("home.hero.nextArtist")}
-          className="home-hero-nav-control-plain flex h-8 w-8 items-center justify-center border-0 bg-transparent p-0 shadow-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action"
+          className="home-hero-nav-control-plain flex size-8 items-center justify-center border-0 bg-transparent p-0 shadow-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action"
           onClick={onNext}
         >
           <ChevronDown size={20} />

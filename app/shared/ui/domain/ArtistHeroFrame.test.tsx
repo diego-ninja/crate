@@ -9,7 +9,14 @@ describe("ArtistHeroFrame", () => {
     render(
       <ArtistHeroFrame
         composition="desktop"
-        artwork={<img alt="Converge hero" src="/converge.webp" />}
+        artwork={
+          <img
+            alt="Converge hero"
+            src="/converge.webp"
+            width="1480"
+            height="600"
+          />
+        }
         artworkBounds={{ left: 0.3, top: 0, right: 0.8, bottom: 0.9 }}
       >
         <span>Converge</span>
@@ -59,7 +66,14 @@ describe("ArtistHeroFrame", () => {
     render(
       <ArtistHeroFrame
         composition="mobile"
-        artwork={<img alt="Converge mobile hero" src="/converge-mobile.webp" />}
+        artwork={
+          <img
+            alt="Converge mobile hero"
+            src="/converge-mobile.webp"
+            width="800"
+            height="1000"
+          />
+        }
       />,
     );
 

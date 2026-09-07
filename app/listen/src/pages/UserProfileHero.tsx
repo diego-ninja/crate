@@ -75,7 +75,7 @@ function UserProfileHeader({
               {displayName}
             </h1>
             {data.relationship_state.is_friend && !isOwnProfile ? (
-              <span className="user-profile-accent-badge inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium">
+              <span className="user-profile-accent-badge inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium">
                 {t("people.friends")}
               </span>
             ) : null}

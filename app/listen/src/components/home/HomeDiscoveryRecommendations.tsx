@@ -176,7 +176,7 @@ export function CoreTracksPlaylistCard({
         />
         <div className="home-discovery-artwork-overlay absolute inset-0 flex items-center justify-center">
           <button
-            className="home-discovery-play-button flex h-10 w-10 translate-y-2 items-center justify-center rounded-full opacity-0 shadow-lg transition-[transform,opacity] group-hover:translate-y-0 group-hover:opacity-100"
+            className="home-discovery-play-button flex size-10 translate-y-2 items-center justify-center rounded-full opacity-0 shadow-lg transition-[transform,opacity] focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100"
             onClick={(event) => {
               event.stopPropagation();
               onPlayPlaylist(item);

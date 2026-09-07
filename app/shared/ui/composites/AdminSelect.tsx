@@ -157,7 +157,7 @@ export function AdminSelect({
               >
                 <span className="truncate">{option.label}</span>
                 {option.count != null ? (
-                  <CrateChip className="text-[10px]">{option.count}</CrateChip>
+                  <CrateChip className="text-xs">{option.count}</CrateChip>
                 ) : null}
               </button>
             ))

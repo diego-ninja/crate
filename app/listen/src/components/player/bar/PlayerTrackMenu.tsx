@@ -41,7 +41,7 @@ export function PlayerTrackMenu({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className={className ?? "shrink-0 h-8 w-8"}
+        className={className ?? "shrink-0 size-8"}
       />
       <ItemActionMenu
         actions={actions}

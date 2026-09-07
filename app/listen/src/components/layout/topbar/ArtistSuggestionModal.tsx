@@ -34,7 +34,7 @@ export function ArtistSuggestionModal({
         <ModalHeader className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-action">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent-action">
                 {t("userMenu.suggest.badge")}
               </p>
               <h2 className="mt-1 text-lg font-semibold text-text-primary">
@@ -50,7 +50,7 @@ export function ArtistSuggestionModal({
             />
           </div>
         </ModalHeader>
-        <ModalBody className="space-y-4 px-5 py-5">
+        <ModalBody className="space-y-4 p-5 ">
           <label className="block space-y-2">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-text-primary/45">
               {t("userMenu.suggest.artistLabel")}
@@ -63,7 +63,7 @@ export function ArtistSuggestionModal({
               aria-describedby={
                 controller.error ? "artist-suggestion-error" : undefined
               }
-              className="h-11 w-full rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
+              className="h-11 w-full rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 text-base text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
               required
               minLength={2}
               maxLength={200}
@@ -84,8 +84,8 @@ export function ArtistSuggestionModal({
             <input
               value={controller.url}
               onChange={(event) => controller.setUrl(event.target.value)}
-              placeholder="Bandcamp, Tidal, Spotify, YouTube..."
-              className="h-11 w-full rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
+              placeholder="Bandcamp, Tidal, Spotify, YouTube…"
+              className="h-11 w-full rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 text-base text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
               maxLength={500}
             />
           </label>
@@ -97,7 +97,7 @@ export function ArtistSuggestionModal({
               value={controller.note}
               onChange={(event) => controller.setNote(event.target.value)}
               placeholder={t("userMenu.suggest.notePlaceholder")}
-              className="min-h-24 w-full resize-none rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 py-2 text-sm text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
+              className="min-h-24 w-full resize-none rounded-md border border-border-quiet bg-text-primary/[0.04] px-3 py-2 text-base text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/60"
               maxLength={1000}
             />
           </label>

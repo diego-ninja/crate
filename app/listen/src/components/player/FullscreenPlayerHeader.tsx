@@ -41,7 +41,7 @@ export function FullscreenPlayerHeader({
         type="button"
         onClick={onClose}
         aria-label={t("player.close")}
-        className="-ml-2 flex h-12 w-12 shrink-0 touch-manipulation items-center justify-center text-text-secondary active:text-text-primary"
+        className="-ml-2 flex size-12 shrink-0 touch-manipulation items-center justify-center text-text-secondary active:text-text-primary"
       >
         <ChevronDown size={28} />
       </button>
@@ -59,7 +59,7 @@ export function FullscreenPlayerHeader({
                 onSelectPanel(selected ? null : id);
               }}
               className={cn(
-                "group relative flex h-14 min-w-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none transition-[color,filter,transform] active:scale-[0.96]",
+                "group relative flex h-14 min-w-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-semibold leading-none transition-[color,filter,transform] active:scale-[0.96]",
                 selected
                   ? "text-accent-action drop-shadow-accent-action-icon"
                   : "text-text-muted active:text-text-secondary",

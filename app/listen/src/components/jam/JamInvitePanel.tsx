@@ -28,7 +28,7 @@ export function JamInvitePanel({
           value={inviteInput}
           onChange={(event) => setInviteInput(event.target.value)}
           placeholder={t("jam.lobby.invitePlaceholder")}
-          className="jam-input h-11 min-w-0 flex-1 rounded-lg px-4 text-sm text-text-primary"
+          className="jam-input h-11 min-w-0 flex-1 rounded-lg px-4 text-base text-text-primary"
         />
         <button
           type="button"

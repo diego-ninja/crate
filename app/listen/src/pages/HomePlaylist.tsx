@@ -287,7 +287,7 @@ export function HomePlaylist() {
         description={data.description}
         metaItems={playlistMetaItems}
         badges={
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-accent-action/25 bg-accent-action/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-accent-action">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-accent-action/25 bg-accent-action/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-accent-action">
             <Sparkles size={12} />
             {data.badge}
           </span>

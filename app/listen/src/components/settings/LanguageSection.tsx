@@ -75,7 +75,7 @@ export function LanguageSection({
           role="radio"
           aria-checked={selection === "auto"}
           onClick={() => changeLanguage("auto")}
-          className={`rounded-lg border px-3 py-3 text-left transition-colors ${
+          className={`rounded-lg border p-3 text-left transition-colors ${
             selection === "auto"
               ? "border-accent-action/50 bg-accent-action/15 text-accent-action"
               : "border-border-quiet/10 bg-text-primary/[0.03] text-text-primary/70 hover:bg-text-primary/[0.06]"
@@ -98,7 +98,7 @@ export function LanguageSection({
               role="radio"
               aria-checked={selected}
               onClick={() => changeLanguage(option.value)}
-              className={`rounded-lg border px-3 py-3 text-left transition-colors ${
+              className={`rounded-lg border p-3 text-left transition-colors ${
                 selected
                   ? "border-accent-action/50 bg-accent-action/15 text-accent-action"
                   : "border-border-quiet/10 bg-text-primary/[0.03] text-text-primary/70 hover:bg-text-primary/[0.06]"

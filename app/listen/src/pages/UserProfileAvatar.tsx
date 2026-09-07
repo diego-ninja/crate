@@ -5,7 +5,7 @@ export function UserProfileAvatar({
   name,
   avatar,
   userId,
-  className = "h-20 w-20",
+  className = " size-20",
 }: {
   name: string;
   avatar?: string | null;

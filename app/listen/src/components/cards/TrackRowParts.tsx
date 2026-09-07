@@ -30,7 +30,7 @@ function TrackRowPlaybackProgress({ isPlaying }: { isPlaying: boolean }) {
 
   return (
     <span
-      className="group/track-progress track-row-playback-progress relative isolate flex h-10 w-10 items-center justify-center overflow-visible rounded-full backdrop-blur-md"
+      className="group/track-progress track-row-playback-progress relative isolate flex size-10 items-center justify-center overflow-visible rounded-full backdrop-blur-md"
       data-testid="track-row-playback-progress"
     >
       <span
@@ -57,7 +57,7 @@ function TrackRowPlaybackProgress({ isPlaying }: { isPlaying: boolean }) {
       <svg
         aria-hidden="true"
         viewBox={`0 0 ${size} ${size}`}
-        className="absolute inset-[1px] z-30 h-[calc(100%-2px)] w-[calc(100%-2px)] -rotate-90 overflow-visible"
+        className="absolute inset-[1px] z-30 size-[calc(100%-2px)] -rotate-90 overflow-visible"
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
@@ -140,8 +140,8 @@ export function TrackRowLeadingControl({
       type="button"
       className={cn(
         showCoverThumb
-          ? "relative h-12 w-12 flex-shrink-0 rounded-md border-0 bg-transparent p-0 text-inherit"
-          : "flex w-10 flex-shrink-0 justify-center rounded-full border-0 bg-transparent p-0 text-center text-inherit",
+          ? "relative h-12 w-12 shrink-0 rounded-md border-0 bg-transparent p-0 text-inherit"
+          : "flex w-10 shrink-0 justify-center rounded-full border-0 bg-transparent p-0 text-center text-inherit",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-action/45 disabled:cursor-not-allowed",
       )}
       aria-label={playControlLabel}
@@ -318,11 +318,11 @@ export function TrackRowLikeControl({
   toggleTrackLike: ReturnType<typeof useLikedTracks>["toggleTrackLike"];
   track: TrackRowData;
 }) {
-  if (!hasTrackRef) return <div className="h-9 w-9 flex-shrink-0" />;
+  if (!hasTrackRef) return <div className=" size-9 shrink-0" />;
 
   return (
     <FollowHeartButton
-      className={`h-9 w-9 flex-shrink-0 rounded-full transition-opacity ${
+      className={` size-9 shrink-0 rounded-full transition-opacity ${
         liked ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"
       }`}
       title={liked ? "Unlike" : "Like"}
@@ -375,12 +375,12 @@ export function TrackRowActions({
   track: TrackRowData;
 }) {
   if (!showLocalActions || disabled) {
-    return <div className="h-9 w-9 flex-shrink-0" />;
+    return <div className=" size-9 shrink-0" />;
   }
 
   return (
     <>
-      <div className="flex flex-shrink-0 gap-1 opacity-100 transition-opacity md:opacity-65 md:group-hover:opacity-100">
+      <div className="flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-65 md:group-hover:opacity-100">
         <ItemActionMenuButton
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
@@ -399,7 +399,7 @@ export function TrackRowActions({
             onActionMenuOpen?.();
             actionMenu.handleContextMenu(event);
           }}
-          className="h-9 w-9"
+          className=" size-9"
         />
       </div>
       <ItemActionMenu

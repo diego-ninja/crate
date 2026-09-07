@@ -37,7 +37,7 @@ export function OfflineSection() {
     >
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-border-quiet/10 bg-text-primary/[0.03] p-4">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-text-primary/40">
+          <div className="text-xs uppercase tracking-[0.2em] text-text-primary/40">
             {t("settings.offline.items")}
           </div>
           <div className="mt-2 text-2xl font-semibold text-text-primary">
@@ -55,7 +55,7 @@ export function OfflineSection() {
           </p>
         </div>
         <div className="rounded-xl border border-border-quiet/10 bg-text-primary/[0.03] p-4">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-text-primary/40">
+          <div className="text-xs uppercase tracking-[0.2em] text-text-primary/40">
             {t("common.tracks")}
           </div>
           <div className="mt-2 text-2xl font-semibold text-text-primary">
@@ -66,7 +66,7 @@ export function OfflineSection() {
           </p>
         </div>
         <div className="rounded-xl border border-border-quiet/10 bg-text-primary/[0.03] p-4">
-          <div className="text-[11px] uppercase tracking-[0.2em] text-text-primary/40">
+          <div className="text-xs uppercase tracking-[0.2em] text-text-primary/40">
             {t("settings.offline.storage")}
           </div>
           <div className="mt-2 text-2xl font-semibold text-text-primary">

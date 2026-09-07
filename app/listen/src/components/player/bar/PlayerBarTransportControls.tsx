@@ -260,7 +260,7 @@ function MobileTransportControls({
         onClick={onNextTrack}
         disabled={jamTransportDisabled}
         aria-label={t("player.next")}
-        className="flex h-12 w-12 touch-manipulation items-center justify-center text-text-secondary transition-[color,filter,transform] hover:text-accent-action hover:drop-shadow-accent-action active:scale-[0.96] active:text-accent-action disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40 disabled:hover:text-text-secondary disabled:active:scale-100"
+        className="flex size-12 touch-manipulation items-center justify-center text-text-secondary transition-[color,filter,transform] hover:text-accent-action hover:drop-shadow-accent-action active:scale-[0.96] active:text-accent-action disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40 disabled:hover:text-text-secondary disabled:active:scale-100"
       >
         <SkipForward size={CRATE_ICON_SIZE.navMobile} fill="currentColor" />
       </button>

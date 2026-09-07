@@ -63,7 +63,7 @@ export function MediaCover({
         src={imageSrc}
         alt={alt}
         loading="lazy"
-        className="h-full w-full object-cover"
+        className=" size-full object-cover"
         onError={() => {
           if (showingPrimary) {
             setPrimaryErrored(true);

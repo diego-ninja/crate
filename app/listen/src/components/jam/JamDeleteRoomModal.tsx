@@ -47,7 +47,7 @@ export function JamDeleteRoomModal({
           }}
         />
       </ModalHeader>
-      <ModalBody className="px-5 py-5">
+      <ModalBody className="p-5 ">
         <div className="space-y-4">
           <div className="jam-danger-panel rounded-lg px-4 py-3">
             <div className="text-sm font-medium text-text-primary">

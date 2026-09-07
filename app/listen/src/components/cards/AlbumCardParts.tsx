@@ -178,7 +178,7 @@ export function AlbumCardArtworkSurface({
       alt={album}
       className="relative mb-2 aspect-square overflow-hidden rounded-lg bg-text-primary/5"
       fallback={
-        <div className="grid h-full w-full place-items-center bg-surface-elevated text-text-primary/35">
+        <div className="grid size-full place-items-center bg-surface-elevated text-text-primary/35">
           <Disc3 size={CRATE_ICON_SIZE.xl} />
         </div>
       }
@@ -191,7 +191,7 @@ export function AlbumCardArtworkSurface({
         className="absolute left-2 top-2 z-10"
       />
       {isPreRelease ? (
-        <span className="absolute bottom-2 left-2 z-10 rounded-full border border-accent-action/25 bg-surface-canvas/55 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-accent-action backdrop-blur-sm">
+        <span className="absolute bottom-2 left-2 z-10 rounded-full border border-accent-action/25 bg-surface-canvas/55 px-2 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-accent-action backdrop-blur-sm">
           Pre-release
         </span>
       ) : null}
@@ -222,7 +222,7 @@ export function AlbumCardArtworkControls({
     <>
       {albumId != null || globalAlbumUid ? (
         <FollowHeartButton
-          className={`absolute right-2 top-2 z-20 flex h-9 min-h-11 min-w-11 items-center justify-center rounded-full border border-[var(--idle-border)] bg-surface-canvas/55 shadow-icon-control backdrop-blur-md transition-[color,filter,transform] hover:-translate-y-px md:min-h-0 md:min-w-0 ${
+          className={`absolute right-4 top-4 z-20 flex size-10 min-h-11 min-w-11 items-center justify-center rounded-full border border-[var(--idle-border)] bg-surface-canvas/55 shadow-icon-control backdrop-blur-md transition-[color,filter,transform] hover:-translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action md:min-h-0 md:min-w-0 ${
             saved ? "opacity-100" : "opacity-0 group-hover/card:opacity-100"
           }`}
           following={saved}
@@ -241,7 +241,7 @@ export function AlbumCardArtworkControls({
       <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex aspect-square items-center justify-center bg-surface-canvas/0 transition-colors md:group-hover/card:bg-surface-canvas/40">
         <button
           type="button"
-          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent-action opacity-0 shadow-lg transition-[transform,opacity] md:translate-y-2 md:group-hover/card:translate-y-0 md:group-hover/card:opacity-100"
+          className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-accent-action opacity-0 shadow-lg transition-[transform,opacity] focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-action md:translate-y-2 md:group-focus-within/card:translate-y-0 md:group-focus-within/card:opacity-100 md:group-hover/card:translate-y-0 md:group-hover/card:opacity-100"
           onClick={onPlayOverlay}
           aria-label={`Play ${album}`}
         >

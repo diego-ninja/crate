@@ -69,7 +69,7 @@ export function SearchBar({
         autoFocus={autoFocus}
         aria-label="Search"
         className={cn(
-          "h-12 w-full rounded-xl border-0 bg-transparent py-0 pl-12 pr-11 text-[15px] text-text-primary outline-none",
+          "h-12 w-full rounded-xl border-0 bg-transparent py-0 pl-12 pr-11 text-[0.9375rem] text-text-primary outline-none",
           "placeholder:text-text-primary/40",
           disabled && "cursor-not-allowed opacity-60",
           inputClassName,

@@ -218,7 +218,7 @@ export function ScrobbleSection() {
               value={lbToken}
               onChange={(event) => setLbToken(event.target.value)}
               placeholder={t("settings.scrobbling.apiToken")}
-              className="w-36 rounded-lg border border-border-quiet/10 bg-text-primary/5 px-3 py-1.5 text-xs text-text-primary placeholder:text-text-primary/40 focus:border-accent-action/50 focus:outline-none"
+              className="w-36 rounded-lg border border-border-quiet/10 bg-text-primary/5 px-3 py-1.5 text-base text-text-primary placeholder:text-text-primary/40 focus:border-accent-action/50 focus:outline-none"
               onKeyDown={(event) => {
                 if (
                   !event.nativeEvent.isComposing &&

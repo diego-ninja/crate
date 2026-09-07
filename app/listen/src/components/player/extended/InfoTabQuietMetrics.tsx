@@ -13,7 +13,7 @@ export function InfoTabQuietMetrics({ info }: { info: TrackInfo }) {
         <div className="info-tab-quiet-card rounded-lg px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle">
                 {t("player.info.metric.loudness")}
               </p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
@@ -29,7 +29,7 @@ export function InfoTabQuietMetrics({ info }: { info: TrackInfo }) {
         <div className="info-tab-quiet-card rounded-lg px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle">
                 {t("player.info.metric.dynamicRange")}
               </p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">

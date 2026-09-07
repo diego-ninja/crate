@@ -334,7 +334,7 @@ function TopBarSearchControls({
           onKeyDown={handlers.handleKeyDown}
           placeholder={t("search.placeholder")}
           className={cn(
-            "h-12 w-full rounded-xl border-0 bg-transparent pl-12 text-[16px] text-text-primary outline-none md:h-11 md:pl-11 md:text-[15px]",
+            "h-12 w-full rounded-xl border-0 bg-transparent pl-12 text-[16px] text-text-primary outline-none md:h-11 md:pl-11 md:text-[0.9375rem]",
             "transition-[opacity,transform,box-shadow,padding] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
             "placeholder:text-text-primary/40",
             searchOpen

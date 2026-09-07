@@ -180,7 +180,7 @@ export function Upload() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border-quiet bg-text-primary/[0.04] px-3 py-1 text-[11px] uppercase tracking-wider text-text-muted">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border-quiet bg-text-primary/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-text-muted">
           <UploadIcon size={12} />
           {t("upload.badge")}
         </div>
@@ -196,7 +196,7 @@ export function Upload() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="space-y-4">
             <label className="flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-text-primary/15 bg-text-primary/[0.03] px-6 py-10 text-center transition-colors hover:border-accent-action/40 hover:bg-text-primary/[0.05]">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-action/15 text-accent-action">
+              <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-accent-action/15 text-accent-action">
                 <UploadIcon size={24} />
               </div>
               <div className="text-base font-semibold text-text-primary">
@@ -215,7 +215,7 @@ export function Upload() {
             </label>
 
             {files.length > 0 ? (
-              <div className="space-y-2 rounded-xl border border-border-quiet bg-surface-canvas/50 p-4">
+              <div className="space-y-2 border-t border-border-quiet bg-surface-canvas/50 pt-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-text-primary">
@@ -255,7 +255,7 @@ export function Upload() {
                       <span className="min-w-0 flex-1 truncate">
                         {file.name}
                       </span>
-                      <span className="text-[11px] text-text-primary/40">
+                      <span className="text-xs text-text-primary/40">
                         {formatBytes(file.size)}
                       </span>
                     </div>
@@ -265,7 +265,7 @@ export function Upload() {
             ) : null}
           </div>
 
-          <div className="space-y-4 rounded-xl border border-border-quiet bg-surface-canvas/50 p-5">
+          <div className="space-y-4 border-l border-border-quiet pl-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
               {t("upload.next.title")}
             </h2>
@@ -294,7 +294,7 @@ export function Upload() {
                 : t("upload.import")}
             </button>
             {lastUpload ? (
-              <div className="rounded-lg border border-state-success/20 bg-state-success/10 px-4 py-3 text-sm text-state-success-text">
+              <div className="border-l-2 border-state-success/40 bg-state-success/10 px-4 py-3 text-sm text-state-success-text">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 size={15} />
                   {t("upload.status.queued")}

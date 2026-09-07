@@ -28,7 +28,7 @@ interface ArtistHeroActionsProps {
 }
 
 const SECONDARY_ACTION_CLASS =
-  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
+  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-xs font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
 export function ArtistHeroActions({
   artist,
@@ -45,7 +45,7 @@ export function ArtistHeroActions({
   const { t } = useTranslation();
 
   return (
-    <div className="px-4 py-4 sm:px-0">
+    <div className="p-4  sm:px-0">
       <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5 sm:px-6 md:flex-row md:items-center md:justify-between md:gap-6">
         <div
           role="group"
@@ -54,7 +54,7 @@ export function ArtistHeroActions({
         >
           <button
             type="button"
-            className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-action-solid transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-accent-action/90 hover:shadow-action-solid-hover md:px-7 md:text-[15px]"
+            className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-action-solid transition-[background-color,box-shadow] hover:bg-accent-action/90 hover:shadow-action-solid-hover md:px-7 md:text-[0.9375rem]"
             onClick={onPlay}
             aria-label={t("player.play")}
           >

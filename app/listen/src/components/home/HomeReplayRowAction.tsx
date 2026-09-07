@@ -75,7 +75,7 @@ export function HomeReplayRowAction({
       onContextMenu={actionMenu.handleContextMenu}
       className="home-playback-row group/row flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors"
     >
-      <div className="relative h-11 w-11 shrink-0">
+      <div className="relative size-11 shrink-0">
         <TrackCoverThumb
           src={cover}
           iconSize={16}
@@ -95,14 +95,14 @@ export function HomeReplayRowAction({
         </div>
         <div className="truncate text-xs text-text-muted">{item.artist}</div>
       </div>
-      <span className="home-replay-count-badge shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+      <span className="home-replay-count-badge shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wider">
         {item.play_count}×
       </span>
       <ItemActionMenuButton
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+        className=" size-8 opacity-80 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}

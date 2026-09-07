@@ -38,10 +38,10 @@ export function HomeQueueCardAction({
         }
       }}
       onContextMenu={actionMenu.handleContextMenu}
-      className="home-queue-card group w-[220px] flex-shrink-0 cursor-pointer overflow-hidden rounded-xl text-left"
+      className="home-queue-card group w-[220px] shrink-0 cursor-pointer overflow-hidden rounded-xl text-left"
     >
       <div className="flex items-center gap-3 p-3">
-        <div className="relative h-16 w-16 shrink-0">
+        <div className="relative size-16 shrink-0">
           <TrackCoverThumb
             src={track.albumCover}
             iconSize={18}
@@ -63,7 +63,7 @@ export function HomeQueueCardAction({
             {track.artist}
           </div>
           {track.album ? (
-            <div className="home-playback-album-text mt-1 truncate text-[11px]">
+            <div className="home-playback-album-text mt-1 truncate text-xs">
               {track.album}
             </div>
           ) : null}
@@ -72,7 +72,7 @@ export function HomeQueueCardAction({
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
           onClick={actionMenu.openFromTrigger}
-          className="h-8 w-8 self-start opacity-80 transition-opacity hover:opacity-100"
+          className=" size-8 self-start opacity-80 transition-opacity hover:opacity-100"
         />
       </div>
       <ItemActionMenu

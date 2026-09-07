@@ -141,11 +141,11 @@ export const TrackRow = memo(function TrackRow({
               state={model.offlineState}
               compact
               subtle
-              className="flex-shrink-0"
+              className="shrink-0"
             />
           ) : null}
           {model.disabled ? (
-            <span className="track-row-disabled-badge flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]">
+            <span className="track-row-disabled-badge shrink-0 rounded-full px-2 py-0.5 text-xs uppercase tracking-[0.14em]">
               Soon
             </span>
           ) : null}
@@ -163,7 +163,7 @@ export const TrackRow = memo(function TrackRow({
       </div>
 
       {track.duration != null && track.duration > 0 && (
-        <span className="text-text-muted flex-shrink-0 text-xs tabular-nums">
+        <span className="text-text-muted shrink-0 text-xs tabular-nums">
           {formatDuration(track.duration)}
         </span>
       )}

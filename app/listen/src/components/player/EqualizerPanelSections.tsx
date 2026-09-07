@@ -78,7 +78,7 @@ function EqualizerHeader({
         >
           {t("player.equalizer.smart.label")}
           {eq.smart && eq.smartStatus === "loading" ? (
-            <span className="ml-1 text-[9px] opacity-60">…</span>
+            <span className="ml-1 text-xs opacity-60">…</span>
           ) : null}
         </CratePill>
         <label className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
@@ -86,7 +86,7 @@ function EqualizerHeader({
             type="checkbox"
             checked={eq.enabled}
             onChange={(event) => eq.toggleEnabled(event.target.checked)}
-            className="h-3.5 w-3.5 accent-accent-action"
+            className=" size-3.5 accent-accent-action"
           />
           {t("common.on")}
         </label>
@@ -114,7 +114,7 @@ function EqualizerModePicker({ eq, t }: { eq: EqualizerState; t: TFunction }) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border-quiet bg-surface-control px-2.5 py-2">
-      <span className="mr-1 text-[9px] uppercase tracking-[0.18em] text-text-subtle">
+      <span className="mr-1 text-xs uppercase tracking-[0.18em] text-text-subtle">
         {t("player.equalizer.manualHelpers")}
       </span>
       <CratePill
@@ -125,7 +125,7 @@ function EqualizerModePicker({ eq, t }: { eq: EqualizerState; t: TFunction }) {
       >
         {t("player.equalizer.genre.label")}
         {eq.genreAdaptive && eq.genreAdaptiveStatus === "loading" ? (
-          <span className="ml-1 text-[9px] opacity-60">…</span>
+          <span className="ml-1 text-xs opacity-60">…</span>
         ) : null}
       </CratePill>
       <CratePill
@@ -136,7 +136,7 @@ function EqualizerModePicker({ eq, t }: { eq: EqualizerState; t: TFunction }) {
       >
         {t("player.equalizer.adaptive.label")}
         {eq.adaptive && eq.adaptiveStatus === "loading" ? (
-          <span className="ml-1 text-[9px] opacity-60">…</span>
+          <span className="ml-1 text-xs opacity-60">…</span>
         ) : null}
       </CratePill>
     </div>
@@ -183,7 +183,7 @@ function EqualizerModeBadge({
 }) {
   if (smart) {
     return (
-      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-[10px] text-accent-action">
+      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-xs text-accent-action">
         <Brain size={9} />
         {t("player.equalizer.smartCurve")}
       </span>
@@ -191,7 +191,7 @@ function EqualizerModeBadge({
   }
   if (adaptive) {
     return (
-      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-[10px] text-accent-action">
+      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-xs text-accent-action">
         <Sparkles size={9} />
         {t("player.equalizer.adaptiveActive")}
       </span>
@@ -199,7 +199,7 @@ function EqualizerModeBadge({
   }
   if (genreAdaptive) {
     return (
-      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-[10px] text-accent-action">
+      <span className="flex items-center gap-1 rounded-full border border-accent-action/40 bg-accent-action/10 px-2 py-0.5 text-xs text-accent-action">
         <Tag size={9} />
         {t("player.equalizer.genreActive")}
       </span>
@@ -207,7 +207,7 @@ function EqualizerModeBadge({
   }
   if (preset === "custom") {
     return (
-      <span className="rounded-full border border-border-quiet bg-surface-control px-2 py-0.5 text-[10px] text-text-secondary">
+      <span className="rounded-full border border-border-quiet bg-surface-control px-2 py-0.5 text-xs text-text-secondary">
         {t("player.equalizer.custom")}
       </span>
     );
@@ -239,7 +239,7 @@ function EqualizerTrackPresetActions({
           type="button"
           disabled={saving}
           onClick={onClear}
-          className="inline-flex items-center gap-1 rounded-full border border-state-danger/20 bg-state-danger/[0.06] px-2.5 py-0.5 text-[10px] text-state-danger/80 hover:border-state-danger/35 hover:text-state-danger disabled:cursor-wait disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-full border border-state-danger/20 bg-state-danger/[0.06] px-2.5 py-0.5 text-xs text-state-danger/80 hover:border-state-danger/35 hover:text-state-danger disabled:cursor-wait disabled:opacity-50"
         >
           <Trash2 size={9} />
           {t("player.equalizer.clearTrackPreset")}
@@ -249,7 +249,7 @@ function EqualizerTrackPresetActions({
           type="button"
           disabled={!eq.enabled || saving}
           onClick={onSave}
-          className="inline-flex items-center gap-1 rounded-full border border-accent-action/20 bg-accent-action/[0.06] px-2.5 py-0.5 text-[10px] text-accent-action/80 hover:border-accent-action/35 hover:text-accent-action disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-full border border-accent-action/20 bg-accent-action/[0.06] px-2.5 py-0.5 text-xs text-accent-action/80 hover:border-accent-action/35 hover:text-accent-action disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Save size={9} />
           {t("player.equalizer.saveForTrack")}
@@ -259,7 +259,7 @@ function EqualizerTrackPresetActions({
         type="button"
         disabled={!manualControlsEnabled}
         onClick={eq.resetToFlat}
-        className={`inline-flex items-center gap-1 rounded-full border border-border-quiet bg-surface-control px-2.5 py-0.5 text-[10px] text-text-secondary hover:border-border-interactive hover:text-text-primary ${
+        className={`inline-flex items-center gap-1 rounded-full border border-border-quiet bg-surface-control px-2.5 py-0.5 text-xs text-text-secondary hover:border-border-interactive hover:text-text-primary ${
           !manualControlsEnabled ? "cursor-not-allowed opacity-40" : ""
         }`}
       >

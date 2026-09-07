@@ -37,7 +37,7 @@ export function LibraryBandcampImported({
             key={contribution.id}
             className="flex items-center gap-3 rounded-xl border border-text-primary/8 bg-text-primary/[0.03] p-3"
           >
-            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
+            <div className=" size-14 shrink-0 overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
               {contribution.album_id ? (
                 <CrateImage
                   src={albumCoverApiUrl(
@@ -51,10 +51,10 @@ export function LibraryBandcampImported({
                   )}
                   alt=""
                   loading="lazy"
-                  className="h-full w-full object-cover"
+                  className=" size-full object-cover"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center">
+                <div className="flex size-full items-center justify-center">
                   <BandcampLogo size={20} className="text-accent-action/70" />
                 </div>
               )}

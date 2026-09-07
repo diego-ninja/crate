@@ -13,7 +13,7 @@ export function AlbumHeroCover({
   displayName: string;
 }) {
   return (
-    <div className="w-[200px] flex-shrink-0 self-center sm:w-[240px] sm:self-auto lg:w-[280px]">
+    <div className="w-[200px] shrink-0 self-center sm:w-[240px] sm:self-auto lg:w-[280px]">
       <div
         data-testid="album-mobile-cover-spacer"
         aria-hidden="true"
@@ -27,13 +27,13 @@ export function AlbumHeroCover({
           <CrateImage
             src={coverUrl}
             alt={displayName}
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center">
+          <div className="flex size-full items-center justify-center">
             <Disc size={64} className="text-text-primary/10" />
           </div>
         )}

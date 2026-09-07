@@ -225,7 +225,10 @@ textarea {
 }
 
 .listen-player-progress-width-dynamic {
-  width: var(--progress-width);
+  width: 100%;
+  transform: translateY(-50%) scaleX(var(--progress-scale));
+  transform-origin: left center;
+  transition: transform 150ms;
 }
 
 .listen-player-progress-left-dynamic,
@@ -234,7 +237,17 @@ textarea {
 }
 
 .listen-player-progress-height-dynamic {
-  height: var(--progress-height);
+  height: 100%;
+  transform: translateX(-50%) scaleY(var(--progress-scale));
+  transform-origin: center bottom;
+  transition: transform 150ms;
+}
+
+.jam-progress-fill-dynamic {
+  width: 100%;
+  transform: scaleX(var(--progress-scale));
+  transform-origin: left center;
+  transition: transform 300ms;
 }
 
 .listen-player-progress-bottom-dynamic {

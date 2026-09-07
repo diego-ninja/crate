@@ -44,7 +44,7 @@ export function JamOpenRoomsPanel({
           value={roomSearch}
           onChange={(event) => setRoomSearch(event.target.value)}
           placeholder={t("jam.lobby.searchPlaceholder")}
-          className="h-8 min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+          className="h-8 min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted"
         />
       </div>
 

@@ -117,8 +117,8 @@ export function Bandcamp() {
         <div className="bandcamp-page-sheen pointer-events-none absolute inset-y-0 right-0 w-1/2" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full bg-accent-action/10 px-3 py-1 text-xs font-black uppercase tracking-[0.24em] text-accent-action">
-              <BandcampLogo className="h-3.5 w-3.5" />
+            <div className="inline-flex items-center gap-2 rounded-full bg-accent-action/10 px-3 py-2 text-xs font-black uppercase tracking-[0.24em] text-accent-action">
+              <BandcampLogo className=" size-3.5" />
               Bandcamp
             </div>
             <h1 className="mt-5 text-4xl font-black tracking-tight text-text-primary md:text-6xl">
@@ -148,9 +148,9 @@ export function Bandcamp() {
               className="inline-flex h-11 items-center gap-2 rounded-full bg-accent-action px-5 text-sm font-black text-accent-action-foreground transition hover:bg-accent-action/90 disabled:opacity-50"
             >
               {busyAction === "sync" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className=" size-4 animate-spin" />
               ) : (
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className=" size-4" />
               )}
               {t("bandcamp.actions.sync")}
             </button>
@@ -166,7 +166,7 @@ export function Bandcamp() {
               }
               className="inline-flex h-11 items-center gap-2 rounded-full border border-text-primary/12 bg-text-primary/5 px-5 text-sm font-black text-text-primary transition hover:bg-text-primary/10 disabled:opacity-50"
             >
-              <Radar className="h-4 w-4" />
+              <Radar className=" size-4" />
               {t("bandcamp.actions.refreshRadar")}
             </button>
           </div>
@@ -274,7 +274,7 @@ function StatCard({
         <span className="text-xs font-black uppercase tracking-[0.24em] text-text-muted">
           {label}
         </span>
-        <Icon className="h-4 w-4 text-accent-action" />
+        <Icon className=" size-4 text-accent-action" />
       </div>
       <div className="mt-5 text-4xl font-black text-text-primary">
         {value.toLocaleString()}

@@ -171,7 +171,7 @@ export function GenreExplorer({
                   alt=""
                   aria-hidden="true"
                   loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover opacity-60 blur-[1px] saturate-125 transition duration-300 group-hover:scale-[1.04] group-hover:opacity-70"
+                  className="absolute inset-0 size-full object-cover opacity-60 blur-[1px] saturate-125 transition duration-300 group-hover:scale-[1.04] group-hover:opacity-70"
                 />
               ) : null}
               <div
@@ -185,7 +185,7 @@ export function GenreExplorer({
               />
               <div className="relative flex h-full flex-col justify-between gap-5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-action/90">
+                  <span className="text-xs font-bold uppercase tracking-[0.18em] text-accent-action/90">
                     {t("explore.genreRooms.badge")}
                   </span>
                   <Radio
@@ -300,7 +300,7 @@ export function MoodBrowseSection({ moods }: { moods: MoodPreset[] }) {
             <span className="text-sm font-medium capitalize">
               {loadingMood === mood.name ? t("common.loadingShort") : mood.name}
             </span>
-            <span className="mt-0.5 block text-[10px] opacity-60">
+            <span className="mt-0.5 block text-xs opacity-60">
               {t("common.trackCount", { count: mood.track_count })}
             </span>
           </button>

@@ -50,7 +50,7 @@ export function RelatedGenreCard({ genre, onOpen }: RelatedGenreCardProps) {
         <CrateImage
           src={coverUrl}
           alt=""
-          className="absolute inset-0 -z-10 h-full w-full scale-[1.04] object-cover opacity-35 saturate-125 transition duration-300 group-hover:opacity-45"
+          className="absolute inset-0 -z-10 size-full scale-[1.04] object-cover opacity-35 saturate-125 transition duration-300 group-hover:opacity-45"
           decoding="async"
           loading="eager"
           onError={() => {
@@ -71,7 +71,7 @@ export function RelatedGenreCard({ genre, onOpen }: RelatedGenreCardProps) {
       <div className="explore-related-genre-overlay absolute inset-0 -z-10" />
       <div className="flex h-full min-h-[108px] flex-col justify-between gap-4">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-action/85">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-action/85">
             {genre.relation_label}
           </div>
           <div className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-text-primary">
@@ -79,7 +79,7 @@ export function RelatedGenreCard({ genre, onOpen }: RelatedGenreCardProps) {
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[11px] text-text-muted">
+          <span className="truncate text-xs text-text-muted">
             {contentLabel}
           </span>
           <ArrowRight

@@ -64,13 +64,13 @@ export function ArtistBioHeader({
       data-testid="artist-bio-header"
       className="relative top-auto z-auto border-b-0 bg-transparent backdrop-blur-none"
     >
-      <div className="flex items-start justify-between gap-4 px-5 py-5 sm:px-6">
+      <div className="flex items-start justify-between gap-4 p-5 sm:px-6">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl bg-surface-quiet-subtle shadow-xl">
+          <div className=" size-16 shrink-0 overflow-hidden rounded-xl bg-surface-quiet-subtle shadow-xl">
             <CrateImage
               src={photoUrl}
               alt={artist.name}
-              className="h-full w-full object-cover"
+              className=" size-full object-cover"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
               }}
@@ -107,7 +107,7 @@ export function ArtistBioHeader({
         </div>
         <ModalCloseButton
           onClick={onClose}
-          className="flex-shrink-0 text-text-secondary transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-strong"
+          className="shrink-0 text-text-secondary transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-strong"
         />
       </div>
     </ModalHeader>
@@ -134,7 +134,7 @@ export function ArtistBioStats({
           <div className="text-xl font-bold text-text-hero">
             {formatCompact(listeners)}
           </div>
-          <div className="text-[11px] text-text-meta">listeners</div>
+          <div className="text-xs text-text-meta">listeners</div>
         </div>
       ) : null}
       {playcount > 0 ? (
@@ -142,7 +142,7 @@ export function ArtistBioStats({
           <div className="text-xl font-bold text-text-hero">
             {formatCompact(playcount)}
           </div>
-          <div className="text-[11px] text-text-meta">scrobbles</div>
+          <div className="text-xs text-text-meta">scrobbles</div>
         </div>
       ) : null}
       {spotifyFollowers > 0 ? (
@@ -150,7 +150,7 @@ export function ArtistBioStats({
           <div className="text-xl font-bold text-text-hero">
             {formatCompact(spotifyFollowers)}
           </div>
-          <div className="text-[11px] text-text-meta">followers</div>
+          <div className="text-xs text-text-meta">followers</div>
         </div>
       ) : null}
       {spotifyPopularity > 0 ? (
@@ -158,7 +158,7 @@ export function ArtistBioStats({
           <div className="text-xl font-bold text-text-hero">
             {spotifyPopularity}%
           </div>
-          <div className="text-[11px] text-text-meta">popularity</div>
+          <div className="text-xs text-text-meta">popularity</div>
         </div>
       ) : null}
     </div>
@@ -178,7 +178,7 @@ export function ArtistBioText({
 
   return (
     <div>
-      <p className="whitespace-pre-line text-sm leading-7 text-text-secondary-strong sm:text-[15px]">
+      <p className="whitespace-pre-line text-sm leading-7 text-text-secondary-strong sm:text-[0.9375rem]">
         <SharedArtistBioText text={bio} maxChars={500} expanded={bioExpanded} />
       </p>
       {bio.length > 500 ? (
@@ -221,12 +221,12 @@ export function ArtistBioMembers({ members }: { members: MBMember[] }) {
             <div className="flex items-center gap-2">
               <span className="text-sm text-text-hero">{member.name}</span>
               {member.attributes?.length ? (
-                <span className="text-[11px] text-text-quiet">
+                <span className="text-xs text-text-quiet">
                   {member.attributes.join(", ")}
                 </span>
               ) : null}
             </div>
-            <span className="text-[11px] text-text-quiet">
+            <span className="text-xs text-text-quiet">
               {member.begin ?? "?"} - {member.end ?? "present"}
             </span>
           </div>
@@ -243,7 +243,7 @@ export function ArtistLibraryStats({ artist }: { artist: ArtistData }) {
       : `${artist.total_size_mb} MB`;
 
   return (
-    <div className="flex gap-6 text-[11px] text-text-quiet">
+    <div className="flex gap-6 text-xs text-text-quiet">
       <span>
         <strong className="text-text-secondary">{artist.albums.length}</strong>{" "}
         albums
@@ -278,7 +278,7 @@ export function ArtistExternalLinks({
             event.preventDefault();
             void openExternalUrl(link.url);
           }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border-quiet px-2.5 py-1 text-[11px] text-text-muted-strong transition-colors hover:border-border-interactive hover:bg-surface-quiet-subtle hover:text-text-secondary-strong"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-quiet px-2.5 py-1 text-xs text-text-muted-strong transition-colors hover:border-border-interactive hover:bg-surface-quiet-subtle hover:text-text-secondary-strong"
         >
           <Globe size={11} /> {linkLabel(link.type, link.url)}
         </a>
@@ -311,7 +311,7 @@ export function ArtistBioModalContent({
   artist: ArtistData;
 }) {
   return (
-    <ModalBody className="flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+    <ModalBody className="flex-1 space-y-6 overflow-y-auto p-5 sm:px-6">
       <ArtistBioStats
         listeners={listeners}
         playcount={playcount}

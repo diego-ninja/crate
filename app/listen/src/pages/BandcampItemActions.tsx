@@ -32,9 +32,9 @@ export function BandcampItemActions({
           className="inline-flex h-9 items-center gap-2 rounded-full bg-accent-action px-3 text-xs font-black text-accent-action-foreground transition hover:bg-accent-action/90 disabled:opacity-50"
         >
           {busyAction === `import:${item.id}` ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className=" size-3.5 animate-spin" />
           ) : (
-            <Download className="h-3.5 w-3.5" />
+            <Download className=" size-3.5" />
           )}
           {!compact ? t("common.import") : null}
         </button>
@@ -45,7 +45,7 @@ export function BandcampItemActions({
           onClick={() => void openExternalUrl(item.item_url ?? "")}
           className="inline-flex h-9 items-center gap-2 rounded-full border border-border-quiet bg-text-primary/5 px-3 text-xs font-black text-text-primary transition hover:bg-text-primary/10"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
+          <ExternalLink className=" size-3.5" />
           {!compact ? t("common.open") : null}
         </button>
       ) : null}

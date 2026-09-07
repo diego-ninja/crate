@@ -105,7 +105,7 @@ export function HeroActions({
       </button>
       <FollowHeartButton
         aria-label={followLabel}
-        className="home-hero-follow inline-flex h-11 w-11 items-center justify-center rounded-md border-0 bg-transparent transition-colors hover:bg-transparent"
+        className="home-hero-follow inline-flex size-11 items-center justify-center rounded-md border-0 bg-transparent transition-colors hover:bg-transparent"
         following={following}
         heartTestId="hero-follow-heart"
         particlesTestId="hero-follow-particles"

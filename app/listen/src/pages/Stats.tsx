@@ -66,7 +66,7 @@ function StatsHeader({ page }: { page: StatsPageController }) {
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <div className="stats-hero-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em]">
+        <div className="stats-hero-badge inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.24em]">
           <BarChart3 size={12} />
           {t("stats.hero.badge")}
         </div>

@@ -60,7 +60,7 @@ export function JamRoomMetadataModal({
         </div>
         <ModalCloseButton onClick={() => setMetadataModalOpen(false)} />
       </ModalHeader>
-      <ModalBody className="px-5 py-5">
+      <ModalBody className="p-5 ">
         <div className="space-y-4">
           <label className="block">
             <span className="text-xs font-medium text-text-muted">
@@ -71,7 +71,7 @@ export function JamRoomMetadataModal({
               onChange={(event) => setMetadataDescription(event.target.value)}
               rows={4}
               placeholder={t("jam.room.descriptionPlaceholder")}
-              className="jam-input mt-2 w-full resize-none rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted"
+              className="jam-input mt-2 w-full resize-none rounded-lg px-4 py-3 text-base text-text-primary placeholder:text-text-muted"
             />
           </label>
           <label className="block">
@@ -82,7 +82,7 @@ export function JamRoomMetadataModal({
               value={metadataTagsInput}
               onChange={(event) => setMetadataTagsInput(event.target.value)}
               placeholder={t("jam.room.tagsPlaceholder")}
-              className="jam-input mt-2 h-11 w-full rounded-lg px-4 text-sm text-text-primary placeholder:text-text-muted"
+              className="jam-input mt-2 h-11 w-full rounded-lg px-4 text-base text-text-primary placeholder:text-text-muted"
             />
           </label>
           <div className="flex flex-wrap justify-end gap-2">
@@ -137,7 +137,7 @@ export function JamRoomInviteModal({
         </div>
         <ModalCloseButton onClick={() => setInviteModalOpen(false)} />
       </ModalHeader>
-      <ModalBody className="px-5 py-5">
+      <ModalBody className="p-5 ">
         {inviteLink ? (
           <div className="space-y-4">
             <div className="flex justify-center">

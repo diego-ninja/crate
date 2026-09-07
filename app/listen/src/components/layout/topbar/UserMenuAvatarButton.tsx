@@ -29,7 +29,7 @@ export function UserMenuAvatarButton({
         aria-expanded={actionMenu.open}
         aria-haspopup="menu"
         aria-label={userMenuLabel}
-        className="flex h-12 w-12 touch-manipulation items-center justify-center overflow-hidden rounded-full border border-border-quiet bg-surface-canvas/30 text-sm font-medium text-text-primary/70 shadow-icon-control backdrop-blur-sm transition-colors hover:bg-surface-canvas/50 hover:text-text-primary"
+        className="flex size-12 touch-manipulation items-center justify-center overflow-hidden rounded-full border border-border-quiet bg-surface-canvas/30 text-sm font-medium text-text-primary/70 shadow-icon-control backdrop-blur-sm transition-colors hover:bg-surface-canvas/50 hover:text-text-primary"
         {...actionMenu.longPressHandlers}
       >
         {avatarUrl ? (
@@ -37,7 +37,7 @@ export function UserMenuAvatarButton({
             src={avatarUrl}
             alt=""
             onError={handleAvatarError}
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
           />
         ) : (
           initial || <User size={CRATE_ICON_SIZE.lg} />

@@ -25,7 +25,7 @@ export function LibraryBandcampHeader({
     <div className="rounded-[12px] border border-accent-action/20 bg-accent-action/10 p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-accent-action/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-accent-action">
+          <div className="inline-flex items-center gap-2 rounded-full bg-accent-action/15 px-3 py-2 text-xs font-black uppercase tracking-[0.22em] text-accent-action">
             <BandcampLogo size={13} />
             Bandcamp
           </div>

@@ -182,7 +182,7 @@ export function AccountSection() {
         <ConnectDevicesSection />
         {authConfig.invite_only ? (
           <div className="flex items-start gap-3 rounded-xl border border-accent-action/20 bg-accent-action/10 px-4 py-3 text-sm text-accent-action">
-            <Shield size={16} className="mt-0.5 flex-shrink-0" />
+            <Shield size={16} className="mt-0.5 shrink-0" />
             <div>{t("settings.account.inviteOnlyNotice")}</div>
           </div>
         ) : null}

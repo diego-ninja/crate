@@ -79,21 +79,21 @@ export function EditorialPlaylistArtwork({
             alt={title}
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-cover grayscale"
+            className=" size-full object-cover grayscale"
           />
         ) : (
           <PlaylistArtwork
             name={title}
             coverDataUrl={coverDataUrl}
             tracks={tracks}
-            className="h-full w-full rounded-none"
+            className=" size-full rounded-none"
           />
         )}
       </div>
 
       <div
         className={cn(
-          "absolute inset-0 z-[1] bg-gradient-to-br mix-blend-screen",
+          "absolute inset-0 z-[1] bg-linear-to-br mix-blend-screen",
           VARIANT_TONES[variant],
         )}
       />
@@ -106,7 +106,7 @@ export function EditorialPlaylistArtwork({
         alt=""
         aria-hidden="true"
         data-testid="crate-editorial-mark"
-        className="absolute right-[7%] top-[7%] z-[4] h-[8.5cqw] max-h-6 min-h-3.5 w-[8.5cqw] max-w-6 min-w-3.5 opacity-95 drop-shadow-artwork-mark"
+        className="absolute right-[7%] top-[7%] z-[4] max-h-6 min-h-3.5 size-[8.5cqw] max-w-6 min-w-3.5 opacity-95 drop-shadow-artwork-mark"
       />
 
       <div

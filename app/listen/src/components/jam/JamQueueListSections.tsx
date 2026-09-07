@@ -154,10 +154,10 @@ export function JamQueueList(props: JamQueueListProps) {
                   <CrateImage
                     src={track.albumCover}
                     alt=""
-                    className="h-10 w-10 rounded-lg object-cover"
+                    className=" size-10 rounded-lg object-cover"
                   />
                 ) : (
-                  <div className="jam-artwork-placeholder flex h-10 w-10 items-center justify-center rounded-lg">
+                  <div className="jam-artwork-placeholder flex size-10 items-center justify-center rounded-lg">
                     <ListMusic size={15} />
                   </div>
                 )}

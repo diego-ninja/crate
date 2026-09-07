@@ -52,16 +52,16 @@ export function PlaylistIdentitySection({
 
   return (
     <div className="flex items-start gap-4">
-      <div className="relative flex-shrink-0">
+      <div className="relative shrink-0">
         <PlaylistArtwork
           name={name || t("playlistComposer.newPlaylist")}
           coverDataUrl={coverDataUrl}
           tracks={tracks}
-          className="h-24 w-24 rounded-xl shadow-2xl sm:h-28 sm:w-28"
+          className="size-24 rounded-xl shadow-2xl sm:size-28"
         />
         <button
           type="button"
-          className="absolute inset-x-2 bottom-2 inline-flex items-center justify-center gap-1 rounded-full bg-surface-canvas/65 px-2.5 py-1.5 text-[11px] font-medium text-text-primary backdrop-blur-md transition-colors hover:bg-surface-canvas/80"
+          className="absolute inset-x-2 bottom-2 inline-flex items-center justify-center gap-1 rounded-full bg-surface-canvas/65 px-2.5 py-1.5 text-xs font-medium text-text-primary backdrop-blur-md transition-colors hover:bg-surface-canvas/80"
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload size={12} />
@@ -78,7 +78,7 @@ export function PlaylistIdentitySection({
 
       <div className="min-w-0 flex-1 space-y-3 pt-1">
         <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-text-primary/40">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-text-primary/40">
             {t("playlistComposer.playlistLabel")}
           </div>
           {titleEditing ? (
@@ -109,7 +109,7 @@ export function PlaylistIdentitySection({
         </div>
 
         <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-text-primary/40">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-text-primary/40">
             {t("playlistComposer.descriptionLabel")}
           </div>
           {descriptionEditing ? (
@@ -130,7 +130,7 @@ export function PlaylistIdentitySection({
                   value: false,
                 })
               }
-              className="w-full resize-none rounded-lg border border-border-quiet bg-text-primary/5 px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-accent-action focus:outline-none"
+              className="w-full resize-none rounded-lg border border-border-quiet bg-text-primary/5 px-3 py-2.5 text-base text-text-primary placeholder:text-text-muted focus:border-accent-action focus:outline-none"
             />
           ) : (
             <button

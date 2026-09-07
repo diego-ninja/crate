@@ -176,16 +176,16 @@ function RecentEntityRowFrame({
       onClick={onClick}
       onKeyDown={handleKeyDown}
       onContextMenu={actionMenu.handleContextMenu}
-      className="home-discovery-card group flex min-w-0 items-center gap-3 rounded-lg px-3 py-3 text-left"
+      className="home-discovery-card group flex min-w-0 items-center gap-3 rounded-lg p-3 text-left"
       {...actionMenu.longPressHandlers}
     >
-      <div className="home-discovery-artwork relative h-12 w-12 shrink-0 overflow-hidden rounded-xl">
+      <div className="home-discovery-artwork relative size-12 shrink-0 overflow-hidden rounded-xl">
         {item.type === "playlist" ? (
           <PlaylistArtwork
             name={item.playlist_name}
             coverDataUrl={item.playlist_cover_data_url}
             tracks={item.playlist_tracks}
-            className="h-full w-full rounded-xl"
+            className=" size-full rounded-xl"
           />
         ) : artworkUrl ? (
           <CrateImage
@@ -193,10 +193,10 @@ function RecentEntityRowFrame({
             alt=""
             loading="lazy"
             decoding="async"
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
           />
         ) : (
-          <div className="home-discovery-artwork flex h-full w-full items-center justify-center">
+          <div className="home-discovery-artwork flex size-full items-center justify-center">
             {item.type === "artist" ? (
               <UserRound
                 size={18}
@@ -225,7 +225,7 @@ function RecentEntityRowFrame({
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
           onClick={actionMenu.openFromTrigger}
-          className="h-9 w-9 opacity-75 transition-opacity hover:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+          className=" size-9 opacity-75 transition-opacity hover:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
         />
       </div>
 

@@ -22,7 +22,7 @@ function UpcomingFeatureMeta({
     <div className="mb-4 flex flex-wrap gap-2">
       {date ? (
         <div className="home-upcoming-meta-card rounded-lg px-3 py-2 backdrop-blur">
-          <div className="home-upcoming-meta-label text-[10px] uppercase tracking-[0.16em]">
+          <div className="home-upcoming-meta-label text-xs uppercase tracking-[0.16em]">
             {t("home.radar.meta.date")}
           </div>
           <div className="mt-1 text-sm font-semibold text-text-primary">
@@ -32,7 +32,7 @@ function UpcomingFeatureMeta({
       ) : null}
       {isShow && item.venue ? (
         <div className="home-upcoming-meta-card rounded-lg px-3 py-2 backdrop-blur">
-          <div className="home-upcoming-meta-label text-[10px] uppercase tracking-[0.16em]">
+          <div className="home-upcoming-meta-label text-xs uppercase tracking-[0.16em]">
             {t("home.radar.meta.venue")}
           </div>
           <div className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-text-primary">
@@ -129,7 +129,7 @@ export function HomeUpcomingFeature({
           src={presentation.artistImage}
           alt=""
           loading="lazy"
-          className="absolute inset-0 h-full w-full object-cover opacity-40 grayscale"
+          className="absolute inset-0 size-full object-cover opacity-40 grayscale"
           onError={(event) => {
             (event.target as HTMLImageElement).style.display = "none";
           }}
@@ -139,7 +139,7 @@ export function HomeUpcomingFeature({
 
       <div className="relative flex min-h-[222px] flex-col justify-between">
         <div>
-          <div className="home-upcoming-badge mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em]">
+          <div className="home-upcoming-badge mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.18em]">
             {presentation.isShow ? (
               <RadioTower size={12} />
             ) : (

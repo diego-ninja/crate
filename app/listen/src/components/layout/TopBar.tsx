@@ -17,10 +17,10 @@ export function TopBar({ hideMobileActions = false }: TopBarProps) {
 
   return (
     <div className="flex h-16 w-full items-center gap-2 px-3 pointer-events-none sm:gap-4 sm:px-4">
-      <div className="flex flex-shrink-0 items-center gap-2 pointer-events-auto">
+      <div className="flex shrink-0 items-center gap-2 pointer-events-auto">
         <button
           onClick={() => navigate(-1)}
-          className="flex h-11 w-11 touch-manipulation items-center justify-center text-text-secondary transition-colors hover:text-text-primary md:h-10 md:w-10"
+          className="flex size-11 touch-manipulation items-center justify-center text-text-secondary transition-colors hover:text-text-primary md:size-10"
           aria-label={backLabel}
           title={backLabel}
         >
@@ -31,7 +31,7 @@ export function TopBar({ hideMobileActions = false }: TopBarProps) {
         </button>
         <button
           onClick={() => navigate(1)}
-          className="hidden h-10 w-10 items-center justify-center text-text-secondary transition-colors hover:text-text-primary md:flex"
+          className="hidden size-10 items-center justify-center text-text-secondary transition-colors hover:text-text-primary md:flex"
           aria-label={forwardLabel}
           title={forwardLabel}
         >

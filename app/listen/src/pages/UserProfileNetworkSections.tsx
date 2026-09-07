@@ -75,7 +75,7 @@ function UserProfilePeopleList({
                 name={label}
                 avatar={item.avatar}
                 userId={item.id}
-                className="h-10 w-10"
+                className=" size-10"
               />
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-text-primary">

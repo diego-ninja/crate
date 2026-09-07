@@ -5,7 +5,7 @@ import { Slot } from "radix-ui";
 import { cn } from "@crate/ui/lib/cn";
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-[background-color,color,border-color,box-shadow] focus-visible:border-text-primary/15 focus-visible:shadow-border-soft aria-invalid:border-state-danger [&>svg]:pointer-events-none [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-[background-color,color,border-color,box-shadow] focus-visible:border-text-primary/15 focus-visible:shadow-border-soft aria-invalid:border-state-danger [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {

@@ -55,7 +55,7 @@ export function InfoTabHeroIdentity({
 
   return (
     <div className="min-w-0 flex-1 pt-1">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">
         {t("player.info.nowInspecting")}
       </p>
       <h3 className="mt-1 text-xl font-semibold leading-tight text-text-primary text-balance">
@@ -95,7 +95,7 @@ export function InfoTabHeroIdentity({
           {audioSummary.map((item) => (
             <span
               key={item}
-              className="info-tab-audio-pill rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary"
+              className="info-tab-audio-pill rounded-full px-2.5 py-1 text-xs font-medium uppercase tracking-[0.14em] text-text-secondary"
             >
               {item}
             </span>

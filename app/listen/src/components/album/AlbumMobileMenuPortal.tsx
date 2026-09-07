@@ -42,7 +42,7 @@ export function AlbumMobileMenuPortal({
       <button
         ref={albumMenuController.anchorRef}
         data-testid="album-mobile-hero-menu"
-        className="flex h-11 w-11 touch-manipulation items-center justify-center text-text-primary/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover"
+        className="flex size-11 touch-manipulation items-center justify-center text-text-primary/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover"
         onClick={onToggleAlbumMenu}
         aria-label={t("common.more")}
       >

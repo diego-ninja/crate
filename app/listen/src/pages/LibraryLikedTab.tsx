@@ -116,7 +116,7 @@ export function LibraryLikedTab() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t("library.liked.filterPlaceholder")}
-            className="h-10 w-full rounded-lg bg-text-primary/5 pl-9 pr-3 text-sm text-text-primary outline-none placeholder:text-text-primary/40 focus:bg-text-primary/8"
+            className="h-10 w-full rounded-lg bg-text-primary/5 pl-9 pr-3 text-base text-text-primary outline-none placeholder:text-text-primary/40 focus:bg-text-primary/8"
           />
         </div>
         <CollectionSortDropdown

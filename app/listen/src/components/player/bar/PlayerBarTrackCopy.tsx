@@ -40,18 +40,18 @@ export function PlayerBarTrackCopy({
               className="absolute inset-0"
               style={{ opacity: 1 - crossfadeProgress }}
             >
-              <p className="truncate text-[13px] font-semibold leading-tight text-text-primary">
+              <p className="truncate text-[0.8125rem] font-semibold leading-tight text-text-primary">
                 {displayCrossfadeTransition.outgoing.title}
               </p>
-              <p className="mt-0.5 truncate text-[11px] leading-tight text-text-muted">
+              <p className="mt-0.5 truncate text-xs leading-tight text-text-muted">
                 {displayCrossfadeTransition.outgoing.artist}
               </p>
             </div>
             <div style={{ opacity: crossfadeProgress }}>
-              <p className="truncate text-[13px] font-semibold leading-tight text-text-primary">
+              <p className="truncate text-[0.8125rem] font-semibold leading-tight text-text-primary">
                 {displayCrossfadeTransition.incoming.title}
               </p>
-              <p className="mt-0.5 truncate text-[11px] leading-tight text-text-muted">
+              <p className="mt-0.5 truncate text-xs leading-tight text-text-muted">
                 {displayCrossfadeTransition.incoming.artist}
               </p>
             </div>
@@ -61,7 +61,7 @@ export function PlayerBarTrackCopy({
             {isDesktop && hasAlbum ? (
               <button
                 type="button"
-                className="block w-full cursor-pointer truncate text-left text-[13px] font-semibold leading-tight text-text-primary hover:underline"
+                className="block w-full cursor-pointer truncate text-left text-[0.8125rem] font-semibold leading-tight text-text-primary hover:underline"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpenAlbum();
@@ -70,14 +70,14 @@ export function PlayerBarTrackCopy({
                 {displayTrack.title}
               </button>
             ) : (
-              <p className="truncate text-[13px] font-semibold leading-tight text-text-primary">
+              <p className="truncate text-[0.8125rem] font-semibold leading-tight text-text-primary">
                 {displayTrack.title}
               </p>
             )}
             {isDesktop && hasArtist ? (
               <button
                 type="button"
-                className="mt-0.5 block w-full cursor-pointer truncate text-left text-[11px] leading-tight text-text-muted transition-colors hover:text-text-primary hover:underline"
+                className="mt-0.5 block w-full cursor-pointer truncate text-left text-xs leading-tight text-text-muted transition-colors hover:text-text-primary hover:underline"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpenArtist();
@@ -86,7 +86,7 @@ export function PlayerBarTrackCopy({
                 {displayTrack.artist}
               </button>
             ) : (
-              <p className="mt-0.5 truncate text-[11px] leading-tight text-text-muted">
+              <p className="mt-0.5 truncate text-xs leading-tight text-text-muted">
                 {displayTrack.artist}
               </p>
             )}
@@ -97,7 +97,7 @@ export function PlayerBarTrackCopy({
         <div className="relative mt-0.5 hidden h-[14px] lg:block">
           <p
             key={`src-${sourceLabel}`}
-            className="animate-fade-in truncate text-[10px] leading-tight text-text-muted"
+            className="animate-fade-in truncate text-xs leading-tight text-text-muted"
           >
             Playing from:{" "}
             {displayPlaySource?.href && sourceLabel !== "Discovery Radio" ? (

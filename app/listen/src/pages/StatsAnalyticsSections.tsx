@@ -25,7 +25,7 @@ export function SignalCard({
 }) {
   return (
     <div className="stats-card rounded-[12px] p-5">
-      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-accent-action">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-action">
         <Icon size={13} />
         {label}
       </div>

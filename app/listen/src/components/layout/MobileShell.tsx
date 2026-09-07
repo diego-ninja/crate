@@ -24,7 +24,7 @@ export function MobileShell({
   headerChromeClass,
 }: MobileShellProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-surface-canvas">
+    <div className="flex min-h-dvh flex-col bg-surface-canvas">
       <div
         data-testid="listen-header"
         data-home-overlay={String(homeMobileOverlay)}

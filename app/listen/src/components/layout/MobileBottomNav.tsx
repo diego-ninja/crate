@@ -100,7 +100,7 @@ export function MobileBottomNav({
             className={({ isActive }) => getMobileNavLinkClass(isActive)}
           >
             <Icon size={CRATE_ICON_SIZE.navMobile} />
-            <span className="max-w-full truncate text-[9.5px] leading-none">
+            <span className="max-w-full truncate text-[0.59375rem] leading-none">
               {t(labelKey)}
             </span>
           </NavLink>
@@ -109,14 +109,14 @@ export function MobileBottomNav({
           type="button"
           aria-label={t("nav.collection")}
           onClick={() => setCollectionSheetOpen(true)}
-          className={`flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1.5 transition-[color,filter,transform] active:scale-[0.97] ${
+          className={`flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-1 p-1.5 transition-[color,filter,transform] active:scale-[0.97] ${
             collectionActive
               ? "text-accent-action drop-shadow-accent-action"
               : "text-text-muted hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action"
           }`}
         >
           <Collection size={CRATE_ICON_SIZE.navMobile} />
-          <span className="max-w-full truncate text-[9.5px] leading-none">
+          <span className="max-w-full truncate text-[0.59375rem] leading-none">
             {t("nav.collection")}
           </span>
         </button>
@@ -128,7 +128,7 @@ export function MobileBottomNav({
             className={({ isActive }) => getMobileNavLinkClass(isActive)}
           >
             <Icon size={CRATE_ICON_SIZE.navMobile} />
-            <span className="max-w-full truncate text-[9.5px] leading-none">
+            <span className="max-w-full truncate text-[0.59375rem] leading-none">
               {t(labelKey)}
             </span>
           </NavLink>

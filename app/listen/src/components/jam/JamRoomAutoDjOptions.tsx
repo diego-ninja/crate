@@ -85,7 +85,7 @@ export function AutoDjOptions({
                 }
               }}
               placeholder={t("jam.lobby.genreFiltersPlaceholder")}
-              className="h-8 min-w-[12rem] flex-1 bg-transparent px-1 text-sm text-text-primary outline-none placeholder:text-text-muted"
+              className="h-8 min-w-[12rem] flex-1 bg-transparent px-1 text-base text-text-primary outline-none placeholder:text-text-muted"
             />
           </div>
           {roomGenreFiltersInput.trim() ? (
@@ -107,7 +107,7 @@ export function AutoDjOptions({
           type="checkbox"
           checked={roomAutoDjVoting}
           onChange={(event) => setRoomAutoDjVoting(event.target.checked)}
-          className="h-4 w-4 accent-[var(--accent-action)]"
+          className=" size-4 accent-[var(--accent-action)]"
         />
       </label>
     </>

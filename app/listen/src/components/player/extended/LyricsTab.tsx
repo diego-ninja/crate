@@ -64,7 +64,7 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
       ) : null}
 
       {!lyrics.synced && lyrics.plain ? (
-        <pre className="whitespace-pre-wrap py-2 font-sans text-[14px] leading-relaxed text-text-muted">
+        <pre className="whitespace-pre-wrap py-2 font-sans text-[0.875rem] leading-relaxed text-text-muted">
           {lyrics.plain}
         </pre>
       ) : null}

@@ -71,10 +71,10 @@ function BandcampConnectionSummary({
               src={status.image_url}
               retryPolicy="none"
               alt=""
-              className="h-11 w-11 rounded-full object-cover"
+              className=" size-11 rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-text-primary/10 text-accent-action">
+            <div className="flex size-11 items-center justify-center rounded-full bg-text-primary/10 text-accent-action">
               <BandcampLogo size={20} />
             </div>
           )}
@@ -199,7 +199,7 @@ function BandcampConnectInstructions({
           rows={3}
           spellCheck={false}
           placeholder={t("settings.bandcamp.cookiePlaceholder")}
-          className="w-full resize-none rounded-lg border border-border-quiet/10 bg-surface-canvas/30 px-3 py-2 font-mono text-xs leading-5 text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/50"
+          className="w-full resize-none rounded-lg border border-border-quiet/10 bg-surface-canvas/30 px-3 py-2 font-mono text-base leading-5 text-text-primary outline-none transition-colors placeholder:text-text-primary/25 focus:border-accent-action/50"
         />
         <button
           onClick={() => void onConnect(bandcampCookie)}

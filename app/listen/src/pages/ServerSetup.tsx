@@ -120,15 +120,15 @@ export function ServerSetup() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-surface-canvas px-6 py-10 text-text-primary">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-surface-canvas px-6 py-10 text-text-primary">
       <div className="server-setup-atmosphere pointer-events-none absolute inset-0" />
       <form
         onSubmit={handleSubmit}
         className="relative w-full max-w-[560px] rounded-[12px] border border-border-quiet bg-surface-elevated/90 p-8 shadow-card backdrop-blur-xl sm:p-10"
       >
         <div className="flex flex-col items-center text-center">
-          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-xl border border-accent-action/20 bg-accent-action/10 shadow-accent-action-strong">
-            <img src="/icons/logo.svg" alt="Crate" className="h-14 w-14" />
+          <div className="mb-5 flex size-20 items-center justify-center rounded-xl border border-accent-action/20 bg-accent-action/10 shadow-accent-action-strong">
+            <img src="/icons/logo.svg" alt="Crate" className=" size-14" />
           </div>
           <h1 className="text-balance text-3xl font-bold tracking-[-0.04em] text-text-primary sm:text-4xl">
             {t("serverSetup.title")}
@@ -195,7 +195,7 @@ export function ServerSetup() {
           </button>
         </div>
 
-        <p className="pt-5 text-center text-[12px] leading-5 text-text-muted">
+        <p className="pt-5 text-center text-[0.75rem] leading-5 text-text-muted">
           {t("serverSetup.docsPrefix")}{" "}
           <a
             href="https://docs.cratemusic.app/technical/development-deployment-and-operations"
@@ -219,7 +219,7 @@ function StatusLine({ state }: { state: ProbeState }) {
   }
   if (state.status === "ok") {
     return (
-      <div className="flex items-center gap-2 text-[13px] text-state-success-text">
+      <div className="flex items-center gap-2 text-[0.8125rem] text-state-success-text">
         <CheckCircle2 size={14} />
         {t("serverSetup.status.detected")}
         {state.inviteOnly ? ` ${t("serverSetup.status.inviteOnly")}` : ""}
@@ -228,14 +228,14 @@ function StatusLine({ state }: { state: ProbeState }) {
   }
   if (state.status === "not-crate") {
     return (
-      <div className="flex items-center gap-2 text-[13px] text-state-warning-text">
+      <div className="flex items-center gap-2 text-[0.8125rem] text-state-warning-text">
         <AlertCircle size={14} />
         {t("serverSetup.status.notCrate")}
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-2 text-[13px] text-state-danger-text">
+    <div className="flex items-center gap-2 text-[0.8125rem] text-state-danger-text">
       <AlertCircle size={14} />
       {state.messageKey ? t(state.messageKey) : state.message}
     </div>

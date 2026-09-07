@@ -30,7 +30,7 @@ export function BandcampItemCover({
           retryPolicy="none"
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          className=" size-full object-cover transition duration-300 group-hover:scale-[1.03]"
         />
       ) : (
         <span className="text-xl font-black text-text-muted/70">

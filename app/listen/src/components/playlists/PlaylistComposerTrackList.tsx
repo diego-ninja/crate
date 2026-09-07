@@ -42,12 +42,12 @@ function SortableTrackItem({
         type="button"
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 cursor-grab text-text-primary/20 hover:text-text-primary/50 touch-none"
+        className="shrink-0 cursor-grab text-text-primary/20 hover:text-text-primary/50 touch-none"
       >
         <GripVertical size={14} />
       </button>
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-9 h-9 rounded-md bg-text-primary/5 flex items-center justify-center flex-shrink-0">
+        <div className="size-9  rounded-md bg-text-primary/5 flex items-center justify-center shrink-0">
           <Music2 size={15} className="text-text-muted" />
         </div>
         <div className="min-w-0">

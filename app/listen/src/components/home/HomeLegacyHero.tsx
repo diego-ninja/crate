@@ -82,7 +82,7 @@ export function LegacyDesktopFeaturedArtist({
         className="absolute inset-0 z-10 cursor-pointer"
         onClick={onOpenArtist}
       />
-      <div className="pointer-events-none relative z-20 flex h-full flex-col justify-end px-10 py-10">
+      <div className="pointer-events-none relative z-20 flex h-full flex-col justify-end p-10 ">
         <div className="max-w-[44%]">
           <LegacyHeroCopy
             hero={hero}
@@ -113,7 +113,7 @@ function LegacyHeroArtwork({
           alt=""
           aria-hidden="true"
           decoding="async"
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top"
+          className="pointer-events-none absolute inset-0 size-full object-cover object-top"
         />
       ) : null}
       <div className="home-hero-scrim-horizontal pointer-events-none absolute inset-0" />
@@ -136,7 +136,7 @@ function LegacyHeroCopy({
   const { t } = useTranslation();
   return (
     <div className="pointer-events-auto">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent-action">
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-accent-action">
         {t("home.library.justLanded.title")}
       </p>
       <h1 className="home-hero-title mt-2 truncate text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
@@ -172,7 +172,7 @@ export function LegacyDesktopHeroNavigation({
       <button
         type="button"
         aria-label={t("home.hero.previousArtist")}
-        className="home-hero-nav-control flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-sm"
+        className="home-hero-nav-control flex size-9 items-center justify-center rounded-full backdrop-blur-sm"
         onClick={onPrevious}
       >
         <ChevronLeft size={18} />
@@ -201,7 +201,7 @@ export function LegacyDesktopHeroNavigation({
       <button
         type="button"
         aria-label={t("home.hero.nextArtist")}
-        className="home-hero-nav-control flex h-9 w-9 items-center justify-center rounded-full backdrop-blur-sm"
+        className="home-hero-nav-control flex size-9 items-center justify-center rounded-full backdrop-blur-sm"
         onClick={onNext}
       >
         <ChevronRight size={18} />

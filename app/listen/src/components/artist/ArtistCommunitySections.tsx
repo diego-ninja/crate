@@ -43,7 +43,7 @@ export function ArtistShowsSection({
             {t("artist.sections.shows")}
           </h2>
           {artistHotNow ? (
-            <div className="rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-accent-action">
+            <div className="rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-xs uppercase tracking-[0.16em] text-accent-action">
               {t("artist.sections.heavyRotation")}
             </div>
           ) : null}
@@ -53,7 +53,7 @@ export function ArtistShowsSection({
           <div className="artist-show-prep-surface rounded-[12px] border border-accent-action/15 p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-accent-action">
+                <div className="inline-flex items-center gap-2 rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-accent-action">
                   <Calendar size={12} />
                   {t("artist.sections.showPrep")}
                 </div>

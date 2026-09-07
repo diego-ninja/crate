@@ -24,7 +24,7 @@ export function AlbumHeroDetails({
     <>
       <div className="mb-1.5 flex flex-col items-start gap-2">
         {isPreRelease ? (
-          <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-action">
+          <span className="rounded-full border border-accent-action/20 bg-accent-action/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-accent-action">
             Pre-release
           </span>
         ) : null}
@@ -39,11 +39,11 @@ export function AlbumHeroDetails({
         className="mb-3 inline-flex items-center gap-2 self-start text-sm text-text-muted transition-colors hover:text-accent-action"
         onClick={onArtistNavigate}
       >
-        <span className="h-6 w-6 flex-shrink-0 overflow-hidden rounded-full bg-text-primary/5">
+        <span className=" size-6 shrink-0 overflow-hidden rounded-full bg-text-primary/5">
           <CrateImage
             src={artistPhotoUrl}
             alt={data.artist}
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}

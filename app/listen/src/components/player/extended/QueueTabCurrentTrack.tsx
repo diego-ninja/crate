@@ -22,11 +22,11 @@ export function QueueTabCurrentTrack({
   return (
     <div className="mb-4">
       <div className="mb-2 flex items-center justify-between px-1">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+        <p className="text-xs font-bold uppercase tracking-wider text-text-muted">
           {t("player.queue.nowPlayingFrom", { source: sourceName })}
         </p>
         <button
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:bg-surface-control hover:text-text-secondary"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-text-muted transition-colors hover:bg-surface-control hover:text-text-secondary"
           onClick={onSave}
           title={t("player.queue.saveAsPlaylist")}
         >
@@ -35,7 +35,7 @@ export function QueueTabCurrentTrack({
         </button>
       </div>
       <div className="flex items-center gap-3 rounded-lg bg-surface-control px-2 py-1.5">
-        <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-accent-action">
+        <span className="w-4 shrink-0 text-right text-xs tabular-nums text-accent-action">
           {currentIndex + 1}
         </span>
         {currentTrack.albumCover ? (
@@ -43,16 +43,16 @@ export function QueueTabCurrentTrack({
             src={currentTrack.albumCover}
             alt=""
             loading="lazy"
-            className="h-8 w-8 shrink-0 rounded object-cover"
+            className=" size-8 shrink-0 rounded object-cover"
           />
         ) : (
-          <div className="h-8 w-8 shrink-0 rounded bg-surface-control-hover" />
+          <div className=" size-8 shrink-0 rounded bg-surface-control-hover" />
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px] font-medium text-accent-action">
+          <p className="truncate text-[0.75rem] font-medium text-accent-action">
             {currentTrack.title}
           </p>
-          <p className="truncate text-[10px] text-text-muted">
+          <p className="truncate text-xs text-text-muted">
             {currentTrack.artist}
           </p>
         </div>

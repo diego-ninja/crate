@@ -44,7 +44,7 @@ function Toggle({
       }`}
     >
       <div
-        className={`h-4 w-4 rounded-full bg-text-primary shadow transition-transform ${
+        className={` size-4 rounded-full bg-text-primary shadow transition-transform ${
           on ? "translate-x-4.5" : "translate-x-0.5"
         }`}
       />
@@ -73,12 +73,12 @@ export function VisualizerSettingsPanel({
   return (
     <div className={`space-y-3 ${className ?? ""}`}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+        <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
           Visualizer settings
         </span>
         <button
           onClick={resetConfig}
-          className="text-[10px] text-accent-action hover:underline"
+          className="text-xs text-accent-action hover:underline"
         >
           Reset
         </button>
@@ -89,7 +89,7 @@ export function VisualizerSettingsPanel({
           vizEnabled ? "" : "opacity-45"
         }`}
       >
-        <span className="text-[11px] text-text-muted">Album palette</span>
+        <span className="text-xs text-text-muted">Album palette</span>
         <Toggle
           label="Album palette"
           on={useAlbumPalette}
@@ -102,7 +102,7 @@ export function VisualizerSettingsPanel({
           vizEnabled ? "" : "opacity-45"
         }`}
       >
-        <span className="text-[11px] text-text-muted">Track adaptive</span>
+        <span className="text-xs text-text-muted">Track adaptive</span>
         <Toggle
           label="Track adaptive"
           on={trackAdaptiveViz}
@@ -110,7 +110,7 @@ export function VisualizerSettingsPanel({
         />
       </div>
 
-      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-2 text-[10px] text-text-muted">
+      <div className="rounded-md border border-border-quiet bg-surface-control px-2.5 py-2 text-xs text-text-muted">
         {!vizEnabled
           ? surfaceMode === "cd"
             ? "CD mode active"
@@ -129,7 +129,7 @@ export function VisualizerSettingsPanel({
           key={key}
           className={`transition-opacity ${vizEnabled ? "" : "opacity-45"}`}
         >
-          <div className="mb-1 flex justify-between text-[10px]">
+          <div className="mb-1 flex justify-between text-xs">
             <span className="text-text-subtle">{label}</span>
             <div className="flex items-center gap-2 font-mono">
               {trackAdaptiveViz ? (

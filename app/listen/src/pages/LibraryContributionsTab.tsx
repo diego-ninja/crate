@@ -37,7 +37,7 @@ function ContributionArtwork({
   contribution: LibraryContribution;
 }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
+    <div className=" size-14 shrink-0 overflow-hidden rounded-xl border border-text-primary/8 bg-text-primary/6">
       {contribution.album_id ? (
         <CrateImage
           src={albumCoverApiUrl(
@@ -51,10 +51,10 @@ function ContributionArtwork({
           )}
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-accent-action/70">
+        <div className="flex size-full items-center justify-center text-accent-action/70">
           {contribution.source === "bandcamp" ? (
             <BandcampLogo size={20} />
           ) : (
@@ -134,7 +134,7 @@ export function LibraryContributionsTab() {
                 <p className="truncate text-xs text-text-muted">
                   {contribution.artist_name}
                 </p>
-                <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.18em] text-accent-action/80">
+                <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-accent-action/80">
                   {contributionSourceLabel(contribution.source)}
                 </p>
               </div>

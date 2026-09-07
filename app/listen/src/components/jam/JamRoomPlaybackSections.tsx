@@ -1,4 +1,5 @@
 import { ListMusic, Pause, Play, SkipForward, Zap } from "@crate/ui/icons";
+import type { CSSProperties } from "react";
 import type { TFunction } from "i18next";
 
 import { CrateImage } from "@/components/artwork/CrateImage";
@@ -53,15 +54,15 @@ function JamNowPlayingTrack(props: JamNowPlayingTrackProps) {
         <CrateImage
           src={roomNowPlaying.albumCover}
           alt=""
-          className="jam-artwork-shadow h-16 w-16 shrink-0 rounded-lg object-cover sm:h-20 sm:w-20"
+          className="jam-artwork-shadow size-16 shrink-0 rounded-lg object-cover sm:size-20"
         />
       ) : (
-        <div className="jam-artwork-placeholder flex h-16 w-16 shrink-0 items-center justify-center rounded-lg sm:h-20 sm:w-20">
+        <div className="jam-artwork-placeholder flex size-16 shrink-0 items-center justify-center rounded-lg sm:size-20">
           <ListMusic size={22} />
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <div className="jam-accent-text text-[11px] uppercase tracking-[0.16em]">
+        <div className="jam-accent-text text-xs uppercase tracking-[0.16em]">
           {t("jam.room.nowPlaying")}
         </div>
         {roomNowPlaying ? (
@@ -82,17 +83,18 @@ function JamNowPlayingTrack(props: JamNowPlayingTrackProps) {
         <div className="mt-3 flex items-center gap-3">
           <div className="jam-progress-track h-1.5 min-w-0 flex-1 overflow-hidden rounded-full">
             <div
-              className="jam-progress-fill h-full rounded-full transition-[width] duration-300"
-              style={{
-                width: `${
-                  duration > 0
-                    ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
-                    : 0
-                }%`,
-              }}
+              className="jam-progress-fill jam-progress-fill-dynamic h-full rounded-full"
+              style={
+                {
+                  "--progress-scale":
+                    duration > 0
+                      ? Math.min(1, Math.max(0, currentTime / duration))
+                      : 0,
+                } as CSSProperties
+              }
             />
           </div>
-          <span className="shrink-0 text-[11px] tabular-nums text-text-muted">
+          <span className="shrink-0 text-xs tabular-nums text-text-muted">
             {formatDuration(currentTime)} / {formatDuration(duration)}
           </span>
         </div>
@@ -137,7 +139,7 @@ function JamHostPlaybackControls({
         }
         onClick={toggleRoomPlayback}
         disabled={!roomIsActive || !isConnected}
-        className="h-12 w-12 jam-accent-chip"
+        className=" size-12 jam-accent-chip"
       >
         {isPlaying ? <Pause size={20} /> : <Play size={20} />}
       </HeroActionButton>
@@ -145,7 +147,7 @@ function JamHostPlaybackControls({
         label={t("jam.room.actions.playNextTrack")}
         onClick={handlePlayNext}
         disabled={!roomIsActive || !isConnected || queueItems.length === 0}
-        className="h-12 w-12"
+        className=" size-12"
       >
         <SkipForward size={19} />
       </HeroActionButton>
@@ -157,7 +159,7 @@ function JamHostPlaybackControls({
         }
         onClick={syncPlaybackState}
         disabled={!roomIsActive || !isConnected || !roomNowPlaying}
-        className={`h-12 w-12 ${
+        className={` size-12 ${
           syncStatus === "synced" ? "jam-success-chip" : ""
         }`}
       >

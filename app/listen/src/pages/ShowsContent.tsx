@@ -95,7 +95,7 @@ function SummaryPill({
         accentClass,
       )}
     >
-      <div className="text-[10px] uppercase tracking-[0.16em] opacity-70">
+      <div className="text-xs uppercase tracking-[0.16em] opacity-70">
         {label}
       </div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
@@ -152,7 +152,7 @@ function ShowsFilters({ page }: ShowsSectionProps) {
           value={page.search}
           onChange={(event) => page.setSearch(event.target.value)}
           placeholder={page.t("radar.searchPlaceholder")}
-          className="h-11 w-full rounded-lg border border-border-quiet bg-surface-canvas/25 px-4 text-sm text-text-primary placeholder:text-text-primary/40 focus:border-accent-action/40 focus:outline-none"
+          className="h-11 w-full rounded-lg border border-border-quiet bg-surface-canvas/25 px-4 text-base text-text-primary placeholder:text-text-primary/40 focus:border-accent-action/40 focus:outline-none"
         />
       </div>
     </div>
@@ -297,7 +297,7 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-[12px] border border-text-primary/5 bg-text-primary/[0.02] px-6 py-16 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-border-quiet bg-text-primary/5">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-xl border border-border-quiet bg-text-primary/5">
         {icon}
       </div>
       <h2 className="text-lg font-semibold text-text-primary">{title}</h2>

@@ -34,7 +34,7 @@ export function RadioSeedPanel({
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
         placeholder={t("radio.seed.placeholder")}
-        className="radio-seed-input h-12 w-full rounded-lg px-4 text-sm"
+        className="radio-seed-input h-12 w-full rounded-lg px-4 text-base"
       />
 
       {searching && (
@@ -54,24 +54,24 @@ export function RadioSeedPanel({
                 <CrateImage
                   src={result.imageUrl}
                   alt=""
-                  className={`radio-seed-result-image h-9 w-9 flex-shrink-0 object-cover ${
+                  className={`radio-seed-result-image size-9 shrink-0 object-cover ${
                     result.type === "artist" ? "rounded-full" : "rounded-md"
                   }`}
                 />
               ) : (
-                <div className="radio-seed-result-placeholder flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md">
+                <div className="radio-seed-result-placeholder flex size-9 shrink-0 items-center justify-center rounded-md">
                   <Music size={16} />
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{result.label}</div>
-                <div className="radio-seed-result-type text-[10px]">
+                <div className="radio-seed-result-type text-xs">
                   {t("radio.seed.resultType", { type: result.type })}
                 </div>
               </div>
               <RadioIcon
                 size={14}
-                className="radio-seed-result-icon flex-shrink-0"
+                className="radio-seed-result-icon shrink-0"
               />
             </button>
           ))}

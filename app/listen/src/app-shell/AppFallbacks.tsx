@@ -8,7 +8,7 @@ export function RouteSpinner() {
 
 export function AuthSpinner() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-canvas">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas">
       <CrateLoader variant="screen" />
     </div>
   );

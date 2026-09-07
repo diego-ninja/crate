@@ -42,7 +42,7 @@ function RadioStationCard({
         <CrateImage
           src={imageUrl}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-85 transition duration-500 group-hover:scale-[1.04] group-hover:opacity-100"
+          className="absolute inset-0 size-full object-cover opacity-85 transition duration-500 group-hover:scale-[1.04] group-hover:opacity-100"
           loading="lazy"
         />
       ) : (
@@ -53,10 +53,10 @@ function RadioStationCard({
       )}
       <div className="radio-station-overlay absolute inset-0" />
       <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-2">
-        <span className="radio-station-type rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] backdrop-blur-md">
+        <span className="radio-station-type rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] backdrop-blur-md">
           {typeLabel}
         </span>
-        <span className="radio-station-play flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition duration-300 group-hover:opacity-100">
+        <span className="radio-station-play flex size-8 items-center justify-center rounded-full opacity-0 transition duration-300 group-focus-within:opacity-100 group-hover:opacity-100">
           <Play size={14} className="translate-x-px" />
         </span>
       </div>

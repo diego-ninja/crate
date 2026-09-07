@@ -82,7 +82,7 @@ export function UserMenu({
           src={avatarUrl}
           alt=""
           onError={onAvatarError}
-          className="h-full w-full object-cover"
+          className=" size-full object-cover"
         />
       ) : initial ? (
         <span aria-hidden="true">{initial}</span>
