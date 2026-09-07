@@ -32,7 +32,7 @@ def test_pg_db_uses_an_isolated_clone_of_the_initialized_template(pg_db) -> None
 
     assert database_name != TEST_DB_NAME
     assert database_name.startswith(f"{TEST_DB_NAME}_case_")
-    assert revision == "089"
+    assert revision == "090"
     assert admin_count >= 1
     assert os.environ["CRATE_POSTGRES_DB"] == database_name
 
