@@ -34,6 +34,8 @@ coverage.out
 **/coverage.out
 lcov.info
 **/lcov.info
+playwright-report/appearance/
+test-results/appearance/
 desktop-artifacts/
 artifacts/
 .artifacts/

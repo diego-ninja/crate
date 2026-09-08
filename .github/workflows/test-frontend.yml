@@ -11,6 +11,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/design-system/**"
+      - "playwright.appearance.config.ts"
+      - "tests/appearance/**"
       - ".github/workflows/test-frontend.yml"
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -22,6 +24,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/design-system/**"
+      - "playwright.appearance.config.ts"
+      - "tests/appearance/**"
       - ".github/workflows/test-frontend.yml"
 
 jobs:
@@ -89,3 +93,34 @@ jobs:
           VITE_SENTRY_ENVIRONMENT: production
           VITE_SENTRY_RELEASE: crate-${{ github.sha }}
         run: npm run --workspace=app/listen build
+
+  appearance-chromium:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run appearance contracts
+        run: npm run test:appearance -- --project=chromium
+
+      - name: Upload appearance report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appearance-chromium-report
+          path: |
+            playwright-report/appearance/
+            test-results/appearance/

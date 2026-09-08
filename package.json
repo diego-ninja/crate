@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "design-system:drift": "node scripts/design-system/drift-inventory.mjs",
-    "design-system:layers": "node scripts/design-system/layer-inventory.mjs"
+    "design-system:layers": "node scripts/design-system/layer-inventory.mjs",
+    "test:appearance": "playwright test --config=playwright.appearance.config.ts"
   },
   "workspaces": [
     "app/shared/ui",
@@ -12,6 +13,7 @@
     "app/listen-desktop"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/user-event": "^14.6.1",
     "@vitest/coverage-v8": "^4.1.6"
   }
