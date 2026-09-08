@@ -163,9 +163,66 @@ def test_extend_composition_uses_cover_fit_like_the_editor_fill_mode():
 
     result = render_artist_hero_composition(source, recipe, (1680, 720))
 
-    assert result.getpixel((0, 360)) == (230, 50, 70)
-    assert result.getpixel((840, 360)) == (230, 50, 70)
-    assert result.getpixel((1679, 360)) == (230, 50, 70)
+    assert result.mode == "RGBA"
+    assert result.getpixel((0, 360))[:3] == (230, 50, 70)
+    assert result.getpixel((840, 360))[:3] == (230, 50, 70)
+    assert result.getpixel((1679, 360))[:3] == (230, 50, 70)
+
+
+@pytest.mark.parametrize(
+    "color",
+    [(0, 0, 0), (245, 245, 240)],
+    ids=["dark-photo-with-legitimate-black", "clear-photo"],
+)
+def test_extend_composition_keeps_subject_opaque_and_padding_transparent(color):
+    from crate.artist_hero_artwork import render_artist_hero_composition
+
+    source = Image.new("RGB", (100, 50), color=color)
+    recipe = {
+        **_crop_recipe(100, 50),
+        "mode": "extend",
+        "scale": 0.5,
+    }
+
+    result = render_artist_hero_composition(source, recipe, (100, 50))
+
+    assert result.mode == "RGBA"
+    assert result.getpixel((0, 0))[3] == 0
+    assert result.getpixel((50, 25)) == (*color, 255)
+
+
+def test_crop_composition_remains_opaque_rgb():
+    from crate.artist_hero_artwork import render_artist_hero_composition
+
+    result = render_artist_hero_composition(
+        Image.open(io.BytesIO(_image_bytes())),
+        _crop_recipe(1400, 600),
+        (100, 50),
+    )
+
+    assert result.mode == "RGB"
+
+
+def test_extended_hero_webp_round_trip_preserves_transparency(tmp_path):
+    from crate.artist_hero_artwork import render_artist_hero_composition
+    from crate.worker_handlers.artwork import _save_artist_hero_webp_atomic
+
+    source = Image.new("RGB", (100, 50), color=(0, 0, 0))
+    recipe = {
+        **_crop_recipe(100, 50),
+        "mode": "extend",
+        "scale": 0.5,
+    }
+    rendered = render_artist_hero_composition(source, recipe, (100, 50))
+    destination = tmp_path / "hero.webp"
+
+    _save_artist_hero_webp_atomic(rendered, destination)
+
+    with Image.open(destination) as reopened:
+        reopened.load()
+        assert reopened.mode == "RGBA"
+        assert reopened.getpixel((0, 0))[3] == 0
+        assert reopened.getpixel((50, 25)) == (0, 0, 0, 255)
 
 
 def test_shared_geometry_fixtures_match_the_backend_bounds():
@@ -279,10 +336,11 @@ def test_composition_applies_artist_image_treatment():
     }
 
     result = render_artist_hero_composition(source, recipe, (1000, 500))
-    red, green, blue = result.getpixel((500, 250))
+    red, green, blue, alpha = result.getpixel((500, 250))
 
     assert red == green == blue
     assert red < 80
+    assert alpha == 255
 
 
 def test_artist_hero_recipe_defaults_to_an_untreated_image():

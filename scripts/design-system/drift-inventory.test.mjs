@@ -231,11 +231,11 @@ test("enforces the normalized semantic token budget", () => {
 
   assert.deepEqual(metrics.nonFoundationAliases, []);
   assert.ok(
-    metrics.definitions <= 220,
+    metrics.definitions <= 223,
     `semantic token definitions grew to ${metrics.definitions}`,
   );
   assert.ok(
-    metrics.foundationDefinitions <= 94,
+    metrics.foundationDefinitions <= 99,
     `foundation token definitions grew to ${metrics.foundationDefinitions}`,
   );
   assert.ok(
@@ -259,7 +259,7 @@ test("enforces the normalized semantic token budget", () => {
   assert.equal(inventory.totals.actionableRawColors, 0);
   assert.equal(inventory.totals.legacySemanticUtilities, 0);
   assert.ok(
-    metrics.duplicateDefinitions <= 1,
+    metrics.duplicateDefinitions <= 3,
     `semantic token duplicates grew to ${metrics.duplicateDefinitions}`,
   );
   assert.equal(metrics.actionableDuplicateDefinitions, 0);
@@ -270,9 +270,21 @@ test("enforces the normalized semantic token budget", () => {
       reason:
         "The default skin shares the same value, but cards and destructive controls are separate semantic roles for future skins.",
     },
+    {
+      tokens: ["--genre-tone-default", "--brand-logo-start"],
+      reason:
+        "The logo and genre surfaces currently share the action accent while remaining independent theme slots.",
+    },
+    {
+      tokens: ["--brand-logo-end", "--jam-focus-border"],
+      reason:
+        "The logo gradient and Jam focus border currently share the strong action accent while remaining independent theme slots.",
+    },
   ]);
   assert.deepEqual(metrics.duplicateTokenGroups, [
     ["--surface-contrast", "--state-danger-foreground"],
+    ["--genre-tone-default", "--brand-logo-start"],
+    ["--brand-logo-end", "--jam-focus-border"],
   ]);
 });
 

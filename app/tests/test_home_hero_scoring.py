@@ -311,13 +311,15 @@ def _prepared_hero_row(
     review_status: str = "approved",
     provenance: str = "manual",
 ) -> dict:
+    from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
+
     row = _hero_row(name, listeners=1_000)
     row.update(
         {
             "_hero_provenance": provenance,
             "_hero_review_status": review_status,
             "artwork_provenance": "specific" if provenance == "manual" else "derived",
-            "artwork_revision": "cover-fit-v4:prepared",
+            "artwork_revision": f"{ARTIST_HERO_RENDER_VERSION}:prepared",
             "_hero_source_width": 1480,
             "_hero_source_height": 600,
         }

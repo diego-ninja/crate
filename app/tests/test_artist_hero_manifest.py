@@ -40,7 +40,11 @@ def _profile(*, render_manifest: dict | None = None) -> dict:
     return profile
 
 
-def _manifest(renderer_version: str = "cover-fit-v4") -> dict:
+def _manifest(renderer_version: str | None = None) -> dict:
+    if renderer_version is None:
+        from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
+
+        renderer_version = ARTIST_HERO_RENDER_VERSION
     return {
         "manifest_version": 1,
         "editorial_revision": "editorial-42",

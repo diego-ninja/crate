@@ -110,6 +110,7 @@ const DIRECT_SHADCN_IMPORT_PATTERN =
 const FOUNDATION_TOKEN_PREFIXES = [
   "accent-",
   "action-",
+  "brand-",
   "border-",
   "chrome-",
   "control-",
@@ -149,6 +150,16 @@ const INTENTIONAL_DUPLICATE_TOKEN_GROUPS = [
     tokens: ["--surface-contrast", "--state-danger-foreground"],
     reason:
       "The default skin shares the same value, but cards and destructive controls are separate semantic roles for future skins.",
+  },
+  {
+    tokens: ["--brand-logo-start", "--genre-tone-default"],
+    reason:
+      "The logo and genre surfaces currently share the action accent while remaining independent theme slots.",
+  },
+  {
+    tokens: ["--brand-logo-end", "--jam-focus-border"],
+    reason:
+      "The logo gradient and Jam focus border currently share the strong action accent while remaining independent theme slots.",
   },
 ];
 const SURFACE_ROLE_PATTERNS = [
