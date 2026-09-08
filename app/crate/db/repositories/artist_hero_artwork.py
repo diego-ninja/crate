@@ -433,3 +433,34 @@ def list_artist_hero_backfill_candidates(
             .all()
         )
     return [dict(row) for row in rows]
+
+
+def list_artist_hero_migration_candidates(
+    *, after_id: int = 0, limit: int = 25
+) -> list[dict]:
+    """List approved manual heroes eligible for the publication canary."""
+
+    capped_limit = max(1, min(int(limit), 100))
+    with read_scope() as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    SELECT artist.id, artist.name, artist.entity_uid
+                    FROM library_artists artist
+                    JOIN artist_hero_artwork hero ON hero.artist_id = artist.id
+                    WHERE artist.id > :after_id
+                      AND artist.name NOT LIKE '.%'
+                      AND COALESCE(artist.folder_name, '') NOT LIKE '.%'
+                      AND hero.provenance = 'manual'
+                      AND hero.review_status = 'approved'
+                    ORDER BY artist.id
+                    LIMIT :limit
+                    """
+                ),
+                {"after_id": max(0, int(after_id)), "limit": capped_limit},
+            )
+            .mappings()
+            .all()
+        )
+    return [dict(row) for row in rows]

@@ -48,6 +48,11 @@ class ArtworkQueuedResponse(TaskEnqueueResponse):
     status: str | None = None
 
 
+class ArtistHeroMigrationRequest(BaseModel):
+    after_artist_id: int = Field(default=0, ge=0)
+    batch_size: int = Field(default=25, ge=1, le=100)
+
+
 class ArtworkExtractResponse(BaseModel):
     status: str
     path: str

@@ -26,6 +26,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "rehydrate_portable_metadata": "Portable Metadata Rehydrate",
     "export_rich_metadata": "Rich Metadata Export",
     "backfill_artist_heroes": "Artist Hero Backfill",
+    "migrate_artist_heroes": "Artist Hero Migration Canary",
     "compose_artist_hero": "Artist Hero Composition",
     "preview_artist_hero": "Artist Hero Preview",
     "recompose_artist_hero": "Artist Hero Renderer Migration",

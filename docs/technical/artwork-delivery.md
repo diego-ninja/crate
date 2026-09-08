@@ -12,6 +12,8 @@ sources:
     app/crate/artwork_materializer.py,
     app/crate/artist_hero_publication.py,
     app/crate/artist_hero_retention.py,
+    app/crate/artist_hero_migration.py,
+    app/crate/db/repositories/artist_hero_artwork.py,
     app/crate/artwork_maintenance.py,
     app/crate/api/artwork_delivery.py,
   ]
@@ -56,6 +58,23 @@ manifest. Retried writes with the same artifact identity and metadata are
 idempotent. Delivery can resolve an explicit `v` revision only while its known
 artifact directory is retained; legacy profiles continue through the existing
 fallback path.
+
+## Artist Hero migration canary
+
+`POST /api/artwork/artist-heroes/migration-canary` starts a read-only,
+cursor-based canary. It scans only approved manual profiles, with a bounded
+`batch_size` (1–100), and returns the next `after_artist_id` cursor. A full
+batch queues exactly one deduplicated continuation using the same cursor and
+mode, so retries do not fan out work.
+
+The canary never renders, publishes, changes provenance/review status, advances
+the editorial revision, or deletes legacy files. It validates every enabled
+composition before considering an artist planned. Missing source, recipe,
+profile, entity identity, or artist directory is reported as a skip reason;
+an existing manifest covering all enabled compositions is reported as
+`already-published`. Planned targets include a deduplication key scoped to the
+artist and expected editorial revision. Publication remains disabled until
+the canary results have been reviewed and the writer/rollback phase is enabled.
 
 ## Operations
 

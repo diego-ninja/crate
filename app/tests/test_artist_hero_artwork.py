@@ -756,6 +756,26 @@ def test_artist_hero_backfill_endpoint_queues_bounded_scan(test_app):
     )
 
 
+def test_artist_hero_migration_canary_endpoint_queues_dry_run(test_app):
+    with patch(
+        "crate.api.artwork.create_task", return_value="task-migration-canary"
+    ) as create:
+        response = test_app.post(
+            "/api/artwork/artist-heroes/migration-canary",
+            json={"after_artist_id": 12, "batch_size": 7},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "queued",
+        "task_id": "task-migration-canary",
+    }
+    create.assert_called_once_with(
+        "migrate_artist_heroes",
+        {"after_artist_id": 12, "batch_size": 7, "dry_run": True},
+    )
+
+
 def test_upload_handler_writes_hero_variants_and_profile(monkeypatch, tmp_path):
     from crate.worker_handlers.artwork import _handle_upload_image
 

@@ -38,6 +38,10 @@ from crate.artist_hero_artwork import (
 )
 from crate.artist_hero_contract import artist_hero_recipe_hash
 from crate.artist_hero_candidates import load_candidate_content
+from crate.artist_hero_migration import (
+    migration_task_dedup_key,
+    plan_artist_hero_migration,
+)
 from crate.artist_hero_publication import (
     ARTIST_HERO_PUBLICATION_VERSION,
     ArtistHeroArtifactIdentity,
@@ -60,6 +64,7 @@ from crate.db.repositories.artist_hero_artwork import (
     delete_artist_hero_composition,
     get_artist_hero_artwork,
     list_artist_hero_backfill_candidates,
+    list_artist_hero_migration_candidates,
     upsert_artist_hero_artwork,
 )
 from crate.db.repositories.artist_artwork_assets import (
@@ -1991,6 +1996,84 @@ def _handle_backfill_artist_heroes(task_id: str, params: dict, config: dict) -> 
     }
 
 
+def _handle_migrate_artist_heroes(task_id: str, params: dict, config: dict) -> dict:
+    """Run a read-only, resumable canary over approved manual hero profiles."""
+
+    del task_id
+    if params.get("dry_run", True) is not True:
+        return {
+            "status": "blocked",
+            "reason": "artist-hero-migration-publication-not-enabled",
+        }
+
+    after_id = max(0, int(params.get("after_artist_id") or 0))
+    batch_size = max(1, min(int(params.get("batch_size") or 25), 100))
+    candidates = list_artist_hero_migration_candidates(
+        after_id=after_id, limit=batch_size
+    )
+    planned = 0
+    skipped: dict[str, int] = {}
+    targets: list[dict[str, object]] = []
+    for candidate in candidates:
+        artist_id = int(candidate["id"])
+        profile = get_artist_hero_artwork(artist_id)
+        if profile is None:
+            reason = "missing-profile"
+        else:
+            artist_dir = resolve_artist_dir(
+                Path(config["library_path"]).resolve(),
+                candidate,
+                fallback_name=str(candidate.get("name") or ""),
+                existing_only=True,
+            )
+            if not artist_dir or not artist_dir.is_dir():
+                reason = "missing-artist-directory"
+            else:
+                plan = plan_artist_hero_migration(
+                    artist_row=candidate,
+                    profile=profile,
+                    artist_dir=artist_dir.resolve(),
+                )
+                reason = plan.skip_reason
+                if reason is None:
+                    planned += 1
+                    targets.append(
+                        {
+                            "artist_id": plan.artist_id,
+                            "expected_revision": plan.expected_revision,
+                            "dedup_key": migration_task_dedup_key(
+                                int(plan.artist_id), plan.expected_revision
+                            ),
+                        }
+                    )
+                    continue
+        skipped[reason] = skipped.get(reason, 0) + 1
+
+    next_queued = len(candidates) >= batch_size
+    next_after_id = int(candidates[-1]["id"]) if candidates else after_id
+    if next_queued:
+        create_task_dedup(
+            "migrate_artist_heroes",
+            {
+                "after_artist_id": next_after_id,
+                "batch_size": batch_size,
+                "dry_run": True,
+            },
+            dedup_key=(f"migrate-artist-heroes:canary:1:{next_after_id}:{batch_size}"),
+        )
+
+    return {
+        "status": "continued" if next_queued else "completed",
+        "dry_run": True,
+        "scanned": len(candidates),
+        "planned": planned,
+        "targets": targets,
+        "skipped": skipped,
+        "after_artist_id": next_after_id,
+        "next_queued": next_queued,
+    }
+
+
 def _handle_fetch_album_cover(task_id: str, params: dict, config: dict) -> dict:
     """Search all sources for a cover for a specific album."""
     from crate.artwork import extract_embedded_cover, fetch_cover_from_caa, save_cover
@@ -2088,6 +2171,7 @@ ARTWORK_TASK_HANDLERS: dict[str, TaskHandler] = {
     "materialize_artwork_variants": _handle_materialize_artwork_variants,
     "backfill_artwork_variants": _handle_backfill_artwork_variants,
     "backfill_artist_heroes": _handle_backfill_artist_heroes,
+    "migrate_artist_heroes": _handle_migrate_artist_heroes,
     "compose_artist_hero": _handle_compose_artist_hero,
     "preview_artist_hero": _handle_preview_artist_hero,
     "recompose_artist_hero": _handle_recompose_artist_hero,

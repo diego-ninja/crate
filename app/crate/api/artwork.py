@@ -39,6 +39,7 @@ from crate.api.schemas.artwork import (
     ArtistHeroCandidateAnalysisRequest,
     ArtistHeroRecipe,
     ArtistHeroReviewRequest,
+    ArtistHeroMigrationRequest,
 )
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
@@ -1015,5 +1016,28 @@ def api_backfill_artist_heroes(request: Request):
     _require_artwork_editor(request)
     task_id = create_task(
         "backfill_artist_heroes", {"after_artist_id": 0, "batch_size": 25}
+    )
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post(
+    "/api/artwork/artist-heroes/migration-canary",
+    response_model=ArtworkQueuedResponse,
+    response_model_exclude_none=True,
+    responses=_ARTWORK_RESPONSES,
+    summary="Run a dry-run artist-hero publication migration canary",
+)
+def api_migrate_artist_heroes(
+    request: Request, body: ArtistHeroMigrationRequest | None = None
+):
+    _require_artwork_editor(request)
+    payload = body or ArtistHeroMigrationRequest()
+    task_id = create_task(
+        "migrate_artist_heroes",
+        {
+            "after_artist_id": payload.after_artist_id,
+            "batch_size": payload.batch_size,
+            "dry_run": True,
+        },
     )
     return {"status": "queued", "task_id": task_id}

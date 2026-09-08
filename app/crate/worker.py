@@ -594,6 +594,7 @@ _HANDLER_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "recompose_artist_hero",
             "derive_artist_hero",
             "backfill_artist_heroes",
+            "migrate_artist_heroes",
             "backfill_artwork_variants",
             "cleanup_artwork_variants",
             "repair_artwork_variants",
