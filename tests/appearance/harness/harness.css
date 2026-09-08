@@ -104,6 +104,18 @@ select:focus-visible {
   color: var(--accent-action-foreground);
 }
 
+.logo-mount {
+  display: inline-flex;
+  margin-top: 1rem;
+  padding: 0.5rem;
+  color: var(--accent-action);
+}
+
+.crate-logo {
+  height: 4rem;
+  width: 4rem;
+}
+
 .portal-target {
   margin-top: 1rem;
   padding: 0.75rem;

@@ -475,6 +475,31 @@ const SURFACE_COLORS: Record<
       "--crate-token-surface-app": "#0a0a0f",
       "--crate-token-surface-card-solid": "#16161e",
       "--crate-token-surface-card-foreground-solid": "#f1f5f9",
+      "--crate-token-surface-card-glass": "rgba(18, 18, 26, 0.78)",
+      "--crate-token-surface-card-foreground-glass": "#f1f5f9",
+      "--crate-token-surface-secondary-glass": "rgba(28, 28, 40, 0.88)",
+      "--crate-token-surface-secondary-foreground-glass": "#f1f5f9",
+      "--crate-token-surface-muted-glass": "rgba(22, 22, 30, 0.72)",
+      "--crate-token-surface-accent-glass": "rgba(255, 255, 255, 0.06)",
+      "--crate-token-surface-accent-foreground-glass": "#f1f5f9",
+      "--crate-token-surface-popover-glass": "rgba(18, 18, 26, 0.95)",
+      "--crate-token-surface-popover-foreground-glass": "#f1f5f9",
+      "--crate-token-surface-border-glass": "rgba(255, 255, 255, 0.08)",
+      "--crate-token-surface-input-glass": "rgba(20, 20, 25, 0.72)",
+      "--crate-token-surface-panel-glass": "#0c0c14",
+      "--crate-token-surface-raised-glass": "rgba(18, 18, 26, 0.92)",
+      "--crate-token-surface-modal-glass": "rgba(16, 16, 24, 0.95)",
+      "--crate-token-surface-overlay-glass": "rgba(18, 18, 26, 0.95)",
+      "--crate-token-surface-secondary-solid": "#1c1c28",
+      "--crate-token-surface-secondary-foreground-solid": "#f1f5f9",
+      "--crate-token-surface-muted-solid": "#16161e",
+      "--crate-token-surface-accent-solid": "#1c1c28",
+      "--crate-token-surface-accent-foreground-solid": "#f1f5f9",
+      "--crate-token-surface-popover-solid": "#16161e",
+      "--crate-token-surface-popover-foreground-solid": "#f1f5f9",
+      "--crate-token-surface-border-solid": "#252535",
+      "--crate-token-surface-input-solid": "#141419",
+      "--crate-token-surface-overlay-solid": "rgba(18, 18, 26, 0.95)",
       "--crate-token-surface-panel-solid": "#0c0c14",
       "--crate-token-surface-raised-solid": "#12121a",
       "--crate-token-surface-modal-solid": "rgba(16, 16, 24, 0.95)",
@@ -486,6 +511,31 @@ const SURFACE_COLORS: Record<
       "--crate-token-surface-app": "#f8fafc",
       "--crate-token-surface-card-solid": "#ffffff",
       "--crate-token-surface-card-foreground-solid": "#0f172a",
+      "--crate-token-surface-card-glass": "rgba(255, 255, 255, 0.78)",
+      "--crate-token-surface-card-foreground-glass": "#0f172a",
+      "--crate-token-surface-secondary-glass": "rgba(241, 245, 249, 0.88)",
+      "--crate-token-surface-secondary-foreground-glass": "#0f172a",
+      "--crate-token-surface-muted-glass": "rgba(241, 245, 249, 0.72)",
+      "--crate-token-surface-accent-glass": "rgba(15, 23, 42, 0.06)",
+      "--crate-token-surface-accent-foreground-glass": "#0f172a",
+      "--crate-token-surface-popover-glass": "rgba(255, 255, 255, 0.95)",
+      "--crate-token-surface-popover-foreground-glass": "#0f172a",
+      "--crate-token-surface-border-glass": "rgba(15, 23, 42, 0.08)",
+      "--crate-token-surface-input-glass": "rgba(226, 232, 240, 0.72)",
+      "--crate-token-surface-panel-glass": "#ffffff",
+      "--crate-token-surface-raised-glass": "rgba(241, 245, 249, 0.92)",
+      "--crate-token-surface-modal-glass": "rgba(255, 255, 255, 0.96)",
+      "--crate-token-surface-overlay-glass": "rgba(255, 255, 255, 0.98)",
+      "--crate-token-surface-secondary-solid": "#f1f5f9",
+      "--crate-token-surface-secondary-foreground-solid": "#0f172a",
+      "--crate-token-surface-muted-solid": "#f1f5f9",
+      "--crate-token-surface-accent-solid": "#e2e8f0",
+      "--crate-token-surface-accent-foreground-solid": "#0f172a",
+      "--crate-token-surface-popover-solid": "#ffffff",
+      "--crate-token-surface-popover-foreground-solid": "#0f172a",
+      "--crate-token-surface-border-solid": "#cbd5e1",
+      "--crate-token-surface-input-solid": "#e2e8f0",
+      "--crate-token-surface-overlay-solid": "rgba(255, 255, 255, 0.98)",
       "--crate-token-surface-panel-solid": "#ffffff",
       "--crate-token-surface-raised-solid": "#f1f5f9",
       "--crate-token-surface-modal-solid": "rgba(255, 255, 255, 0.96)",
@@ -499,6 +549,31 @@ const SURFACE_COLORS: Record<
       "--crate-token-surface-app": "#1c1c1e",
       "--crate-token-surface-card-solid": "#242426",
       "--crate-token-surface-card-foreground-solid": "#f5f5f7",
+      "--crate-token-surface-card-glass": "rgba(36, 36, 38, 0.78)",
+      "--crate-token-surface-card-foreground-glass": "#f5f5f7",
+      "--crate-token-surface-secondary-glass": "rgba(44, 44, 46, 0.88)",
+      "--crate-token-surface-secondary-foreground-glass": "#f5f5f7",
+      "--crate-token-surface-muted-glass": "rgba(36, 36, 38, 0.72)",
+      "--crate-token-surface-accent-glass": "rgba(255, 255, 255, 0.06)",
+      "--crate-token-surface-accent-foreground-glass": "#f5f5f7",
+      "--crate-token-surface-popover-glass": "rgba(44, 44, 46, 0.95)",
+      "--crate-token-surface-popover-foreground-glass": "#f5f5f7",
+      "--crate-token-surface-border-glass": "rgba(255, 255, 255, 0.08)",
+      "--crate-token-surface-input-glass": "rgba(44, 44, 46, 0.72)",
+      "--crate-token-surface-panel-glass": "#232326",
+      "--crate-token-surface-raised-glass": "rgba(44, 44, 46, 0.92)",
+      "--crate-token-surface-modal-glass": "rgba(44, 44, 46, 0.96)",
+      "--crate-token-surface-overlay-glass": "rgba(44, 44, 46, 0.98)",
+      "--crate-token-surface-secondary-solid": "#2c2c2e",
+      "--crate-token-surface-secondary-foreground-solid": "#f5f5f7",
+      "--crate-token-surface-muted-solid": "#242426",
+      "--crate-token-surface-accent-solid": "#2c2c2e",
+      "--crate-token-surface-accent-foreground-solid": "#f5f5f7",
+      "--crate-token-surface-popover-solid": "#242426",
+      "--crate-token-surface-popover-foreground-solid": "#f5f5f7",
+      "--crate-token-surface-border-solid": "#3a3a3c",
+      "--crate-token-surface-input-solid": "#2c2c2e",
+      "--crate-token-surface-overlay-solid": "rgba(44, 44, 46, 0.98)",
       "--crate-token-surface-panel-solid": "#232326",
       "--crate-token-surface-raised-solid": "#2c2c2e",
       "--crate-token-surface-modal-solid": "rgba(44, 44, 46, 0.96)",
@@ -510,6 +585,31 @@ const SURFACE_COLORS: Record<
       "--crate-token-surface-app": "#f5f5f7",
       "--crate-token-surface-card-solid": "#ffffff",
       "--crate-token-surface-card-foreground-solid": "#1d1d1f",
+      "--crate-token-surface-card-glass": "rgba(255, 255, 255, 0.78)",
+      "--crate-token-surface-card-foreground-glass": "#1d1d1f",
+      "--crate-token-surface-secondary-glass": "rgba(242, 242, 247, 0.88)",
+      "--crate-token-surface-secondary-foreground-glass": "#1d1d1f",
+      "--crate-token-surface-muted-glass": "rgba(242, 242, 247, 0.72)",
+      "--crate-token-surface-accent-glass": "rgba(29, 29, 31, 0.06)",
+      "--crate-token-surface-accent-foreground-glass": "#1d1d1f",
+      "--crate-token-surface-popover-glass": "rgba(255, 255, 255, 0.95)",
+      "--crate-token-surface-popover-foreground-glass": "#1d1d1f",
+      "--crate-token-surface-border-glass": "rgba(29, 29, 31, 0.08)",
+      "--crate-token-surface-input-glass": "rgba(229, 229, 234, 0.72)",
+      "--crate-token-surface-panel-glass": "#ffffff",
+      "--crate-token-surface-raised-glass": "rgba(242, 242, 247, 0.92)",
+      "--crate-token-surface-modal-glass": "rgba(255, 255, 255, 0.96)",
+      "--crate-token-surface-overlay-glass": "rgba(255, 255, 255, 0.98)",
+      "--crate-token-surface-secondary-solid": "#f2f2f7",
+      "--crate-token-surface-secondary-foreground-solid": "#1d1d1f",
+      "--crate-token-surface-muted-solid": "#f2f2f7",
+      "--crate-token-surface-accent-solid": "#e5e5ea",
+      "--crate-token-surface-accent-foreground-solid": "#1d1d1f",
+      "--crate-token-surface-popover-solid": "#ffffff",
+      "--crate-token-surface-popover-foreground-solid": "#1d1d1f",
+      "--crate-token-surface-border-solid": "#d1d1d6",
+      "--crate-token-surface-input-solid": "#e5e5ea",
+      "--crate-token-surface-overlay-solid": "rgba(255, 255, 255, 0.98)",
       "--crate-token-surface-panel-solid": "#ffffff",
       "--crate-token-surface-raised-solid": "#f2f2f7",
       "--crate-token-surface-modal-solid": "rgba(255, 255, 255, 0.96)",
@@ -536,18 +636,104 @@ function appearanceRuntimeVariables(
   appearance: AppearanceResolution,
 ): Record<string, string> {
   const accent = accentColorFor(appearance);
+  const accentForeground = resolveAccentForeground(appearance);
   const surfaceColors = SURFACE_COLORS[appearance.preset][appearance.mode];
+  const materialSuffix =
+    appearance.effective.material === "glass" ? "glass" : "solid";
+  const surfaceValue = (name: string): string => surfaceColors[name]!;
+  const radiusValues = RADIUS_VALUES[appearance.effective.radius];
+  const secondaryText =
+    appearance.mode === "dark"
+      ? "rgba(255, 255, 255, 0.78)"
+      : "rgba(15, 23, 42, 0.75)";
 
   return {
     ...surfaceColors,
+    // Runtime bridge: @theme aliases are resolved at :root, so scoped
+    // previews must receive the effective aliases on the scope itself.
+    "--color-background": surfaceValue("--crate-token-color-background"),
+    "--color-foreground": surfaceValue("--crate-token-color-foreground"),
     "--crate-token-color-primary": accent,
-    "--crate-token-color-primary-foreground":
-      resolveAccentForeground(appearance),
+    "--crate-token-color-primary-foreground": accentForeground,
     "--crate-token-color-ring": accent,
     "--crate-token-color-destructive": dangerColorFor(appearance),
     "--crate-token-color-destructive-foreground":
       resolveDangerForeground(appearance),
-    ...RADIUS_VALUES[appearance.effective.radius],
+    "--color-primary": accent,
+    "--color-primary-foreground": accentForeground,
+    "--color-muted-foreground": surfaceValue(
+      "--crate-token-color-muted-foreground",
+    ),
+    "--color-destructive": dangerColorFor(appearance),
+    "--color-success": appearance.mode === "dark" ? "#22c55e" : "#15803d",
+    "--color-warning": appearance.mode === "dark" ? "#f59e0b" : "#b45309",
+    "--color-info": appearance.mode === "dark" ? "#3b82f6" : "#2563eb",
+    "--color-ring": accent,
+    "--color-card": surfaceValue(
+      `--crate-token-surface-card-${materialSuffix}`,
+    ),
+    "--color-card-foreground": surfaceValue(
+      `--crate-token-surface-card-foreground-${materialSuffix}`,
+    ),
+    "--color-secondary": surfaceValue(
+      `--crate-token-surface-secondary-${materialSuffix}`,
+    ),
+    "--color-secondary-foreground": surfaceValue(
+      `--crate-token-surface-secondary-foreground-${materialSuffix}`,
+    ),
+    "--color-muted": surfaceValue(
+      `--crate-token-surface-muted-${materialSuffix}`,
+    ),
+    "--color-accent": surfaceValue(
+      `--crate-token-surface-accent-${materialSuffix}`,
+    ),
+    "--color-accent-foreground": surfaceValue(
+      `--crate-token-surface-accent-foreground-${materialSuffix}`,
+    ),
+    "--color-popover": surfaceValue(
+      `--crate-token-surface-popover-${materialSuffix}`,
+    ),
+    "--color-popover-foreground": surfaceValue(
+      `--crate-token-surface-popover-foreground-${materialSuffix}`,
+    ),
+    "--color-border": surfaceValue(
+      `--crate-token-surface-border-${materialSuffix}`,
+    ),
+    "--color-input": surfaceValue(
+      `--crate-token-surface-input-${materialSuffix}`,
+    ),
+    "--surface-app": surfaceValue("--crate-token-surface-app"),
+    "--surface-panel": surfaceValue(
+      `--crate-token-surface-panel-${materialSuffix}`,
+    ),
+    "--surface-raised": surfaceValue(
+      `--crate-token-surface-raised-${materialSuffix}`,
+    ),
+    "--surface-modal": surfaceValue(
+      `--crate-token-surface-modal-${materialSuffix}`,
+    ),
+    "--surface-popover": surfaceValue(
+      `--crate-token-surface-overlay-${materialSuffix}`,
+    ),
+    "--text-primary": surfaceValue("--crate-token-color-foreground"),
+    "--text-secondary": secondaryText,
+    "--text-muted": surfaceValue("--crate-token-color-muted-foreground"),
+    "--accent-action": accent,
+    "--accent-action-foreground": accentForeground,
+    "--focus-ring": accent,
+    "--state-danger": dangerColorFor(appearance),
+    "--state-danger-foreground": resolveDangerForeground(appearance),
+    "--state-success": appearance.mode === "dark" ? "#22c55e" : "#15803d",
+    "--state-warning": appearance.mode === "dark" ? "#f59e0b" : "#b45309",
+    "--state-info": appearance.mode === "dark" ? "#3b82f6" : "#2563eb",
+    "--brand-logo-start": accent,
+    "--brand-logo-end": accent,
+    "--brand-logo-glow": `color-mix(in srgb, ${accent} 28%, transparent)`,
+    ...radiusValues,
+    "--radius-sm": radiusValues["--crate-token-radius-sm"]!,
+    "--radius-md": radiusValues["--crate-token-radius-md"]!,
+    "--radius-lg": radiusValues["--crate-token-radius-lg"]!,
+    "--radius-xl": radiusValues["--crate-token-radius-xl"]!,
     "--font-brand":
       appearance.effective.typography === "system"
         ? "system-ui, sans-serif"
@@ -562,6 +748,7 @@ const SCOPE_ATTRIBUTES = [
   "crateEffects",
   "crateMotion",
   "crateDensity",
+  "crateSurfaceTone",
   "surface",
 ] as const;
 
@@ -589,6 +776,7 @@ export function applyAppearanceToRoot(
   root.dataset.crateEffects = appearance.effective.effects;
   root.dataset.crateMotion = appearance.reducedMotion ? "reduced" : "system";
   root.dataset.crateDensity = appearance.density;
+  root.dataset.crateSurfaceTone = appearance.effective.surfaceTone;
   root.dataset.surface = appearance.effective.material;
 
   const previousColorScheme = root.style.colorScheme;

@@ -1,5 +1,8 @@
 import "@crate/ui/tokens/index.css";
 import "./harness.css";
+import { createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import {
   applyAppearanceToRoot,
   inspectAppearancePreferences,
@@ -7,6 +10,7 @@ import {
   writeAppearancePreferences,
 } from "@crate/ui/lib/appearance-resolver";
 import type {
+  AppearanceOverrides,
   AppearancePreferencesV2,
   AppearanceResolution,
   ColorModePreference,
@@ -29,6 +33,7 @@ let draftPreferences = clonePreferences(activePreferences);
 let primaryCleanup: (() => void) | undefined;
 let secondaryCleanup: (() => void) | undefined;
 let mediaCleanup: (() => void) | undefined;
+let logoRoot: Root | undefined;
 
 function clonePreferences(
   value: AppearancePreferencesV2,
@@ -66,6 +71,8 @@ function optionMarkup(options: string[], selected: string): string {
 }
 
 function render(): void {
+  logoRoot?.unmount();
+  logoRoot = undefined;
   const root = document.querySelector<HTMLDivElement>("#app")!;
   root.innerHTML = `
     <section class="harness-shell" aria-label="Appearance contract harness">
@@ -97,8 +104,33 @@ function render(): void {
           ["system", "reduced"],
           draftPreferences.accessibility.motion,
         )}</select></label>
+        <label>Accent<select data-testid="accent-select">${optionMarkup(
+          ["theme", "cyan", "red", "violet"],
+          draftPreferences.overrides.accent ?? "theme",
+        )}</select></label>
+        <label>Surface tone<select data-testid="surface-tone-select">${optionMarkup(
+          ["theme", "neutral", "warm", "tinted"],
+          draftPreferences.overrides.surfaceTone ?? "theme",
+        )}</select></label>
+        <label>Radius<select data-testid="radius-select">${optionMarkup(
+          ["theme", "subtle", "rounded"],
+          draftPreferences.overrides.radius ?? "theme",
+        )}</select></label>
+        <label>Typography<select data-testid="typography-select">${optionMarkup(
+          ["theme", "brand", "system"],
+          draftPreferences.overrides.typography ?? "theme",
+        )}</select></label>
+        <label>Effects<select data-testid="effects-select">${optionMarkup(
+          ["theme", "off", "subtle", "expressive"],
+          draftPreferences.overrides.effects ?? "theme",
+        )}</select></label>
+        <label>Density<select data-testid="density-select">${optionMarkup(
+          ["comfortable", "compact"],
+          draftPreferences.presentation.density,
+        )}</select></label>
         <button type="button" data-testid="apply-button">Apply</button>
         <button type="button" data-testid="cancel-button">Cancel</button>
+        <button type="button" data-testid="reset-button">Reset overrides</button>
       </section>
       <div class="scopes">
         <section data-testid="preview-scope" class="scope scope-primary">
@@ -107,8 +139,9 @@ function render(): void {
             <p class="eyebrow">Preview card</p>
             <h2>Listen to your library</h2>
             <p class="muted">Surface, text, accent and radius come from the active appearance.</p>
-            <button type="button" class="accent-button">Play artist</button>
+            <button type="button" data-testid="accent-button" class="accent-button">Play artist</button>
           </article>
+          <div data-testid="logo-mount" class="logo-mount"></div>
           <div data-testid="portal-target" class="portal-target">
             <span data-testid="portal-content">Portal content remains in the primary scope.</span>
           </div>
@@ -133,6 +166,16 @@ function setDraft<K extends keyof AppearancePreferencesV2>(
   value: AppearancePreferencesV2[K],
 ): void {
   draftPreferences = { ...draftPreferences, [key]: value };
+}
+
+function setOverride<K extends keyof AppearanceOverrides>(
+  key: K,
+  value: string,
+): void {
+  const overrides = { ...draftPreferences.overrides };
+  if (value === "theme") delete overrides[key];
+  else overrides[key] = value as AppearanceOverrides[K];
+  draftPreferences = { ...draftPreferences, overrides };
 }
 
 function bindControls(): void {
@@ -165,6 +208,31 @@ function bindControls(): void {
       .value as MotionPreference;
     draftPreferences = { ...draftPreferences, accessibility: { motion } };
   };
+  const overrideSelectors = [
+    ["accent", "accent"],
+    ["surfaceTone", "surface-tone"],
+    ["radius", "radius"],
+    ["typography", "typography"],
+    ["effects", "effects"],
+  ] as const;
+  for (const [key, testId] of overrideSelectors) {
+    document.querySelector<HTMLSelectElement>(
+      `[data-testid=${testId}-select]`,
+    )!.onchange = (event) => {
+      setOverride(key, (event.target as HTMLSelectElement).value);
+    };
+  }
+  document.querySelector<HTMLSelectElement>(
+    "[data-testid=density-select]",
+  )!.onchange = (event) => {
+    draftPreferences = {
+      ...draftPreferences,
+      presentation: {
+        density: (event.target as HTMLSelectElement)
+          .value as AppearancePreferencesV2["presentation"]["density"],
+      },
+    };
+  };
   document.querySelector<HTMLButtonElement>(
     "[data-testid=apply-button]",
   )!.onclick = () => {
@@ -181,6 +249,12 @@ function bindControls(): void {
     "[data-testid=cancel-button]",
   )!.onclick = () => {
     draftPreferences = clonePreferences(activePreferences);
+    render();
+  };
+  document.querySelector<HTMLButtonElement>(
+    "[data-testid=reset-button]",
+  )!.onclick = () => {
+    draftPreferences = { ...draftPreferences, overrides: {} };
     render();
   };
 }
@@ -205,6 +279,21 @@ function applyScopes(): void {
     primaryAppearance.mode;
   document.querySelector<HTMLElement>("[data-testid=theme-skin]")!.textContent =
     primaryAppearance.preset;
+  const logoMount = document.querySelector<HTMLElement>(
+    "[data-testid=logo-mount]",
+  );
+  if (logoMount) {
+    logoRoot ??= createRoot(logoMount);
+    logoRoot.render(
+      createElement(CrateLogo, {
+        "data-testid": "logo",
+        effects: primaryAppearance.effective.effects !== "off",
+        reducedMotion: primaryAppearance.reducedMotion,
+        size: 64,
+        title: "Crate",
+      }),
+    );
+  }
 
   mediaCleanup?.();
   const media = window.matchMedia("(prefers-color-scheme: dark)");
