@@ -1,3 +1,10 @@
+import {
+  inspectAppearancePreferences,
+  readAppearancePreferences,
+  writeAppearancePreferences,
+} from "./appearance-resolver";
+import type { AppearanceStorage } from "./appearance-types";
+
 export const THEME_SKIN_STORAGE_KEY = "crate.listen.theme-skin";
 
 export const MODE_REGISTRY = {
@@ -445,19 +452,30 @@ export function readStoredThemeSkin(
   if (!storage) return DEFAULT_THEME_SKIN;
 
   try {
-    const raw = storage.getItem(THEME_SKIN_STORAGE_KEY);
-    if (!raw) return DEFAULT_THEME_SKIN;
+    const inspected = inspectAppearancePreferences(storage);
+    if (inspected.status !== "corrupt") {
+      return {
+        mode: inspected.preferences.mode,
+        skin: inspected.preferences.preset,
+      };
+    }
 
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return DEFAULT_THEME_SKIN;
+    // Keep the legacy reader tolerant for callers that passed a storage
+    // adapter returning the old payload regardless of the requested key.
+    const legacyCandidate = inspected.raw
+      ? JSON.parse(inspected.raw)
+      : undefined;
+    if (legacyCandidate && typeof legacyCandidate === "object") {
+      return migrateStoredSelection(
+        legacyCandidate as {
+          mode?: unknown;
+          skin?: unknown;
+          theme?: unknown;
+        },
+      );
+    }
 
-    return migrateStoredSelection(
-      parsed as {
-        mode?: unknown;
-        skin?: unknown;
-        theme?: unknown;
-      },
-    );
+    return DEFAULT_THEME_SKIN;
   } catch {
     return DEFAULT_THEME_SKIN;
   }
@@ -551,13 +569,22 @@ export function applyThemeSkin(
   }
 
   const storage = options.storage ?? getBrowserStorage();
-  try {
-    storage?.setItem?.(
-      THEME_SKIN_STORAGE_KEY,
-      JSON.stringify({ mode: selection.mode, skin: selection.skin }),
-    );
-  } catch {
-    // Persistence is best effort; the active selection still applies.
+  if (storage?.getItem && storage.setItem) {
+    const preferences = readAppearancePreferences(storage);
+    writeAppearancePreferences(storage as AppearanceStorage, {
+      ...preferences,
+      mode: selection.mode,
+      preset: selection.skin,
+    });
+  } else {
+    try {
+      storage?.setItem?.(
+        THEME_SKIN_STORAGE_KEY,
+        JSON.stringify({ mode: selection.mode, skin: selection.skin }),
+      );
+    } catch {
+      // Persistence is best effort; the active selection still applies.
+    }
   }
 
   const appliedSelection = { ...selection, resolvedMode };

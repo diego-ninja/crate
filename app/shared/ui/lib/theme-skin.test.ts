@@ -146,6 +146,44 @@ describe("theme and skin runtime", () => {
     );
   });
 
+  it("keeps v2 preferences when the legacy facade changes mode or skin", () => {
+    const root = document.documentElement;
+    const values = new Map([
+      [
+        "crate.listen.appearance.v2",
+        JSON.stringify({
+          version: 2,
+          mode: "dark",
+          preset: "default",
+          overrides: { accent: "violet", material: "solid" },
+          presentation: { density: "compact" },
+          accessibility: { motion: "reduced" },
+          preserved: { source: "future-client" },
+        }),
+      ],
+    ]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    } as unknown as Storage;
+
+    applyThemeSkin("light", "crateRed", { root, storage });
+
+    expect(JSON.parse(values.get("crate.listen.appearance.v2")!)).toEqual(
+      expect.objectContaining({
+        mode: "light",
+        preset: "crateRed",
+        overrides: { accent: "violet", material: "solid" },
+        presentation: { density: "compact" },
+        accessibility: { motion: "reduced" },
+        preserved: { source: "future-client" },
+      }),
+    );
+    expect(values.get("crate.listen.theme-skin")).toBe(
+      JSON.stringify({ mode: "light", skin: "crateRed" }),
+    );
+  });
+
   it("reacts to system color changes and removes the old listener", () => {
     const root = document.documentElement;
     const darkMedia = createMatchMedia(true);
