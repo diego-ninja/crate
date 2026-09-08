@@ -32,6 +32,12 @@ import {
   artistHeroArtworkFitClassName,
   type ArtistHeroArtworkBounds,
 } from "@crate/ui/domain/ArtistHeroFrame";
+import { ThemeScope } from "@crate/ui/primitives/ThemeScope";
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  resolveAppearance,
+  type AppearanceResolution,
+} from "@crate/ui/lib/appearance-resolver";
 
 import { cn } from "@/lib/utils";
 
@@ -64,11 +70,16 @@ interface HeroCompositionCanvasProps {
   editable?: boolean;
   previewOnly?: boolean;
   previewArtworkBounds?: ArtistHeroArtworkBounds;
+  appearance?: AppearanceResolution;
   children?: ReactNode;
   onRecipeChange: (recipe: HeroRecipe) => void;
 }
 
 const MOBILE_PRESENTATION_VIEWPORT = { width: 430, height: 537.5 } as const;
+const DEFAULT_HERO_PREVIEW_APPEARANCE = resolveAppearance(
+  DEFAULT_APPEARANCE_PREFERENCES,
+  { prefersColorSchemeDark: true, prefersReducedMotion: false },
+);
 
 function useLoadedImage(sourceUrl: string | null): HTMLImageElement | null {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -176,6 +187,7 @@ export function HeroCompositionCanvas({
   editable = true,
   previewOnly = false,
   previewArtworkBounds,
+  appearance = DEFAULT_HERO_PREVIEW_APPEARANCE,
   children,
   onRecipeChange,
 }: HeroCompositionCanvasProps) {
@@ -350,12 +362,18 @@ export function HeroCompositionCanvas({
   const presentationScale = canvas.width / presentationViewport.width;
 
   return (
-    <div>
+    <ThemeScope
+      appearance={appearance}
+      data-testid="hero-composition-theme-scope"
+      className="contents"
+    >
       <div
         ref={containerRef}
         data-testid="hero-composition-canvas"
+        data-canvas-width={canvas.width}
+        data-canvas-height={canvas.height}
         className={cn(
-          "relative mx-auto w-full overflow-hidden bg-app-surface",
+          "relative mx-auto w-full overflow-hidden bg-transparent",
           previewOnly
             ? "border border-white/8"
             : "rounded-md border border-border shadow-[0_20px_60px_rgba(0,0,0,0.28)]",
@@ -617,7 +635,7 @@ export function HeroCompositionCanvas({
           </p>
         </>
       ) : null}
-    </div>
+    </ThemeScope>
   );
 }
 

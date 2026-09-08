@@ -139,6 +139,7 @@ export function ArtistHeroArtworkEditor({
   const [previewArtifact, setPreviewArtifact] =
     useState<HeroPreviewArtifact | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequestRef = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [featuredBusy, setFeaturedBusy] = useState(false);
@@ -225,6 +226,9 @@ export function ArtistHeroArtworkEditor({
         }
       : profile?.revision ?? fallbackSource,
   });
+  useEffect(() => {
+    previewRequestRef.current += 1;
+  }, [previewKey]);
   const canonicalPreviewView =
     previewArtifact?.key === previewKey
       ? previewArtifact.view
@@ -280,6 +284,8 @@ export function ArtistHeroArtworkEditor({
       return;
     }
 
+    const requestId = ++previewRequestRef.current;
+    const requestKey = previewKey;
     setPreviewOpen(true);
     setPreviewLoading(true);
     try {
@@ -308,8 +314,9 @@ export function ArtistHeroArtworkEditor({
         typeof result.preview_url === "string" ? result.preview_url : null;
       if (!previewUrl)
         throw new Error("Hero preview did not return an artifact");
+      if (requestId !== previewRequestRef.current) return;
       setPreviewArtifact({
-        key: previewKey,
+        key: requestKey,
         url: previewUrl,
         view:
           result.view && typeof result.view === "object"
@@ -984,10 +991,7 @@ function HeroResultPreview({
   return (
     <div
       data-testid={`${composition}-hero-result-preview`}
-      className={mobile ? "mx-auto w-full" : "w-full"}
-      style={{
-        maxWidth: mobile ? "min(440px, 46vh)" : undefined,
-      }}
+      className={mobile ? "mx-auto w-full max-w-[440px]" : "w-full"}
     >
       <HeroCompositionCanvas
         sourceUrl={sourceUrl}

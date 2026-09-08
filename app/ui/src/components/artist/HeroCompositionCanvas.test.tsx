@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HeroCompositionCanvas } from "./HeroCompositionCanvas";
 import type { HeroRecipe } from "./hero-composition-geometry";
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  resolveAppearance,
+} from "@crate/ui/lib/appearance-resolver";
 
 const transformerForceUpdate = vi.hoisted(() => vi.fn());
 
@@ -50,14 +54,17 @@ vi.mock("react-konva", () => ({
   }),
   Rect: ({
     name,
+    fill,
     fillLinearGradientColorStops,
   }: {
     name?: string;
+    fill?: string;
     fillLinearGradientColorStops?: Array<number | string>;
   }) => (
     <div
       data-testid={`konva-gradient-${name ?? "background"}`}
       data-gradient-name={name ?? ""}
+      data-fill={fill ?? ""}
       data-color-stops={JSON.stringify(fillLinearGradientColorStops ?? [])}
     />
   ),
@@ -256,6 +263,66 @@ describe("HeroCompositionCanvas", () => {
     expect(screen.queryByRole("button", { name: "Crop" })).toBeNull();
     expect(screen.queryByTestId("konva-transformer")).toBeNull();
     expect(screen.queryByText(/Fill preview/)).toBeNull();
+  });
+
+  it("keeps the Konva artboard transparent inside its own appearance scope", async () => {
+    localStorage.setItem("crate.listen.appearance.v2", "unchanged");
+    const appearance = resolveAppearance(
+      {
+        ...DEFAULT_APPEARANCE_PREFERENCES,
+        mode: "light",
+        preset: "crateRed",
+      },
+      { prefersColorSchemeDark: false, prefersReducedMotion: false },
+    );
+
+    const onRecipeChange = vi.fn();
+    const { container, rerender } = render(
+      <HeroCompositionCanvas
+        sourceUrl="data:image/jpeg;base64,source"
+        artistName="Converge"
+        composition="mobile"
+        aspect={4 / 5}
+        recipe={initialRecipe}
+        appearance={appearance}
+        onRecipeChange={onRecipeChange}
+      />,
+    );
+
+    expect(await screen.findByTestId("konva-stage")).toBeInTheDocument();
+    expect(screen.getByTestId("hero-composition-theme-scope")).toHaveAttribute(
+      "data-crate-skin",
+      "crateRed",
+    );
+    expect(screen.getByTestId("hero-composition-theme-scope")).toHaveAttribute(
+      "data-crate-mode",
+      "light",
+    );
+    expect(screen.getByTestId("hero-composition-canvas")).toHaveClass(
+      "bg-transparent",
+    );
+    expect(container.querySelector('[data-fill="#0a0a0f"]')).toBeNull();
+    onRecipeChange.mockClear();
+
+    rerender(
+      <HeroCompositionCanvas
+        sourceUrl="data:image/jpeg;base64,source"
+        artistName="Converge"
+        composition="mobile"
+        aspect={4 / 5}
+        recipe={initialRecipe}
+        appearance={resolveAppearance(
+          { ...DEFAULT_APPEARANCE_PREFERENCES, mode: "dark" },
+          { prefersColorSchemeDark: true, prefersReducedMotion: false },
+        )}
+        onRecipeChange={onRecipeChange}
+      />,
+    );
+
+    expect(onRecipeChange).not.toHaveBeenCalled();
+    expect(localStorage.getItem("crate.listen.appearance.v2")).toBe(
+      "unchanged",
+    );
   });
 
   it("uses the canonical rendered artifact for preview-only output", () => {

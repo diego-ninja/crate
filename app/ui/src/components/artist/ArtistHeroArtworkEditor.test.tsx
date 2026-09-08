@@ -955,7 +955,7 @@ describe("ArtistHeroArtworkEditor", () => {
 
     expect(
       within(dialog).getByTestId("mobile-hero-result-preview"),
-    ).toHaveStyle({ maxWidth: "min(440px, 46vh)" });
+    ).toHaveClass("max-w-[440px]");
     expect(within(dialog).getByTestId("mobile-hero-scrim")).toHaveClass(
       "bottom-0",
       "h-[82%]",
@@ -1028,5 +1028,55 @@ describe("ArtistHeroArtworkEditor", () => {
       "src",
       "/api/artwork/artists/7/hero-preview/preview-1",
     );
+  });
+
+  it("does not publish a preview that finishes after its recipe became stale", async () => {
+    let resolvePreview!: (result: {
+      status: "completed";
+      result: { preview_url: string };
+    }) => void;
+    vi.mocked(waitForTask).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          return Response.json({ status: "queued", task_id: "stale-preview" });
+        }
+        return Response.json(manualProfile());
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <ArtistHeroArtworkEditor artistId={7} artistName="Converge" canEdit />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Preview result" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Simulate adjusted framing" }),
+    );
+
+    resolvePreview({
+      status: "completed",
+      result: {
+        preview_url: "/api/artwork/artists/7/hero-preview/stale-preview",
+      },
+    });
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole("dialog")).getByRole("img"),
+      ).not.toHaveAttribute(
+        "src",
+        "/api/artwork/artists/7/hero-preview/stale-preview",
+      );
+    });
   });
 });
