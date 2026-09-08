@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Section } from "@/components/settings/SettingsPrimitives";
+import { setMotionPreference } from "@/lib/motion-availability";
 import { ThemeScope } from "@crate/ui/primitives/ThemeScope";
 import {
   applyThemeSkin,
@@ -13,6 +14,7 @@ import {
   createDefaultAppearancePreferences,
   readAppearancePreferences,
   resolveAppearance,
+  validateAppearanceContrast,
   writeAppearancePreferences,
   type AppearanceOverrides,
   type AppearancePreferencesV2,
@@ -92,6 +94,10 @@ export function ThemeSkinSection() {
       setSaveError(true);
       return;
     }
+    if (!validateAppearanceContrast(preview).valid) {
+      setSaveError(true);
+      return;
+    }
     const result = writeAppearancePreferences(storage, draft);
     if (!result.v2Saved) {
       setSaveError(true);
@@ -100,6 +106,8 @@ export function ThemeSkinSection() {
     const applied = applyThemeSkin(draft.mode, draft.preset, { storage });
     const next = { ...draft, mode: applied.mode, preset: applied.skin };
     committedStore.value = next;
+    setMotionPreference(next.accessibility.motion);
+    document.documentElement.dataset.crateMotion = next.accessibility.motion;
     setDraft(next);
     setSaveError(false);
   };
@@ -260,6 +268,32 @@ export function ThemeSkinSection() {
             ])}
           </div>
         </div>
+
+        <label className="flex max-w-sm flex-col gap-1 text-xs text-text-secondary">
+          <span>{t("settings.appearance.motionLabel")}</span>
+          <select
+            aria-label={t("settings.appearance.motionLabel")}
+            value={draft.accessibility.motion}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                accessibility: {
+                  ...current.accessibility,
+                  motion: event.target
+                    .value as AppearancePreferencesV2["accessibility"]["motion"],
+                },
+              }))
+            }
+            className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
+          >
+            <option value="system">
+              {t("settings.appearance.values.system")}
+            </option>
+            <option value="reduced">
+              {t("settings.appearance.values.reduced")}
+            </option>
+          </select>
+        </label>
 
         <ThemeScope
           appearance={preview}

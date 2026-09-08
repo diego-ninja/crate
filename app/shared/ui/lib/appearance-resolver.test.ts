@@ -7,7 +7,10 @@ import {
   LEGACY_THEME_SKIN_STORAGE_KEY,
   createDefaultAppearancePreferences,
   readAppearancePreferences,
+  resolveAccentForeground,
   resolveAppearance,
+  resolveDangerForeground,
+  validateAppearanceContrast,
   writeAppearancePreferences,
 } from "./appearance-resolver";
 
@@ -68,6 +71,36 @@ describe("appearance contract v2", () => {
     expect(appearance.effective.accent).toBe("violet");
     expect(appearance.effective.material).toBe("solid");
     expect(appearance.preferences.presentation.density).toBe("compact");
+  });
+
+  it("validates every supported accent and material before exposing it", () => {
+    for (const preset of ["default", "crateRed"] as const) {
+      for (const mode of ["dark", "light"] as const) {
+        for (const accent of ["cyan", "red", "violet"] as const) {
+          for (const material of ["solid", "glass"] as const) {
+            const appearance = resolveAppearance(
+              {
+                ...createDefaultAppearancePreferences(),
+                mode,
+                preset,
+                overrides: { accent, material },
+              },
+              {
+                prefersColorSchemeDark: mode === "dark",
+                prefersReducedMotion: false,
+              },
+            );
+
+            expect(validateAppearanceContrast(appearance)).toEqual({
+              valid: true,
+              issues: [],
+            });
+            expect(resolveAccentForeground(appearance)).toMatch(/^#/);
+            expect(resolveDangerForeground(appearance)).toMatch(/^#/);
+          }
+        }
+      }
+    }
   });
 
   it("migrates a legacy selection without writing during read", () => {

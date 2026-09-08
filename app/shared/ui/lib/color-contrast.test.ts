@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  chooseAccessibleForeground,
   contrastRatio,
   contrastRatioComposited,
   meetsWcagAa,
@@ -12,6 +13,12 @@ import {
 import { SKIN_REGISTRY } from "./theme-skin";
 
 describe("color contrast", () => {
+  it("chooses the deterministic foreground with the strongest contrast", () => {
+    expect(chooseAccessibleForeground("#06b6d4")).toBe("#0a0a0f");
+    expect(chooseAccessibleForeground("#0e7490")).toBe("#ffffff");
+    expect(chooseAccessibleForeground("not-a-color")).toBeNull();
+  });
+
   it("calculates WCAG contrast ratios for hex colors", () => {
     expect(contrastRatio("#ffffff", "#000000")).toBe(21);
     expect(contrastRatio("#777777", "#ffffff")).toBeCloseTo(4.48, 2);

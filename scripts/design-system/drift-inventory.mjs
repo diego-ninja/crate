@@ -43,6 +43,16 @@ const RAW_COLOR_ALLOWLIST = new Map([
     },
   ],
   [
+    "app/shared/ui/lib/color-contrast.ts",
+    {
+      pattern: /#[0-9a-f]{3,8}\b|rgba?\(/gi,
+      owner: "design-system",
+      reason:
+        "Contrast selection uses stable foreground candidates for deterministic WCAG validation.",
+      reviewBy: "2026-12-31",
+    },
+  ],
+  [
     "app/listen/src/lib/capacitor-init.ts",
     {
       pattern: /color:\s*"#00000000"/gi,

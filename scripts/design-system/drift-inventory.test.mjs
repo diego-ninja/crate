@@ -184,6 +184,13 @@ test("exposes ownership metadata for every raw color exception", () => {
       reviewBy: "2026-12-31",
     },
     {
+      path: "app/shared/ui/lib/color-contrast.ts",
+      owner: "design-system",
+      reason:
+        "Contrast selection uses stable foreground candidates for deterministic WCAG validation.",
+      reviewBy: "2026-12-31",
+    },
+    {
       path: "app/listen/src/lib/capacitor-init.ts",
       owner: "listen-platform",
       reason: "Capacitor requires a fully transparent native status-bar color.",

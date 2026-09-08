@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getMotionPreference,
   isMotionBlocked,
+  setMotionPreference,
   subscribeToMotionAvailability,
 } from "./motion-availability";
 
@@ -14,6 +16,7 @@ function setVisibilityState(value: DocumentVisibilityState) {
 
 afterEach(() => {
   setVisibilityState("visible");
+  setMotionPreference("system");
   vi.unstubAllGlobals();
 });
 
@@ -32,6 +35,31 @@ describe("motion availability", () => {
     }));
 
     expect(isMotionBlocked()).toBe(true);
+  });
+
+  it("combines the explicit reduced preference with a non-reduced system", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    setMotionPreference("reduced");
+
+    expect(getMotionPreference()).toBe("reduced");
+    expect(isMotionBlocked()).toBe(true);
+  });
+
+  it("allows motion when both the preference and system allow it", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    setMotionPreference("system");
+
+    expect(isMotionBlocked()).toBe(false);
   });
 
   it("notifies on visibility and reduced-motion changes", () => {

@@ -24,6 +24,11 @@ import {
   type SurfaceTone,
   type Typography,
 } from "./appearance-types";
+import {
+  chooseAccessibleForeground,
+  contrastRatioComposited,
+  DEFAULT_DARK_FOREGROUND,
+} from "./color-contrast";
 
 export {
   APPEARANCE_CORRUPT_BACKUP_STORAGE_KEY,
@@ -54,6 +59,17 @@ export type {
   SurfaceTone,
   Typography,
 } from "./appearance-types";
+
+export interface AppearanceContrastIssue {
+  token: string;
+  ratio: number | null;
+  minimum: number;
+}
+
+export interface AppearanceContrastReport {
+  valid: boolean;
+  issues: AppearanceContrastIssue[];
+}
 
 const PRESET_DEFAULTS: Record<PresetId, AppearanceEffectiveValues> = {
   default: {
@@ -351,6 +367,88 @@ export function resolveAppearance(
   };
 }
 
+function accentColorFor(appearance: AppearanceResolution): string {
+  return ACCENT_COLORS[appearance.preset][appearance.mode][
+    appearance.effective.accent
+  ];
+}
+
+export function resolveAccentForeground(
+  appearance: AppearanceResolution,
+): string {
+  return (
+    chooseAccessibleForeground(accentColorFor(appearance)) ??
+    DEFAULT_DARK_FOREGROUND
+  );
+}
+
+const DANGER_COLORS: Record<PresetId, Record<"dark" | "light", string>> = {
+  default: { dark: "#ef4444", light: "#dc2626" },
+  crateRed: { dark: "#ff453a", light: "#d70015" },
+};
+
+function dangerColorFor(appearance: AppearanceResolution): string {
+  return DANGER_COLORS[appearance.preset][appearance.mode];
+}
+
+export function resolveDangerForeground(
+  appearance: AppearanceResolution,
+): string {
+  return (
+    chooseAccessibleForeground(dangerColorFor(appearance)) ??
+    DEFAULT_DARK_FOREGROUND
+  );
+}
+
+export function validateAppearanceContrast(
+  appearance: AppearanceResolution,
+): AppearanceContrastReport {
+  const palette = SURFACE_COLORS[appearance.preset][appearance.mode];
+  const appSurface = palette["--crate-token-surface-app"]!;
+  const solidSurface = palette["--crate-token-surface-card-solid"]!;
+  const glassSurface =
+    appearance.mode === "dark"
+      ? "rgba(18, 18, 26, 0.78)"
+      : "rgba(255, 255, 255, 0.84)";
+  const surface =
+    appearance.effective.material === "glass" ? glassSurface : solidSurface;
+  const foreground = palette["--crate-token-color-foreground"]!;
+  const accent = accentColorFor(appearance);
+  const checks = [
+    {
+      token: "text-on-surface",
+      ratio: contrastRatioComposited(foreground, surface, appSurface),
+      minimum: 4.5,
+    },
+    {
+      token: "accent-control",
+      ratio: contrastRatioComposited(
+        resolveAccentForeground(appearance),
+        accent,
+      ),
+      minimum: 4.5,
+    },
+    {
+      token: "focus-ring",
+      ratio: contrastRatioComposited(accent, appSurface),
+      minimum: 3,
+    },
+    {
+      token: "danger-control",
+      ratio: contrastRatioComposited(
+        resolveDangerForeground(appearance),
+        dangerColorFor(appearance),
+      ),
+      minimum: 4.5,
+    },
+  ];
+  const issues = checks.filter(
+    ({ ratio, minimum }) => ratio === null || ratio < minimum,
+  );
+
+  return { valid: issues.length === 0, issues };
+}
+
 const ACCENT_COLORS: Record<
   PresetId,
   Record<"dark" | "light", Record<AccentId, string>>
@@ -437,18 +535,18 @@ const RADIUS_VALUES: Record<Radius, Record<string, string>> = {
 function appearanceRuntimeVariables(
   appearance: AppearanceResolution,
 ): Record<string, string> {
-  const accent =
-    ACCENT_COLORS[appearance.preset][appearance.mode][
-      appearance.effective.accent
-    ];
+  const accent = accentColorFor(appearance);
   const surfaceColors = SURFACE_COLORS[appearance.preset][appearance.mode];
 
   return {
     ...surfaceColors,
     "--crate-token-color-primary": accent,
     "--crate-token-color-primary-foreground":
-      appearance.mode === "dark" ? "#0a0a0f" : "#ffffff",
+      resolveAccentForeground(appearance),
     "--crate-token-color-ring": accent,
+    "--crate-token-color-destructive": dangerColorFor(appearance),
+    "--crate-token-color-destructive-foreground":
+      resolveDangerForeground(appearance),
     ...RADIUS_VALUES[appearance.effective.radius],
     "--font-brand":
       appearance.effective.typography === "system"
@@ -462,6 +560,7 @@ const SCOPE_ATTRIBUTES = [
   "crateModePreference",
   "crateSkin",
   "crateEffects",
+  "crateMotion",
   "surface",
 ] as const;
 
@@ -487,6 +586,7 @@ export function applyAppearanceToRoot(
   root.dataset.crateModePreference = appearance.preferences.mode;
   root.dataset.crateSkin = appearance.preset;
   root.dataset.crateEffects = appearance.effective.effects;
+  root.dataset.crateMotion = appearance.reducedMotion ? "reduced" : "system";
   root.dataset.surface = appearance.effective.material;
 
   const previousColorScheme = root.style.colorScheme;

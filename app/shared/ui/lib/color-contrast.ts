@@ -8,6 +8,9 @@ interface ParsedColor extends RgbColor {
   alpha: number;
 }
 
+export const DEFAULT_DARK_FOREGROUND = "#0a0a0f";
+export const DEFAULT_LIGHT_FOREGROUND = "#ffffff";
+
 export function parseHexColor(value: string): RgbColor | null {
   const normalized = value.trim().replace(/^#/, "");
   if (![3, 6].includes(normalized.length) || !/^[\da-f]+$/i.test(normalized)) {
@@ -206,6 +209,26 @@ export function contrastRatioComposited(
     renderedBackground,
   );
   return contrastRatioForRgb(renderedForeground, renderedBackground);
+}
+
+export function chooseAccessibleForeground(
+  background: string,
+  candidates: readonly string[] = [
+    DEFAULT_DARK_FOREGROUND,
+    DEFAULT_LIGHT_FOREGROUND,
+  ],
+): string | null {
+  let strongest: { color: string; ratio: number } | null = null;
+
+  for (const candidate of candidates) {
+    const ratio = contrastRatioComposited(candidate, background);
+    if (ratio === null) continue;
+    if (!strongest || ratio > strongest.ratio) {
+      strongest = { color: candidate, ratio };
+    }
+  }
+
+  return strongest?.color ?? null;
 }
 
 export function meetsWcagAa(

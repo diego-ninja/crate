@@ -84,4 +84,26 @@ describe("ThemeSkinSection", () => {
     expect(accentSelect).toHaveValue("");
     expect(document.documentElement.dataset.crateSkin).toBeUndefined();
   });
+
+  it("persists the explicit reduced-motion preference on Apply", async () => {
+    const user = userEvent.setup();
+
+    renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
+    const motionSelect = screen.getByLabelText("Motion", { exact: true });
+    await user.selectOptions(motionSelect, "reduced");
+
+    expect(
+      JSON.parse(localStorage.getItem("crate.listen.appearance.v2") ?? "null"),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
+
+    expect(
+      JSON.parse(localStorage.getItem("crate.listen.appearance.v2")!),
+    ).toEqual(
+      expect.objectContaining({
+        accessibility: { motion: "reduced" },
+      }),
+    );
+  });
 });
