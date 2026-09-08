@@ -765,6 +765,14 @@ def test_upload_handler_writes_hero_variants_and_profile(monkeypatch, tmp_path):
     assert Image.open(artist_dir / "artist-hero-mobile.webp").size == (2160, 2700)
     assert profiles[0]["provenance"] == "manual"
     assert profiles[0]["desktop_recipe"] == desktop_recipe
+    manifest = profiles[0]["render_manifest"]
+    assert manifest["manifest_version"] == 1
+    assert manifest["editorial_revision"] == profiles[0]["revision"]
+    assert set(manifest["artifacts"]) == {"desktop", "mobile"}
+    assert all(
+        artifact["render_revision"] == profiles[0]["revision"]
+        for artifact in manifest["artifacts"].values()
+    )
     assert queued == [
         ("artist-hero", "artist-entity:desktop"),
         ("artist-hero", "artist-entity:mobile"),
@@ -866,6 +874,26 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
             "mobile_recipe": _crop_recipe(800, 1000),
             "provenance": "manual",
             "review_status": "approved",
+            "render_manifest": {
+                "manifest_version": 1,
+                "editorial_revision": "legacy-profile",
+                "artifacts": {
+                    "desktop": {
+                        "renderer_version": "cover-fit-v4",
+                        "render_revision": "desktop-legacy",
+                        "source_fingerprint": "sha256:desktop",
+                        "recipe_hash": "desktop-hash",
+                        "relative_path": "artist-hero-publications/v1/artist-entity/desktop/desktop-legacy/artifact.webp",
+                    },
+                    "mobile": {
+                        "renderer_version": "cover-fit-v4",
+                        "render_revision": "mobile-legacy",
+                        "source_fingerprint": "sha256:mobile",
+                        "recipe_hash": "mobile-hash",
+                        "relative_path": "artist-hero-publications/v1/artist-entity/mobile/mobile-legacy/artifact.webp",
+                    },
+                },
+            },
         },
     )
     monkeypatch.setattr(
@@ -897,6 +925,9 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
     assert Image.open(artist_dir / "artist-hero-mobile.webp").size == (2160, 2700)
     assert profiles[0]["desktop_source_width"] == 1800
     assert profiles[0]["mobile_source_width"] == 1000
+    manifest = profiles[0]["render_manifest"]
+    assert manifest["artifacts"]["desktop"]["render_revision"] == "desktop-legacy"
+    assert manifest["artifacts"]["mobile"]["render_revision"] == profiles[0]["revision"]
 
 
 def test_compose_handler_rerenders_the_persisted_hero_source(monkeypatch, tmp_path):

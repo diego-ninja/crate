@@ -11,6 +11,11 @@ from crate.artist_hero_artwork import (
     DESKTOP_HERO_SIZE,
     MOBILE_HERO_SIZE,
 )
+from crate.artist_hero_publication import (
+    ArtistHeroArtifactIdentity,
+    artist_hero_artifact_asset,
+    artist_hero_artifact_source_path,
+)
 from crate.artist_hero_contract import (
     artist_hero_profile_composition_is_supported,
     artist_hero_profile_ready_compositions,
@@ -1082,6 +1087,7 @@ def api_artist_hero_by_id(
     composition: str = Query("desktop", pattern="^(desktop|mobile)$"),
     size: int | None = Query(None, ge=32, le=2048),
     image_format: str | None = Query(None, alias="format", pattern="^webp$"),
+    version: str | None = Query(None, alias="v"),
 ):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -1092,6 +1098,7 @@ def api_artist_hero_by_id(
         composition=composition,
         size=size,
         image_format=image_format,
+        render_revision=version if isinstance(version, str) else None,
     )
 
 
@@ -1106,6 +1113,7 @@ def api_artist_hero_by_entity_uid(
     composition: str = Query("desktop", pattern="^(desktop|mobile)$"),
     size: int | None = Query(None, ge=32, le=2048),
     image_format: str | None = Query(None, alias="format", pattern="^webp$"),
+    version: str | None = Query(None, alias="v"),
 ):
     artist = get_library_artist_by_entity_uid(artist_entity_uid)
     if not artist:
@@ -1116,6 +1124,7 @@ def api_artist_hero_by_entity_uid(
         composition=composition,
         size=size,
         image_format=image_format,
+        render_revision=version if isinstance(version, str) else None,
     )
 
 
@@ -1410,6 +1419,7 @@ def api_artist_hero(
     composition: str,
     size: int | None = None,
     image_format: str | None = None,
+    render_revision: str | None = None,
 ):
     """Deliver the canonical composed hero for Home and artist pages."""
     _require_auth(request)
@@ -1420,9 +1430,30 @@ def api_artist_hero(
     entity_uid = str((artist_row or {}).get("entity_uid") or "")
     artist_id = int((artist_row or {}).get("id") or 0)
     profile = get_artist_hero_artwork(artist_id) if artist_id else None
-    local_original = (
+    legacy_original = (
         artist_dir / f"artist-hero-{composition}.webp" if artist_dir else None
     )
+    artifact_identity = _artist_hero_artifact_identity(
+        profile, entity_uid=entity_uid, composition=composition
+    )
+    if render_revision is not None and (
+        artifact_identity is None
+        or artifact_identity.render_revision != render_revision
+    ):
+        return Response(
+            status_code=404,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Crate-Artwork": "hero-revision-unavailable",
+                "X-Crate-Hero-Composition": composition,
+            },
+        )
+    versioned_original = (
+        artist_hero_artifact_source_path(artifact_identity)
+        if artifact_identity is not None
+        else None
+    )
+    local_original = versioned_original or legacy_original
     has_eligible_profile = bool(
         entity_uid
         and profile
@@ -1451,14 +1482,22 @@ def api_artist_hero(
             )
         else:
             response = deliver_artwork(
-                ArtworkAsset("artist-hero", f"{entity_uid}:{composition}"),
+                (
+                    artist_hero_artifact_asset(artifact_identity)
+                    if artifact_identity is not None
+                    else ArtworkAsset("artist-hero", f"{entity_uid}:{composition}")
+                ),
                 requested_size=size,
                 local_original=local_original,
                 missing_response=Response(status_code=404),
                 cache_visibility="private",
                 validate_source_revision=True,
             )
-        return _decorate_artist_hero_response(response, composition, revision)
+        return _decorate_artist_hero_response(
+            response,
+            composition,
+            artifact_identity.render_revision if artifact_identity else revision,
+        )
     return api_artist_background(
         request,
         name,
@@ -1466,6 +1505,28 @@ def api_artist_hero(
         size=size,
         image_format=image_format,
     )
+
+
+def _artist_hero_artifact_identity(
+    profile: dict | None, *, entity_uid: str, composition: str
+) -> ArtistHeroArtifactIdentity | None:
+    if not profile or not entity_uid:
+        return None
+    manifest = profile.get("render_manifest")
+    if not isinstance(manifest, dict):
+        return None
+    artifacts = manifest.get("artifacts")
+    artifact = artifacts.get(composition) if isinstance(artifacts, dict) else None
+    if not isinstance(artifact, dict):
+        return None
+    try:
+        return ArtistHeroArtifactIdentity(
+            artist_entity_uid=entity_uid,
+            composition=composition,
+            render_revision=str(artifact.get("render_revision") or ""),
+        )
+    except ValueError:
+        return None
 
 
 def _queue_artist_hero_recompose(name: str, artist_id: int) -> None:

@@ -31,11 +31,19 @@ from crate.artwork_variants import (
 from crate.artist_hero_artwork import (
     DESKTOP_HERO_RENDER_SIZE,
     MOBILE_HERO_RENDER_SIZE,
+    ARTIST_HERO_RENDER_VERSION,
     artist_hero_revision,
     render_artist_hero_composition,
     render_artist_hero_compositions,
 )
+from crate.artist_hero_contract import artist_hero_recipe_hash
 from crate.artist_hero_candidates import load_candidate_content
+from crate.artist_hero_publication import (
+    ARTIST_HERO_PUBLICATION_VERSION,
+    ArtistHeroArtifactIdentity,
+    artist_hero_source_fingerprint,
+    publish_artist_hero_artifact,
+)
 from crate.db.cache_store import set_cache
 from crate.db.events import emit_task_event
 from crate.db.queries.artwork_backfill import (
@@ -110,6 +118,72 @@ def _save_artist_hero_webp_atomic(image: PILImage, destination: Path) -> None:
     finally:
         if temporary_path and temporary_path.exists():
             temporary_path.unlink()
+
+
+def _publish_artist_hero_manifest(
+    *,
+    artist_row: dict,
+    revision: str,
+    rendered: dict[str, PILImage],
+    raw_sources: dict[str, bytes],
+    recipes: dict[str, dict],
+    existing: dict,
+    enabled: tuple[str, ...],
+) -> dict | None:
+    """Publish immutable renders before exposing their active manifest."""
+
+    entity_uid = str(artist_row.get("entity_uid") or "")
+    if not entity_uid:
+        return None
+
+    artifacts: dict[str, dict] = {}
+    existing_manifest = existing.get("render_manifest")
+    if isinstance(existing_manifest, dict) and isinstance(
+        existing_manifest.get("artifacts"), dict
+    ):
+        artifacts.update(
+            {
+                composition: dict(artifact)
+                for composition, artifact in existing_manifest["artifacts"].items()
+                if composition in {"desktop", "mobile"} and isinstance(artifact, dict)
+            }
+        )
+
+    for composition, image in rendered.items():
+        raw_source = raw_sources.get(composition)
+        recipe = recipes.get(composition)
+        if raw_source is None or recipe is None:
+            continue
+        identity = ArtistHeroArtifactIdentity(
+            artist_entity_uid=entity_uid,
+            composition=composition,
+            render_revision=revision,
+        )
+        publication = publish_artist_hero_artifact(
+            identity,
+            image,
+            source_fingerprint=artist_hero_source_fingerprint(raw_source),
+            recipe_hash=artist_hero_recipe_hash(recipe),
+            renderer_version=ARTIST_HERO_RENDER_VERSION,
+        )
+        artifacts[composition] = {
+            key: publication.manifest[key]
+            for key in (
+                "renderer_version",
+                "render_revision",
+                "source_fingerprint",
+                "recipe_hash",
+                "relative_path",
+            )
+        }
+
+    if any(composition not in artifacts for composition in enabled):
+        return None
+    return {
+        "manifest_version": ARTIST_HERO_PUBLICATION_VERSION,
+        "editorial_revision": revision,
+        "artifacts": artifacts,
+    }
 
 
 def _broadcast_artwork_invalidation(*scopes: str) -> None:
@@ -1232,6 +1306,8 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         dest = _safe_dest(found_dir / source_name)
         img.save(str(dest), "JPEG", quality=94)
         targets = ("desktop", "mobile") if composition == "shared" else (composition,)
+        rendered_compositions: dict[str, PILImage] = {}
+        raw_sources = {target: raw for target in targets}
         for target in targets:
             recipe = desktop_recipe if target == "desktop" else mobile_recipe
             output_size = (
@@ -1240,6 +1316,7 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
                 else MOBILE_HERO_RENDER_SIZE
             )
             rendered = render_artist_hero_composition(img, recipe, output_size)
+            rendered_compositions[target] = rendered
             _save_artist_hero_webp_atomic(
                 rendered, _safe_dest(found_dir / f"artist-hero-{target}.webp")
             )
@@ -1264,6 +1341,32 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             repr(sorted(desktop_recipe.items())).encode(),
             repr(sorted(mobile_recipe.items())).encode(),
         )
+        desktop_enabled = (
+            True
+            if composition in {"shared", "desktop"}
+            else existing.get("desktop_enabled", True)
+        )
+        mobile_enabled = (
+            True
+            if composition in {"shared", "mobile"}
+            else existing.get("mobile_enabled", True)
+        )
+        render_manifest = _publish_artist_hero_manifest(
+            artist_row=artist_row,
+            revision=revision,
+            rendered=rendered_compositions,
+            raw_sources=raw_sources,
+            recipes={"desktop": desktop_recipe, "mobile": mobile_recipe},
+            existing=existing,
+            enabled=tuple(
+                composition
+                for composition, is_enabled in (
+                    ("desktop", desktop_enabled),
+                    ("mobile", mobile_enabled),
+                )
+                if is_enabled
+            ),
+        )
         upsert_artist_hero_artwork(
             artist_id=int(artist_row["id"]),
             provenance="manual",
@@ -1279,16 +1382,9 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             mobile_source_width=mobile_width,
             mobile_source_height=mobile_height,
             mobile_source_origin=mobile_origin,
-            desktop_enabled=(
-                True
-                if composition in {"shared", "desktop"}
-                else existing.get("desktop_enabled", True)
-            ),
-            mobile_enabled=(
-                True
-                if composition in {"shared", "mobile"}
-                else existing.get("mobile_enabled", True)
-            ),
+            desktop_enabled=desktop_enabled,
+            mobile_enabled=mobile_enabled,
+            render_manifest=render_manifest,
         )
         entity_uid = str(artist_row.get("entity_uid") or "")
         if entity_uid:
@@ -1429,11 +1525,14 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
         "desktop": "artist-hero-desktop.webp",
         "mobile": "artist-hero-mobile.webp",
     }
+    rendered_compositions: dict[str, PILImage] = {}
     for target, (_raw, image) in loaded_sources.items():
+        rendered = render_artist_hero_composition(
+            image, recipes[target], output_sizes[target]
+        )
+        rendered_compositions[target] = rendered
         _save_artist_hero_webp_atomic(
-            render_artist_hero_composition(
-                image, recipes[target], output_sizes[target]
-            ),
+            rendered,
             artist_dir / output_names[target],
         )
 
@@ -1456,6 +1555,32 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
         desktop_source_width, desktop_source_height = desktop_image.size
     if "mobile" in loaded_sources:
         mobile_source_width, mobile_source_height = mobile_image.size
+    desktop_enabled = (
+        True
+        if composition in {"shared", "desktop"}
+        else existing.get("desktop_enabled", True)
+    )
+    mobile_enabled = (
+        True
+        if composition in {"shared", "mobile"}
+        else existing.get("mobile_enabled", True)
+    )
+    render_manifest = _publish_artist_hero_manifest(
+        artist_row=artist_row,
+        revision=revision,
+        rendered=rendered_compositions,
+        raw_sources={target: raw for target, (raw, _image) in loaded_sources.items()},
+        recipes=recipes,
+        existing=existing,
+        enabled=tuple(
+            composition
+            for composition, is_enabled in (
+                ("desktop", desktop_enabled),
+                ("mobile", mobile_enabled),
+            )
+            if is_enabled
+        ),
+    )
     upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance="manual",
@@ -1471,16 +1596,9 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
         mobile_source_width=mobile_source_width,
         mobile_source_height=mobile_source_height,
         mobile_source_origin=existing.get("mobile_source_origin") or "manual-upload",
-        desktop_enabled=(
-            True
-            if composition in {"shared", "desktop"}
-            else existing.get("desktop_enabled", True)
-        ),
-        mobile_enabled=(
-            True
-            if composition in {"shared", "mobile"}
-            else existing.get("mobile_enabled", True)
-        ),
+        desktop_enabled=desktop_enabled,
+        mobile_enabled=mobile_enabled,
+        render_manifest=render_manifest,
     )
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
@@ -1648,11 +1766,14 @@ def _handle_recompose_artist_hero(task_id: str, params: dict, config: dict) -> d
         "desktop": "artist-hero-desktop.webp",
         "mobile": "artist-hero-mobile.webp",
     }
+    rendered_compositions: dict[str, PILImage] = {}
     for composition, (_raw, image) in loaded_sources.items():
+        rendered = render_artist_hero_composition(
+            image, recipes[composition], render_sizes[composition]
+        )
+        rendered_compositions[composition] = rendered
         _save_artist_hero_webp_atomic(
-            render_artist_hero_composition(
-                image, recipes[composition], render_sizes[composition]
-            ),
+            rendered,
             artist_dir / output_names[composition],
         )
 
@@ -1676,6 +1797,24 @@ def _handle_recompose_artist_hero(task_id: str, params: dict, config: dict) -> d
         desktop_source_width, desktop_source_height = desktop_image.size
     if "mobile" in loaded_sources:
         mobile_source_width, mobile_source_height = mobile_image.size
+    desktop_enabled = existing.get("desktop_enabled", True) is not False
+    mobile_enabled = existing.get("mobile_enabled", True) is not False
+    render_manifest = _publish_artist_hero_manifest(
+        artist_row=artist_row,
+        revision=revision,
+        rendered=rendered_compositions,
+        raw_sources={target: raw for target, (raw, _image) in loaded_sources.items()},
+        recipes=recipes,
+        existing=existing,
+        enabled=tuple(
+            composition
+            for composition, is_enabled in (
+                ("desktop", desktop_enabled),
+                ("mobile", mobile_enabled),
+            )
+            if is_enabled
+        ),
+    )
     upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance=str(existing["provenance"]),
@@ -1691,6 +1830,7 @@ def _handle_recompose_artist_hero(task_id: str, params: dict, config: dict) -> d
         mobile_source_width=mobile_source_width,
         mobile_source_height=mobile_source_height,
         mobile_source_origin=existing.get("mobile_source_origin"),
+        render_manifest=render_manifest,
     )
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
@@ -1756,6 +1896,15 @@ def _handle_derive_artist_hero(task_id: str, params: dict, config: dict) -> dict
         rendered["mobile"], artist_dir / "artist-hero-mobile.webp"
     )
     revision = artist_hero_revision(raw, b":derived-hero")
+    render_manifest = _publish_artist_hero_manifest(
+        artist_row=artist_row,
+        revision=revision,
+        rendered=rendered,
+        raw_sources={"desktop": raw, "mobile": raw},
+        recipes={"desktop": desktop_recipe, "mobile": mobile_recipe},
+        existing=existing or {},
+        enabled=("desktop", "mobile"),
+    )
     upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance="derived_background",
@@ -1767,6 +1916,7 @@ def _handle_derive_artist_hero(task_id: str, params: dict, config: dict) -> dict
         revision=revision,
         desktop_enabled=True,
         mobile_enabled=True,
+        render_manifest=render_manifest,
     )
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
