@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Theme engine v2 — Crate</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --paper: #f5f7fa;
+        --panel: #ffffff;
+        --ink: #18212e;
+        --muted: #526071;
+        --line: #cdd5df;
+        --accent: #075985;
+        --tint: #e9f4fb;
+        --confirmed: #166534;
+        --confirmed-bg: #eaf6ec;
+        --proposed: #854d0e;
+        --proposed-bg: #fff4dc;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 0.2em;
+      }
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 5px;
+        border-radius: 2px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        max-width: 15ch;
+        font-size: clamp(2.4rem, 6vw, 4.8rem);
+        line-height: 1.06;
+        letter-spacing: -0.055em;
+        font-weight: 750;
+      }
+      h2 {
+        font-size: clamp(1.45rem, 3vw, 1.9rem);
+        line-height: 1.25;
+        letter-spacing: -0.025em;
+      }
+      h3 {
+        font-size: 1.1rem;
+        line-height: 1.35;
+      }
+      p {
+        max-width: 76ch;
+      }
+      .page {
+        width: min(1220px, calc(100% - 48px));
+        margin-inline: auto;
+      }
+      .skip {
+        position: absolute;
+        top: -100px;
+        padding: 10px 16px;
+        background: var(--panel);
+      }
+      .skip:focus {
+        top: 10px;
+        z-index: 5;
+      }
+      .masthead {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        padding-block: 25px;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 1.1rem;
+        font-weight: 750;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 0.85rem;
+        text-align: right;
+      }
+      .intro {
+        padding-block: 55px 38px;
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        align-items: end;
+        gap: 45px;
+      }
+      .lead {
+        font-size: 1.13rem;
+        color: var(--muted);
+        margin-block: 15px 21px;
+      }
+      .status-stack {
+        display: grid;
+        gap: 12px;
+      }
+      .status {
+        padding: 17px 20px;
+        border-radius: 12px;
+      }
+      .status strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .status p {
+        font-size: 0.94rem;
+      }
+      .confirmed {
+        color: var(--confirmed);
+        background: var(--confirmed-bg);
+      }
+      .proposed {
+        color: var(--proposed);
+        background: var(--proposed-bg);
+      }
+      .jump-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        padding-block: 19px;
+        border-block: 1px solid var(--line);
+        font-size: 0.92rem;
+      }
+      section {
+        padding-top: 48px;
+        scroll-margin-top: 20px;
+      }
+      .section-intro {
+        margin-block: 10px 23px;
+        color: var(--muted);
+      }
+      .options {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .option {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 22px 20px;
+      }
+      .option.selected {
+        border: 2px solid var(--accent);
+        padding: 21px 19px;
+        background: var(--tint);
+      }
+      .option-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .letter {
+        color: var(--muted);
+        font-size: 1.6rem;
+        line-height: 1;
+        font-weight: 600;
+      }
+      .option-label {
+        color: var(--muted);
+        font-size: 0.75rem;
+        text-align: right;
+      }
+      .selected .letter,
+      .selected .option-label {
+        color: var(--accent);
+      }
+      .option p {
+        margin-top: 11px;
+        font-size: 0.93rem;
+      }
+      .option .cost {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.83rem;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        margin-top: 24px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.9rem;
+        min-width: 680px;
+      }
+      caption {
+        padding: 16px;
+        text-align: left;
+        font-weight: 650;
+      }
+      th,
+      td {
+        padding: 13px 16px;
+        text-align: left;
+        vertical-align: top;
+        border-top: 1px solid var(--line);
+      }
+      thead th {
+        font-weight: 650;
+      }
+      tbody th {
+        width: 24%;
+        font-weight: 550;
+      }
+      .chosen-col {
+        background: var(--tint);
+      }
+      .note {
+        margin-top: 13px;
+        font-size: 0.86rem;
+        color: var(--muted);
+      }
+      .previews {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+      }
+      figure {
+        margin: 0;
+        min-width: 0;
+      }
+      figcaption {
+        padding-top: 13px;
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+      figcaption strong {
+        display: block;
+        color: var(--ink);
+        font-size: 1rem;
+        margin-bottom: 3px;
+      }
+      .preview {
+        --bg: #0d111b;
+        --surface: #181f2d;
+        --foreground: #f2f6fc;
+        --secondary: #b2bfd2;
+        --primary: #67d9ed;
+        --divider: #3d485d;
+        --radius: 10px;
+        background: var(--bg);
+        color: var(--foreground);
+        border: 1px solid var(--divider);
+        border-radius: 14px;
+        overflow: hidden;
+        font:
+          12px/1.45 "Trebuchet MS",
+          sans-serif;
+      }
+      .preview.music-light {
+        --bg: #ffffff;
+        --surface: #f1f1f4;
+        --foreground: #1b1b21;
+        --secondary: #555560;
+        --primary: #b82346;
+        --divider: #d6d6de;
+        --radius: 6px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .preview.music-dark {
+        --bg: #171719;
+        --surface: #27272b;
+        --foreground: #f5f5f7;
+        --secondary: #c1c1ca;
+        --primary: #ff7c97;
+        --divider: #45454e;
+        --radius: 6px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .mini-top {
+        height: 37px;
+        border-bottom: 1px solid var(--divider);
+        display: flex;
+        align-items: center;
+        padding-inline: 12px;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+      }
+      .mini-layout {
+        display: grid;
+        grid-template-columns: 58px 1fr;
+        min-height: 270px;
+      }
+      .mini-nav {
+        border-right: 1px solid var(--divider);
+        padding: 15px 7px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        font-size: 9px;
+        color: var(--secondary);
+      }
+      .mini-nav span:first-child {
+        color: var(--primary);
+        font-weight: 700;
+      }
+      .mini-main {
+        padding: 15px 12px;
+      }
+      .mini-greeting {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 13px;
+      }
+      .mini-hero {
+        display: flex;
+        align-items: end;
+        height: 82px;
+        padding: 10px;
+        background: var(--surface);
+        border-radius: var(--radius);
+        border: 1px solid var(--divider);
+        overflow: hidden;
+        position: relative;
+      }
+      .mini-hero::after {
+        content: "";
+        position: absolute;
+        right: -3px;
+        top: 6px;
+        width: 76px;
+        height: 106px;
+        border-radius: 42% 55% 0 0;
+        background: repeating-linear-gradient(
+          115deg,
+          transparent 0 9px,
+          var(--primary) 10px 12px
+        );
+        opacity: 0.4;
+        transform: rotate(-14deg);
+      }
+      .mini-hero-copy {
+        position: relative;
+        z-index: 1;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .mini-hero-copy small {
+        display: block;
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--secondary);
+      }
+      .mini-section-title {
+        font-weight: 700;
+        margin-block: 14px 8px;
+      }
+      .mini-albums {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 7px;
+      }
+      .mini-cover {
+        aspect-ratio: 1;
+        background: var(--surface);
+        border-radius: var(--radius);
+        position: relative;
+        overflow: hidden;
+      }
+      .mini-cover::before {
+        content: "";
+        position: absolute;
+        width: 64%;
+        height: 64%;
+        left: 18%;
+        top: 18%;
+        border: 4px solid var(--primary);
+        border-radius: 50%;
+        opacity: 0.7;
+      }
+      .mini-cover:nth-child(2)::before {
+        border-radius: 0;
+        transform: rotate(30deg);
+      }
+      .mini-cover:nth-child(3)::before {
+        border-radius: 45% 0 45% 0;
+        border-width: 7px;
+      }
+      .mini-player {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 49px;
+        border-top: 1px solid var(--divider);
+        padding: 8px 12px;
+        background: var(--surface);
+      }
+      .mini-player span {
+        display: block;
+        font-size: 9px;
+        color: var(--secondary);
+      }
+      .mini-player b {
+        font-size: 10px;
+      }
+      .pause {
+        display: inline-flex;
+        gap: 4px;
+        padding: 7px;
+      }
+      .pause::before,
+      .pause::after {
+        content: "";
+        width: 3px;
+        height: 11px;
+        background: var(--primary);
+      }
+      .music-light .mini-main,
+      .music-dark .mini-main {
+        padding-block: 12px;
+      }
+      .music-light .mini-greeting,
+      .music-dark .mini-greeting {
+        margin-bottom: 10px;
+      }
+      .music-light .mini-section-title,
+      .music-dark .mini-section-title {
+        margin-block: 11px 7px;
+      }
+      .proposal-banner {
+        margin-top: 22px;
+        border-left: 3px solid var(--accent);
+        padding: 3px 0 3px 17px;
+      }
+      .proposal-banner p {
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: 1fr 35px 1fr 35px 1.2fr;
+        align-items: center;
+        margin-top: 25px;
+      }
+      .flow-node {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .flow-node h3 {
+        margin-bottom: 7px;
+      }
+      .flow-node p {
+        font-size: 0.91rem;
+        color: var(--muted);
+      }
+      .arrow {
+        color: var(--muted);
+        text-align: center;
+        font-size: 1.6rem;
+      }
+      .flow-outputs {
+        display: grid;
+        gap: 12px;
+      }
+      .flow-outputs .flow-node {
+        padding: 16px 20px;
+      }
+      .contracts {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        margin-top: 27px;
+      }
+      .contract {
+        border-top: 2px solid var(--line);
+        padding-top: 15px;
+      }
+      .contract p {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+      .pilot {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 36px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 26px;
+        margin-top: 24px;
+      }
+      .pilot ol,
+      .pilot ul {
+        margin-block: 11px 0;
+        padding-left: 20px;
+      }
+      .pilot li {
+        margin-bottom: 8px;
+        font-size: 0.94rem;
+      }
+      footer {
+        margin-top: 50px;
+        padding-block: 24px 40px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.88rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 25px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #131821;
+          --panel: #1b2330;
+          --ink: #eef3fa;
+          --muted: #b7c3d3;
+          --line: #435069;
+          --accent: #8bd1fa;
+          --tint: #18364a;
+          --confirmed: #b4e4bc;
+          --confirmed-bg: #193428;
+          --proposed: #f4d49b;
+          --proposed-bg: #3b3020;
+        }
+      }
+      @media (max-width: 980px) {
+        .intro {
+          grid-template-columns: 1fr;
+          gap: 25px;
+        }
+        .status-stack {
+          grid-template-columns: 1fr 1fr;
+        }
+        .options {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .flow {
+          grid-template-columns: 1fr;
+          gap: 9px;
+        }
+        .arrow {
+          transform: rotate(90deg);
+        }
+        .flow-outputs {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @media (max-width: 740px) {
+        .page {
+          width: min(100% - 32px, 520px);
+        }
+        .intro {
+          padding-top: 32px;
+        }
+        .status-stack,
+        .options,
+        .previews,
+        .contracts,
+        .pilot {
+          grid-template-columns: 1fr;
+        }
+        .previews {
+          gap: 28px;
+        }
+        .mini-layout {
+          min-height: 295px;
+          grid-template-columns: 70px 1fr;
+        }
+        .mini-nav {
+          font-size: 11px;
+        }
+        .mini-main {
+          padding: 16px;
+        }
+        .mini-hero {
+          height: 90px;
+        }
+        .mini-albums {
+          max-width: 270px;
+        }
+        .pilot {
+          padding: 21px;
+          gap: 23px;
+        }
+        .flow-outputs {
+          grid-template-columns: 1fr;
+        }
+        footer {
+          flex-direction: column;
+          gap: 10px;
+        }
+      }
+      @media print {
+        :root {
+          --paper: white;
+          --panel: white;
+          --ink: #18212e;
+          --muted: #526071;
+          --line: #cdd5df;
+          --accent: #075985;
+          --tint: #e9f4fb;
+          --confirmed: #166534;
+          --confirmed-bg: #eaf6ec;
+          --proposed: #854d0e;
+          --proposed-bg: #fff4dc;
+        }
+        .page {
+          width: 100%;
+        }
+        .jump-links,
+        .skip {
+          display: none;
+        }
+        section {
+          padding-top: 25px;
+        }
+        .option,
+        figure,
+        .flow-node,
+        .pilot {
+          break-inside: avoid;
+        }
+        h1 {
+          font-size: 36px;
+        }
+        body {
+          font-size: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#contenido">Saltar al contenido</a>
+    <div class="page">
+      <header class="masthead">
+        <div class="brand">Crate</div>
+        <p class="meta">
+          Documento de planificación<br /><time datetime="2026-09-08"
+            >8 de septiembre de 2026</time
+          >
+        </p>
+      </header>
+      <main id="contenido">
+        <div class="intro">
+          <div>
+            <h1>Theme engine v2</h1>
+            <p class="lead">
+              Una identidad visual completa: colores, tipografía, superficies y
+              densidad, con heroes y logo Crate que respondan al tema.
+            </p>
+            <a href="../../docs/plans/2026-09-08-crate-theme-engine-v2-plan.md"
+              >Leer el plan técnico detallado</a
+            >
+          </div>
+          <div class="status-stack">
+            <div class="status confirmed">
+              <strong>Alcance confirmado</strong>
+              <p>
+                Diego ha centrado el objetivo en apariencia: colores,
+                tipografía, superficies y densidad, y ha añadido explícitamente
+                el logo Crate sensible al tema. Esa dirección guía la opción B.
+              </p>
+            </div>
+            <div class="status proposed">
+              <strong>Implementación propuesta</strong>
+              <p>
+                Los contratos, el pipeline del hero y las fases de este
+                documento se presentan para revisión. No constan como decisiones
+                arquitectónicas aprobadas.
+              </p>
+            </div>
+          </div>
+        </div>
+        <nav class="jump-links" aria-label="Contenido del documento">
+          <a href="#alcance">Alternativas de alcance</a
+          ><a href="#apariencia">Previews conceptuales</a
+          ><a href="#logo">Logo Crate</a
+          ><a href="#hero">Hero y separación por app</a
+          ><a href="#piloto">Piloto y criterios</a>
+        </nav>
+        <section id="alcance" aria-labelledby="alcance-title">
+          <h2 id="alcance-title">Dónde invertir el esfuerzo</h2>
+          <p class="section-intro">
+            La opción B cubre el objetivo expresado y permite conservar los
+            flujos actuales de navegación y reproducción.
+          </p>
+          <div class="options">
+            <article class="option">
+              <div class="option-head">
+                <span class="letter">A</span
+                ><span class="option-label">Alternativa mínima</span>
+              </div>
+              <h3>Colores y presets</h3>
+              <p>
+                Ampliar paletas y combinaciones claras/oscuras. La diferencia
+                entre temas seguiría concentrada en el color.
+              </p>
+              <p class="cost">Coste bajo · Personalización parcial</p>
+            </article>
+            <article class="option selected">
+              <div class="option-head">
+                <span class="letter">B</span
+                ><span class="option-label"
+                  >Recomendada<br />Alcance elegido</span
+                >
+              </div>
+              <h3>Apariencia, densidad, hero y logo</h3>
+              <p>
+                Paleta, fuentes, superficies, radios y densidad acotada. Adaptar
+                el hero y el logo al tema usando los mismos componentes y
+                acciones.
+              </p>
+              <p class="cost">Coste medio · Objetivo principal</p>
+            </article>
+            <article class="option">
+              <div class="option-head">
+                <span class="letter">C</span
+                ><span class="option-label">Posible fase futura</span>
+              </div>
+              <h3>Layouts curados</h3>
+              <p>
+                Variantes de composición para algunas pantallas. Requiere
+                validar navegación, posiciones del player y responsive por
+                variante.
+              </p>
+              <p class="cost">Coste alto · Mantenimiento adicional</p>
+            </article>
+            <article class="option">
+              <div class="option-head">
+                <span class="letter">D</span
+                ><span class="option-label">Fuera de alcance</span>
+              </div>
+              <h3>Clon completo</h3>
+              <p>
+                Reproducir otra aplicación en estructura e interacción. Extiende
+                el trabajo a casi todas las superficies del producto.
+              </p>
+              <p class="cost">Coste muy alto · Otra experiencia de producto</p>
+            </article>
+          </div>
+          <div
+            class="table-wrap"
+            role="region"
+            aria-label="Comparación de opciones; desplazable en móvil"
+            tabindex="0"
+          >
+            <table>
+              <caption>
+                Comparación de alcance y coste relativo
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Dimensión</th>
+                  <th scope="col">A · Colores</th>
+                  <th scope="col" class="chosen-col">
+                    B · Apariencia completa
+                  </th>
+                  <th scope="col">C · Layouts</th>
+                  <th scope="col">D · Clon</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Personalización</th>
+                  <td>Paleta</td>
+                  <td class="chosen-col">
+                    Paleta, fuentes, superficies y densidad
+                  </td>
+                  <td>Apariencia y composición</td>
+                  <td>Estructura e interacción completas</td>
+                </tr>
+                <tr>
+                  <th scope="row">Componentes existentes</th>
+                  <td>Se conservan</td>
+                  <td class="chosen-col">Se conservan; recetas ampliadas</td>
+                  <td>Vistas alternativas parciales</td>
+                  <td>Reimplementación extensa</td>
+                </tr>
+                <tr>
+                  <th scope="row">Reproducción y acciones</th>
+                  <td>Sin cambios previstos</td>
+                  <td class="chosen-col">Mismos controllers y capacidades</td>
+                  <td>Mayor validación de integración</td>
+                  <td>Mayor superficie de regresión</td>
+                </tr>
+                <tr>
+                  <th scope="row">Hero sensible al tema</th>
+                  <td>Trabajo adicional</td>
+                  <td class="chosen-col">Incluido en el plan</td>
+                  <td>Incluido y con variantes de layout</td>
+                  <td>Recreado para cada experiencia</td>
+                </tr>
+                <tr>
+                  <th scope="row">Logo Crate</th>
+                  <td>Ajuste de color</td>
+                  <td class="chosen-col">
+                    Geometría actual y recetas visuales por tema
+                  </td>
+                  <td>Recetas y ubicación por composición</td>
+                  <td>Tratamiento específico por experiencia</td>
+                </tr>
+                <tr>
+                  <th scope="row">Implementación / QA</th>
+                  <td>Baja / baja</td>
+                  <td class="chosen-col">Media / media</td>
+                  <td>Alta / alta</td>
+                  <td>Muy alta / muy alta</td>
+                </tr>
+                <tr>
+                  <th scope="row">Estado</th>
+                  <td>Alternativa reducida</td>
+                  <td class="chosen-col">Dirección de alcance confirmada</td>
+                  <td>Opcional, sin plan de ejecución</td>
+                  <td>Excluido</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">
+            Costes cualitativos para comparar opciones, no estimaciones de horas
+            ni compromisos de entrega. La solución técnica sigue pendiente de
+            revisión.
+          </p>
+        </section>
+        <section id="apariencia" aria-labelledby="apariencia-title">
+          <h2 id="apariencia-title">
+            La misma composición puede tener otra identidad
+          </h2>
+          <p class="section-intro">
+            Ilustraciones realizadas con CSS: no son capturas de Crate ni
+            diseños finales. Mantienen navegación, hero, cards y player en las
+            mismas posiciones. El nombre «Crate» es texto de referencia; estas
+            miniaturas no reproducen ni rediseñan su logo.
+          </p>
+          <div class="previews">
+            <figure>
+              <div class="preview" aria-hidden="true">
+                <div class="mini-top">Crate</div>
+                <div class="mini-layout">
+                  <div class="mini-nav">
+                    <span>Inicio</span><span>Explorar</span
+                    ><span>Colección</span>
+                  </div>
+                  <div class="mini-main">
+                    <div class="mini-greeting">Tu música, hoy</div>
+                    <div class="mini-hero">
+                      <div class="mini-hero-copy">
+                        <small>En tu biblioteca</small>High Vis
+                      </div>
+                    </div>
+                    <div class="mini-section-title">
+                      Escuchados recientemente
+                    </div>
+                    <div class="mini-albums">
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mini-player">
+                  <div>
+                    <b>Trauma Bonds</b><span>High Vis · Reproduciendo</span>
+                  </div>
+                  <i class="pause"></i>
+                </div>
+              </div>
+              <figcaption>
+                <strong>Crate · Oscuro</strong>Cian, contraste profundo y
+                densidad cómoda. Receta de logo propuesta:
+                <code>signature</code>, con la geometría actual.
+              </figcaption>
+            </figure>
+            <figure>
+              <div class="preview music-light" aria-hidden="true">
+                <div class="mini-top">Crate</div>
+                <div class="mini-layout">
+                  <div class="mini-nav">
+                    <span>Inicio</span><span>Explorar</span
+                    ><span>Colección</span>
+                  </div>
+                  <div class="mini-main">
+                    <div class="mini-greeting">Tu música, hoy</div>
+                    <div class="mini-hero">
+                      <div class="mini-hero-copy">
+                        <small>En tu biblioteca</small>High Vis
+                      </div>
+                    </div>
+                    <div class="mini-section-title">
+                      Escuchados recientemente
+                    </div>
+                    <div class="mini-albums">
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mini-player">
+                  <div>
+                    <b>Trauma Bonds</b><span>High Vis · Reproduciendo</span>
+                  </div>
+                  <i class="pause"></i>
+                </div>
+              </div>
+              <figcaption>
+                <strong>Music-inspired · Claro</strong>Neutros, acento
+                rojo/rosa, fuente de sistema y contenido algo más compacto.
+                Receta de logo propuesta: <code>restrained</code>.
+              </figcaption>
+            </figure>
+            <figure>
+              <div class="preview music-dark" aria-hidden="true">
+                <div class="mini-top">Crate</div>
+                <div class="mini-layout">
+                  <div class="mini-nav">
+                    <span>Inicio</span><span>Explorar</span
+                    ><span>Colección</span>
+                  </div>
+                  <div class="mini-main">
+                    <div class="mini-greeting">Tu música, hoy</div>
+                    <div class="mini-hero">
+                      <div class="mini-hero-copy">
+                        <small>En tu biblioteca</small>High Vis
+                      </div>
+                    </div>
+                    <div class="mini-section-title">
+                      Escuchados recientemente
+                    </div>
+                    <div class="mini-albums">
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                      <div class="mini-cover"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mini-player">
+                  <div>
+                    <b>Trauma Bonds</b><span>High Vis · Reproduciendo</span>
+                  </div>
+                  <i class="pause"></i>
+                </div>
+              </div>
+              <figcaption>
+                <strong>Music-inspired · Oscuro</strong>La misma identidad en
+                modo oscuro, con superficies sobrias y jerarquía equivalente.
+                Receta de logo propuesta: <code>restrained</code>;
+                <code>mono</code> como alternativa.
+              </figcaption>
+            </figure>
+          </div>
+          <div class="proposal-banner">
+            <p>
+              Propuesta: presets editables con controles comprensibles. La
+              densidad ajustaría filas, cards y separación de contenido; se
+              conservarían inicialmente la geometría del dock móvil, las safe
+              areas y los mínimos táctiles.
+            </p>
+          </div>
+        </section>
+        <section id="logo" aria-labelledby="logo-title">
+          <h2 id="logo-title">
+            El logo conserva su geometría y adopta el tema
+          </h2>
+          <p class="section-intro">
+            Requisito añadido al alcance: el logo Crate de la interfaz debe
+            responder a la apariencia elegida. La propuesta técnica reutiliza el
+            SVG actual como componente inline compartido, con tokens de marca
+            propios.
+          </p>
+          <div class="contracts">
+            <div class="contract">
+              <h3>Signature</h3>
+              <p>
+                Conserva el tratamiento distintivo del logo, con colores de
+                marca y efectos regulados por las preferencias visuales.
+              </p>
+            </div>
+            <div class="contract">
+              <h3>Restrained</h3>
+              <p>
+                Usa la misma geometría con un tratamiento más sobrio, adecuado
+                para superficies claras y presets con menos efectos.
+              </p>
+            </div>
+            <div class="contract">
+              <h3>Mono</h3>
+              <p>
+                Presenta la misma marca en un único tono contrastado para
+                superficies que requieren máxima sencillez.
+              </p>
+            </div>
+          </div>
+          <div class="proposal-banner">
+            <p>
+              Los tokens de marca se separan de los de playback y estados. Glows
+              y pulso respetan la intensidad de efectos y
+              <code>prefers-reduced-motion</code>. Si el SVG aparece varias
+              veces, sus filtros, máscaras y gradientes tendrán IDs únicos por
+              instancia para admitir ámbitos simultáneos de Admin, Listen y
+              previews.
+            </p>
+          </div>
+          <p class="note">
+            Se conservan los assets estáticos de favicon, tray, PWA y
+            exportación. El cambio propuesto se centra en el logo dentro de la
+            interfaz; no exige reemplazar esos archivos ni vincular su color al
+            estado de reproducción.
+          </p>
+        </section>
+        <section id="hero" aria-labelledby="hero-title">
+          <h2 id="hero-title">
+            Un asset neutral, composición adaptada a cada app
+          </h2>
+          <p class="section-intro">
+            Propuesta de separación: el worker prepara el material visual; el
+            frontend decide cómo integrarlo con el fondo, el texto y los
+            controles del tema activo.
+          </p>
+          <div
+            class="flow"
+            role="group"
+            aria-label="Flujo propuesto: worker genera asset neutral, HeroFrame lo compone y cada app aplica sus tokens"
+          >
+            <div class="flow-node">
+              <h3>Worker</h3>
+              <p>
+                Genera y guarda el asset neutral del artista y la información
+                necesaria para componerlo.
+              </p>
+            </div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="flow-node">
+              <h3>HeroFrame</h3>
+              <p>
+                Compone imagen, fondo, velos de contraste y texto en el
+                frontend.
+              </p>
+            </div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="flow-outputs">
+              <div class="flow-node">
+                <h3>Listen</h3>
+                <p>
+                  Tokens del modo y preset seleccionados, dentro de su propio
+                  ámbito.
+                </p>
+              </div>
+              <div class="flow-node">
+                <h3>Admin</h3>
+                <p>
+                  Tokens y presentación de Admin, sin heredar la selección de
+                  Listen.
+                </p>
+              </div>
+            </div>
+          </div>
+          <p class="note">
+            El formato del asset, la migración de imágenes existentes y los
+            fallbacks se concretan en el plan técnico. El API conserva el acceso
+            de solo lectura a los archivos de música.
+          </p>
+          <div class="contracts">
+            <div class="contract">
+              <h3>Apariencia</h3>
+              <p>
+                Modo, paleta, tipografía, radios, superficies, efectos y receta
+                de marca. Se resuelve como valores visuales validados.
+              </p>
+            </div>
+            <div class="contract">
+              <h3>Presentación</h3>
+              <p>
+                Densidad acotada del contenido. Los mismos componentes conservan
+                sus acciones y estructura.
+              </p>
+            </div>
+            <div class="contract">
+              <h3>Comportamiento</h3>
+              <p>
+                Playback, cola, datos, navegación y permisos siguen en los
+                controllers actuales.
+              </p>
+            </div>
+          </div>
+        </section>
+        <section id="piloto" aria-labelledby="piloto-title">
+          <h2 id="piloto-title">Probar el alcance antes de ampliarlo</h2>
+          <p class="section-intro">
+            Un corte representativo permite comprobar si la personalización
+            propuesta resulta suficiente y cuánto trabajo requiere extenderla.
+          </p>
+          <div class="pilot">
+            <div>
+              <h3>Piloto propuesto</h3>
+              <ol>
+                <li>Home: logo, hero, secciones y player activo.</li>
+                <li>Album: filas, menú, selección y reproducción.</li>
+                <li>Library: cards y estados guardado/offline.</li>
+              </ol>
+              <p class="note">
+                Comparar Crate y el preset Music-inspired en claro/oscuro,
+                escritorio/móvil y las densidades previstas. Revisar logos
+                simultáneos en ámbitos distintos y con movimiento reducido.
+              </p>
+            </div>
+            <div>
+              <h3>Criterios para continuar</h3>
+              <ul>
+                <li>
+                  La identidad cambia de forma perceptible con las mismas
+                  funciones disponibles.
+                </li>
+                <li>
+                  Cambiar apariencia conserva pista, cola y posición de
+                  reproducción.
+                </li>
+                <li>
+                  No aparecen recortes, overflow ni controles ocultos; texto,
+                  marca y focus tienen contraste.
+                </li>
+                <li>
+                  Los efectos del logo respetan preferencias y sus referencias
+                  SVG no colisionan.
+                </li>
+                <li>
+                  Si exige reconstruir navegación o mover el player, esa parte
+                  pasa a una fase opcional.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <p>
+          Alcance de producto confirmado. Plan técnico propuesto para revisión.
+        </p>
+        <a href="../../docs/plans/2026-09-08-crate-theme-engine-v2-plan.md"
+          >Abrir el plan completo</a
+        >
+      </footer>
+    </div>
+  </body>
+</html>
