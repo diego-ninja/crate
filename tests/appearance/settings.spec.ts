@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test("applies every bounded Settings override without changing structure", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   await page.getByTestId("accent-select").selectOption("violet");
   await page.getByTestId("surface-tone-select").selectOption("tinted");
@@ -38,7 +39,7 @@ test("applies every bounded Settings override without changing structure", async
 test("Cancel discards a draft and Reset clears only overrides", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   await page.getByTestId("accent-select").selectOption("violet");
   await page.getByTestId("cancel-button").click();

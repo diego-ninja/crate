@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test.describe("artist hero appearance contract", () => {
   test("uses the shared desktop frame for clear artwork and bounds-aware extend", async ({
     page,
   }) => {
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     const hero = page.getByTestId("desktop-artist-hero-frame");
     await expect(hero).toHaveAttribute("data-artwork", "clear");
@@ -26,7 +27,7 @@ test.describe("artist hero appearance contract", () => {
   test("keeps mobile composition and themed overlay content inside the frame", async ({
     page,
   }) => {
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     const hero = page.getByTestId("mobile-artist-hero-frame");
     await expect(hero).toHaveAttribute("data-artwork", "clear");

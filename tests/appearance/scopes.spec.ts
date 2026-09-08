@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test("keeps portal and secondary scopes isolated when the primary scope changes", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   const secondaryCard = page
     .getByTestId("secondary-scope")

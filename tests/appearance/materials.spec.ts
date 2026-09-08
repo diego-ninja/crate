@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test("switches between solid and glass recipes without changing the active skin", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   await page.getByTestId("material-select").selectOption("solid");
   await page.getByTestId("apply-button").click();

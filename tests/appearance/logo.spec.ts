@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test("uses the shared logo geometry with themed paint and reduced motion", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   const logo = page.getByTestId("logo");
   await expect(logo).toHaveAttribute("viewBox", "0 0 1052 1120");

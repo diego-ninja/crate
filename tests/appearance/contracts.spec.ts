@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test.describe("appearance contracts", () => {
   test("boots the default dark appearance with real runtime tokens", async ({
     page,
   }) => {
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     await expect(page.getByTestId("theme-mode")).toHaveText("dark");
     await expect(page.getByTestId("theme-skin")).toHaveText("default");
@@ -21,7 +22,7 @@ test.describe("appearance contracts", () => {
   test("resolves light crateRed without changing the secondary scope", async ({
     page,
   }) => {
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     await page.getByTestId("preset-select").selectOption("crateRed");
     await page.getByTestId("mode-select").selectOption("light");
@@ -50,7 +51,7 @@ test.describe("appearance contracts", () => {
       colorScheme: "dark",
       reducedMotion: "no-preference",
     });
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     await page.getByTestId("mode-select").selectOption("system");
     await page.getByTestId("motion-select").selectOption("reduced");
@@ -71,7 +72,7 @@ test.describe("appearance contracts", () => {
   test("supports solid and glass materials and keeps portal content scoped", async ({
     page,
   }) => {
-    await page.goto("/");
+    await openAppearanceHarness(page);
 
     await page.getByTestId("material-select").selectOption("solid");
     await page.getByTestId("apply-button").click();

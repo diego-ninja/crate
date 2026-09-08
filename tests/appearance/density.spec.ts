@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { openAppearanceHarness } from "./fixtures";
 
 test("keeps comfortable list geometry as the baseline and compacts only content spacing", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   const list = page.getByTestId("density-list");
   await expect(list).toHaveAttribute("data-density", "comfortable");
@@ -35,7 +36,7 @@ test("keeps comfortable list geometry as the baseline and compacts only content 
 test("keeps the virtualized anchor estimate aligned with the selected density", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openAppearanceHarness(page);
 
   const anchor = page.getByTestId("density-anchor");
   await expect(anchor).toHaveAttribute("data-estimate", "72");
