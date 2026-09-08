@@ -120,6 +120,9 @@ describe("ArtistHeroSection", () => {
 
     expect(screen.queryByText("hardcore")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-artist-hero-frame")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("mobile-artist-hero-frame").parentElement,
+    ).toHaveClass("h-full");
     expect(screen.getByTestId("desktop-artist-hero-frame")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-hero-scrim")).toBeInTheDocument();
     expect(screen.getByTestId("desktop-hero-bottom-scrim")).toBeInTheDocument();

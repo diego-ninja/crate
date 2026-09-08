@@ -57,7 +57,7 @@ export function ArtistHeroArtwork({
 
   return (
     <div className="relative h-[420px] overflow-hidden sm:h-[400px]">
-      <div className="sm:hidden">
+      <div className="h-full sm:hidden">
         <ArtistHeroFrame
           composition="mobile"
           aspectRatio="auto"
