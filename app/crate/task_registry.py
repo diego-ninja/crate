@@ -28,6 +28,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "backfill_artist_heroes": "Artist Hero Backfill",
     "migrate_artist_heroes": "Artist Hero Migration Canary",
     "migrate_artist_hero": "Artist Hero Migration",
+    "rollback_artist_hero": "Artist Hero Rollback",
     "compose_artist_hero": "Artist Hero Composition",
     "preview_artist_hero": "Artist Hero Preview",
     "recompose_artist_hero": "Artist Hero Renderer Migration",

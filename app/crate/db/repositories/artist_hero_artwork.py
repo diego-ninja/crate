@@ -412,6 +412,90 @@ def list_artist_hero_manifest_history(artist_id: int, *, session=None) -> list[d
         return _read(active_session)
 
 
+def rollback_artist_hero_manifest(
+    *,
+    artist_id: int,
+    expected_revision: str,
+    expected_manifest: Mapping[str, object] | None,
+    target_manifest_id: str,
+    session=None,
+) -> bool:
+    """Restore a retained manifest without changing editorial metadata."""
+
+    def _write(active_session) -> bool:
+        current = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT revision, render_manifest
+                    FROM artist_hero_artwork
+                    WHERE artist_id = :artist_id
+                    FOR UPDATE
+                    """
+                ),
+                {"artist_id": artist_id},
+            )
+            .mappings()
+            .first()
+        )
+        if current is None or current["revision"] != expected_revision:
+            return False
+        if not _manifests_equal(current["render_manifest"], expected_manifest):
+            return False
+
+        target = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT manifest
+                    FROM artist_hero_manifest_history
+                    WHERE artist_id = :artist_id
+                      AND manifest_id = :manifest_id
+                    """
+                ),
+                {"artist_id": artist_id, "manifest_id": target_manifest_id},
+            )
+            .mappings()
+            .first()
+        )
+        target_manifest = target["manifest"] if target else None
+        if not isinstance(target_manifest, Mapping):
+            return False
+
+        _record_manifest_history(
+            active_session,
+            artist_id=artist_id,
+            manifest=target_manifest,
+            previous_manifest=(
+                current["render_manifest"]
+                if isinstance(current["render_manifest"], Mapping)
+                else None
+            ),
+        )
+        result = active_session.execute(
+            text(
+                """
+                UPDATE artist_hero_artwork
+                SET render_manifest = CAST(:render_manifest AS JSONB),
+                    updated_at = NOW()
+                WHERE artist_id = :artist_id
+                  AND revision = :expected_revision
+                """
+            ),
+            {
+                "artist_id": artist_id,
+                "expected_revision": expected_revision,
+                "render_manifest": json.dumps(target_manifest),
+            },
+        )
+        return result.rowcount > 0
+
+    if session is not None:
+        return _write(session)
+    with transaction_scope() as active_session:
+        return _write(active_session)
+
+
 def list_artist_hero_render_revisions(
     artist_id: int, *, composition: str | None = None, session=None
 ) -> list[dict]:
@@ -507,7 +591,11 @@ def update_artist_hero_review_status(
 
 
 def delete_artist_hero_composition(
-    artist_id: int, composition: str, *, session=None
+    artist_id: int,
+    composition: str,
+    *,
+    expected_revision: str | None = None,
+    session=None,
 ) -> dict | None:
     """Disable one persisted composition and update Featured eligibility."""
 
@@ -525,7 +613,7 @@ def delete_artist_hero_composition(
             active_session.execute(
                 text(
                     f"""
-                    SELECT {enabled_column}, {other}_enabled
+                    SELECT revision, {enabled_column}, {other}_enabled
                     FROM artist_hero_artwork
                     WHERE artist_id = :artist_id
                     FOR UPDATE
@@ -537,6 +625,8 @@ def delete_artist_hero_composition(
             .first()
         )
         if row is None:
+            return None
+        if expected_revision is not None and row["revision"] != expected_revision:
             return None
 
         active_session.execute(

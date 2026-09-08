@@ -54,6 +54,10 @@ class ArtistHeroMigrationRequest(BaseModel):
     dry_run: bool = True
 
 
+class ArtistHeroRollbackRequest(BaseModel):
+    target_manifest_id: str = Field(min_length=8)
+
+
 class ArtworkExtractResponse(BaseModel):
     status: str
     path: str

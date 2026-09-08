@@ -776,6 +776,34 @@ def test_artist_hero_migration_canary_endpoint_queues_dry_run(test_app):
     )
 
 
+def test_artist_hero_rollback_endpoint_captures_active_manifest_cas(test_app):
+    profile = {
+        "revision": "editorial-revision-1",
+        "render_manifest": {
+            "manifest_version": 1,
+            "editorial_revision": "editorial-revision-1",
+            "artifacts": {"desktop": {"render_revision": "artifact-a"}},
+        },
+    }
+    with (
+        patch("crate.api.artwork.artist_name_from_id", return_value="Converge"),
+        patch("crate.api.artwork.get_artist_hero_artwork", return_value=profile),
+        patch("crate.api.artwork.create_task", return_value="task-rollback") as create,
+    ):
+        response = test_app.post(
+            "/api/artwork/artists/7/hero-profile/rollback",
+            json={"target_manifest_id": "sha256:manifest-b"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued", "task_id": "task-rollback"}
+    payload = create.call_args.args[1]
+    assert payload["artist_id"] == 7
+    assert payload["expected_revision"] == "editorial-revision-1"
+    assert payload["target_manifest_id"] == "sha256:manifest-b"
+    assert payload["expected_active_manifest_id"].startswith("sha256:")
+
+
 def test_upload_handler_writes_hero_variants_and_profile(monkeypatch, tmp_path):
     from crate.worker_handlers.artwork import _handle_upload_image
 

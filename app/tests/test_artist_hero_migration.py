@@ -323,3 +323,76 @@ def test_migration_target_rejects_a_stale_editorial_revision(
         "reason": "artist-hero-profile-changed",
         "artist_id": 42,
     }
+
+
+def test_rollback_worker_activates_retained_manifest_and_materializes_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from crate.db.repositories.artist_hero_artwork import artist_hero_manifest_id
+
+    current = _profile(
+        render_manifest={
+            "manifest_version": 1,
+            "editorial_revision": "editorial-revision-1",
+            "artifacts": {
+                "desktop": {"render_revision": "artifact-c"},
+                "mobile": {"render_revision": "artifact-c"},
+            },
+        }
+    )
+    target = {
+        **current,
+        "render_manifest": {
+            "manifest_version": 1,
+            "editorial_revision": "editorial-revision-1",
+            "artifacts": {
+                "desktop": {"render_revision": "artifact-b"},
+                "mobile": {"render_revision": "artifact-b"},
+            },
+        },
+    }
+    profiles = iter((current, target))
+    activated: list[dict] = []
+    queued: list[str] = []
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_library_artist_by_id",
+        lambda _artist_id: _artist(),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_artist_hero_artwork",
+        lambda _artist_id: next(profiles),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "rollback_artist_hero_manifest",
+        lambda **kwargs: activated.append(kwargs) or True,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "queue_artwork_materialization",
+        lambda asset, *, reason: queued.append(asset.entity_key),
+    )
+
+    result = artwork_handlers._handle_rollback_artist_hero(
+        "task-rollback",
+        {
+            "artist_id": 42,
+            "expected_revision": "editorial-revision-1",
+            "expected_active_manifest_id": artist_hero_manifest_id(
+                current["render_manifest"]
+            ),
+            "target_manifest_id": "sha256:manifest-b",
+        },
+        {"library_path": str(tmp_path)},
+    )
+
+    assert result == {
+        "status": "rolled_back",
+        "artist_id": 42,
+        "target_manifest_id": "sha256:manifest-b",
+    }
+    assert activated[0]["expected_revision"] == "editorial-revision-1"
+    assert activated[0]["expected_manifest"] == current["render_manifest"]
+    assert queued == ["artist-42:desktop:artifact-b", "artist-42:mobile:artifact-b"]

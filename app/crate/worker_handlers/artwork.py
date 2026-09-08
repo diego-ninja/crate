@@ -62,11 +62,13 @@ from crate.db.repositories.library import (
     get_library_artist_by_id,
 )
 from crate.db.repositories.artist_hero_artwork import (
+    artist_hero_manifest_id,
     compare_and_swap_artist_hero_manifest,
     delete_artist_hero_composition,
     get_artist_hero_artwork,
     list_artist_hero_backfill_candidates,
     list_artist_hero_migration_candidates,
+    rollback_artist_hero_manifest,
     upsert_artist_hero_artwork,
 )
 from crate.db.repositories.artist_artwork_assets import (
@@ -1150,6 +1152,13 @@ def _handle_delete_artist_hero_composition(
     existing = get_artist_hero_artwork(artist_id)
     if not existing or existing.get(f"{composition}_enabled", True) is False:
         return {"error": "Artist hero composition not found"}
+    expected_revision = str(params.get("expected_revision") or "")
+    if expected_revision and str(existing.get("revision") or "") != expected_revision:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
 
     lib = Path(config["library_path"]).resolve()
     artist_dir = resolve_artist_dir(
@@ -1186,10 +1195,17 @@ def _handle_delete_artist_hero_composition(
             )
         )
 
-    deleted = delete_artist_hero_composition(
-        artist_id=artist_id, composition=composition
-    )
+    delete_params = {"artist_id": artist_id, "composition": composition}
+    if expected_revision:
+        delete_params["expected_revision"] = expected_revision
+    deleted = delete_artist_hero_composition(**delete_params)
     if deleted is None:
+        if expected_revision:
+            return {
+                "status": "conflict",
+                "reason": "artist-hero-profile-changed",
+                "artist_id": artist_id,
+            }
         return {"error": "Artist hero composition not found"}
     for path in dict.fromkeys(files_to_delete):
         if path.is_file():
@@ -2228,6 +2244,98 @@ def _handle_migrate_artist_hero(task_id: str, params: dict, config: dict) -> dic
     }
 
 
+def _handle_rollback_artist_hero(task_id: str, params: dict, config: dict) -> dict:
+    """Restore one retained manifest while preserving editorial profile state."""
+
+    del task_id, config
+    try:
+        artist_id = int(params.get("artist_id") or 0)
+    except (TypeError, ValueError):
+        return {"status": "skipped", "reason": "invalid-artist-id"}
+    expected_revision = str(params.get("expected_revision") or "")
+    target_manifest_id = str(params.get("target_manifest_id") or "")
+    expected_active_manifest_id = str(params.get("expected_active_manifest_id") or "")
+    if artist_id <= 0 or not expected_revision or not target_manifest_id:
+        return {"status": "skipped", "reason": "invalid-rollback-target"}
+
+    artist_row = get_library_artist_by_id(artist_id)
+    profile = get_artist_hero_artwork(artist_id)
+    if artist_row is None or profile is None:
+        return {
+            "status": "skipped",
+            "reason": "missing-profile",
+            "artist_id": artist_id,
+        }
+    if str(profile.get("revision") or "") != expected_revision:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+    if expected_active_manifest_id and not isinstance(
+        profile.get("render_manifest"), dict
+    ):
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+    if expected_active_manifest_id and (
+        artist_hero_manifest_id(profile["render_manifest"])
+        != expected_active_manifest_id
+    ):
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+
+    if not rollback_artist_hero_manifest(
+        artist_id=artist_id,
+        expected_revision=expected_revision,
+        expected_manifest=profile.get("render_manifest"),
+        target_manifest_id=target_manifest_id,
+    ):
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+
+    restored = get_artist_hero_artwork(artist_id)
+    manifest = restored.get("render_manifest") if restored else None
+    entity_uid = str(artist_row.get("entity_uid") or "")
+    if not isinstance(manifest, dict) or not entity_uid:
+        return {
+            "status": "rolled_back",
+            "artist_id": artist_id,
+            "target_manifest_id": target_manifest_id,
+        }
+    artifacts = manifest.get("artifacts")
+    if isinstance(artifacts, dict):
+        for composition in ("desktop", "mobile"):
+            artifact = artifacts.get(composition)
+            render_revision = (
+                str(artifact.get("render_revision") or "")
+                if isinstance(artifact, dict)
+                else ""
+            )
+            if render_revision:
+                queue_artwork_materialization(
+                    ArtworkAsset(
+                        "artist-hero", f"{entity_uid}:{composition}:{render_revision}"
+                    ),
+                    reason="renderer-migration",
+                )
+    _broadcast_artwork_invalidation(f"artist:{artist_id}", "library", "home")
+    _warm_recent_home_discovery_snapshots()
+    return {
+        "status": "rolled_back",
+        "artist_id": artist_id,
+        "target_manifest_id": target_manifest_id,
+    }
+
+
 def _handle_fetch_album_cover(task_id: str, params: dict, config: dict) -> dict:
     """Search all sources for a cover for a specific album."""
     from crate.artwork import extract_embedded_cover, fetch_cover_from_caa, save_cover
@@ -2327,6 +2435,7 @@ ARTWORK_TASK_HANDLERS: dict[str, TaskHandler] = {
     "backfill_artist_heroes": _handle_backfill_artist_heroes,
     "migrate_artist_heroes": _handle_migrate_artist_heroes,
     "migrate_artist_hero": _handle_migrate_artist_hero,
+    "rollback_artist_hero": _handle_rollback_artist_hero,
     "compose_artist_hero": _handle_compose_artist_hero,
     "preview_artist_hero": _handle_preview_artist_hero,
     "recompose_artist_hero": _handle_recompose_artist_hero,

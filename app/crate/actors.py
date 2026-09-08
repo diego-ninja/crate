@@ -175,6 +175,7 @@ TASK_POOL_CONFIG: dict[str, TaskPoolConfig] = {
     "backfill_artist_heroes": TaskPoolConfig("maintenance", 3, 1800, 0),
     "migrate_artist_heroes": TaskPoolConfig("maintenance", 3, 1800, 0),
     "migrate_artist_hero": TaskPoolConfig("maintenance", 3, 1800, 0),
+    "rollback_artist_hero": TaskPoolConfig("maintenance", 3, 1800, 0),
     "derive_artist_hero": TaskPoolConfig("maintenance", 2, 180, 0),
     "cleanup_artwork_variants": TaskPoolConfig("maintenance", 3, 1800, 0),
     "repair_artwork_variants": TaskPoolConfig("maintenance", 3, 3600, 1),
