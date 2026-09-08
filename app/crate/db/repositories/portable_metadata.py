@@ -133,6 +133,13 @@ def mark_album_rich_export(
 
 
 def get_portable_metadata_status() -> dict[str, int]:
+    from crate.db.cache_store import get_cache, set_cache
+
+    cache_key = "analysis:portable_metadata_status:v2"
+    cached = get_cache(cache_key, max_age_seconds=60)
+    if isinstance(cached, dict):
+        return {key: int(value or 0) for key, value in cached.items()}
+
     with read_scope() as session:
         row = (
             session.execute(
@@ -143,55 +150,49 @@ def get_portable_metadata_status() -> dict[str, int]:
                         (SELECT COUNT(*) FROM library_tracks) AS total_tracks,
                         (SELECT COUNT(*) FROM library_albums) AS total_albums
                 ),
+                track_keys AS MATERIALIZED (
+                    SELECT
+                        id,
+                        lower(regexp_replace(trim(artist), '\\s+', ' ', 'g')) AS artist_key,
+                        lower(regexp_replace(
+                            trim(COALESCE(NULLIF(title, ''), filename)),
+                            '\\s+',
+                            ' ',
+                            'g'
+                        )) AS title_key
+                    FROM library_tracks
+                ),
+                matched AS (
+                    SELECT
+                        tk.id,
+                        l.found IS TRUE
+                            AND (l.synced_lyrics IS NOT NULL OR l.plain_lyrics IS NOT NULL)
+                            AS has_content
+                    FROM track_keys tk
+                    JOIN track_lyrics l
+                      ON l.provider = 'lrclib'
+                     AND l.track_id = tk.id
+                    UNION ALL
+                    SELECT
+                        tk.id,
+                        l.found IS TRUE
+                            AND (l.synced_lyrics IS NOT NULL OR l.plain_lyrics IS NOT NULL)
+                            AS has_content
+                    FROM track_keys tk
+                    JOIN track_lyrics l
+                      ON l.provider = 'lrclib'
+                     AND l.track_id IS NULL
+                     AND l.artist_key = tk.artist_key
+                     AND l.title_key = tk.title_key
+                ),
                 lyrics AS (
                     SELECT
-                        COUNT(*) FILTER (WHERE cached) AS lyrics_cached,
-                        COUNT(*) FILTER (WHERE found) AS lyrics_found
+                        COUNT(*) AS lyrics_cached,
+                        COUNT(*) FILTER (WHERE has_content) AS lyrics_found
                     FROM (
-                        SELECT
-                            EXISTS (
-                                SELECT 1
-                                FROM track_lyrics l
-                                WHERE l.provider = 'lrclib'
-                                  AND (
-                                      l.track_id = lt.id
-                                      OR (
-                                          l.track_id IS NULL
-                                          AND l.artist_key = lower(regexp_replace(trim(lt.artist), '\\s+', ' ', 'g'))
-                                          AND l.title_key = lower(
-                                              regexp_replace(
-                                                  trim(COALESCE(NULLIF(lt.title, ''), lt.filename)),
-                                                  '\\s+',
-                                                  ' ',
-                                                  'g'
-                                              )
-                                          )
-                                      )
-                                  )
-                            ) AS cached,
-                            EXISTS (
-                                SELECT 1
-                                FROM track_lyrics l
-                                WHERE l.provider = 'lrclib'
-                                  AND l.found IS TRUE
-                                  AND (l.synced_lyrics IS NOT NULL OR l.plain_lyrics IS NOT NULL)
-                                  AND (
-                                      l.track_id = lt.id
-                                      OR (
-                                          l.track_id IS NULL
-                                          AND l.artist_key = lower(regexp_replace(trim(lt.artist), '\\s+', ' ', 'g'))
-                                          AND l.title_key = lower(
-                                              regexp_replace(
-                                                  trim(COALESCE(NULLIF(lt.title, ''), lt.filename)),
-                                                  '\\s+',
-                                                  ' ',
-                                                  'g'
-                                              )
-                                          )
-                                      )
-                                  )
-                            ) AS found
-                        FROM library_tracks lt
+                        SELECT id, bool_or(has_content) AS has_content
+                        FROM matched
+                        GROUP BY id
                     ) per_track
                 ),
                 portable AS (
@@ -224,7 +225,9 @@ def get_portable_metadata_status() -> dict[str, int]:
             .first()
         )
 
-    return {key: int(value or 0) for key, value in dict(row or {}).items()}
+    result = {key: int(value or 0) for key, value in dict(row or {}).items()}
+    set_cache(cache_key, result, ttl=60)
+    return result
 
 
 def _formats(value: Any) -> list[str]:
