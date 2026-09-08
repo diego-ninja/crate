@@ -116,6 +116,98 @@ select:focus-visible {
   width: 4rem;
 }
 
+.density-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--content-list-gap);
+  margin-top: 1rem;
+}
+
+.density-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--content-row-inline-gap);
+  padding-block: var(--content-row-padding-y);
+  color: var(--text-secondary);
+}
+
+.density-action {
+  min-height: 2.5rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.hero-mount {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.hero-pair {
+  display: grid;
+  gap: 1rem;
+}
+
+.hero-preview {
+  position: relative;
+  min-height: 0;
+}
+
+/* The harness bundles the shared token CSS but intentionally does not scan
+   the full product apps for Tailwind utilities. Keep the frame geometry real
+   without importing either app's production stylesheet. */
+.hero-preview .absolute {
+  position: absolute;
+}
+
+.hero-preview .inset-0 {
+  inset: 0;
+}
+
+.hero-preview .inset-x-0 {
+  left: 0;
+  right: 0;
+}
+
+.hero-preview .inset-y-0 {
+  bottom: 0;
+  top: 0;
+}
+
+.hero-preview .bottom-0 {
+  bottom: 0;
+}
+
+.hero-preview .pointer-events-none {
+  pointer-events: none;
+}
+
+.hero-preview [class~="h-[58%]"] {
+  height: 58%;
+}
+
+.hero-preview [class~="h-[82%]"] {
+  height: 82%;
+}
+
+.hero-preview-desktop {
+  aspect-ratio: 1480 / 600;
+  min-height: 15rem;
+}
+
+.hero-preview-mobile {
+  aspect-ratio: 4 / 5;
+  min-height: 15rem;
+}
+
+.hero-action {
+  min-height: 2.5rem;
+  border-color: var(--accent-action);
+  background: var(--accent-action);
+  color: var(--accent-action-foreground);
+}
+
 .portal-target {
   margin-top: 1rem;
   padding: 0.75rem;

@@ -2,7 +2,13 @@ import "@crate/ui/tokens/index.css";
 import "./harness.css";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import {
+  ArtistHeroFrame,
+  type ArtistHeroArtworkBounds,
+} from "@crate/ui/domain/ArtistHeroFrame";
+import { ArtistHeroPresentation } from "@crate/ui/domain/ArtistHeroPresentation";
 import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
+import { CONTENT_DENSITY_METRICS } from "@crate/ui/lib/content-density";
 import {
   applyAppearanceToRoot,
   inspectAppearancePreferences,
@@ -34,6 +40,8 @@ let primaryCleanup: (() => void) | undefined;
 let secondaryCleanup: (() => void) | undefined;
 let mediaCleanup: (() => void) | undefined;
 let logoRoot: Root | undefined;
+let heroRoot: Root | undefined;
+let heroArtworkMode: "clear" | "dark-extend" = "clear";
 
 function clonePreferences(
   value: AppearancePreferencesV2,
@@ -73,6 +81,8 @@ function optionMarkup(options: string[], selected: string): string {
 function render(): void {
   logoRoot?.unmount();
   logoRoot = undefined;
+  heroRoot?.unmount();
+  heroRoot = undefined;
   const root = document.querySelector<HTMLDivElement>("#app")!;
   root.innerHTML = `
     <section class="harness-shell" aria-label="Appearance contract harness">
@@ -128,6 +138,9 @@ function render(): void {
           ["comfortable", "compact"],
           draftPreferences.presentation.density,
         )}</select></label>
+        <label>Hero artwork<select data-testid="hero-artwork-mode">
+          ${optionMarkup(["clear", "dark-extend"], heroArtworkMode)}
+        </select></label>
         <button type="button" data-testid="apply-button">Apply</button>
         <button type="button" data-testid="cancel-button">Cancel</button>
         <button type="button" data-testid="reset-button">Reset overrides</button>
@@ -142,6 +155,18 @@ function render(): void {
             <button type="button" data-testid="accent-button" class="accent-button">Play artist</button>
           </article>
           <div data-testid="logo-mount" class="logo-mount"></div>
+          <div data-testid="density-list" class="density-list">
+            <span data-testid="density-anchor"></span>
+            <div class="density-row">
+              <span>Library track</span>
+              <button type="button" class="density-action">Play</button>
+            </div>
+            <div class="density-row">
+              <span>Another track</span>
+              <button type="button" class="density-action">Play</button>
+            </div>
+          </div>
+          <div data-testid="hero-mount" class="hero-mount"></div>
           <div data-testid="portal-target" class="portal-target">
             <span data-testid="portal-content">Portal content remains in the primary scope.</span>
           </div>
@@ -233,6 +258,14 @@ function bindControls(): void {
       },
     };
   };
+  document.querySelector<HTMLSelectElement>(
+    "[data-testid=hero-artwork-mode]",
+  )!.onchange = (event) => {
+    heroArtworkMode = (event.target as HTMLSelectElement).value as
+      | "clear"
+      | "dark-extend";
+    applyScopes();
+  };
   document.querySelector<HTMLButtonElement>(
     "[data-testid=apply-button]",
   )!.onclick = () => {
@@ -293,6 +326,102 @@ function applyScopes(): void {
         title: "Crate",
       }),
     );
+  }
+
+  const heroMount = document.querySelector<HTMLElement>(
+    "[data-testid=hero-mount]",
+  );
+  if (heroMount) {
+    const bounds: ArtistHeroArtworkBounds = {
+      left: 0.12,
+      top: 0,
+      right: 0.88,
+      bottom: 0.82,
+    };
+    const usesExtendedArtwork = heroArtworkMode === "dark-extend";
+    const artworkClassName = usesExtendedArtwork
+      ? "absolute inset-0 size-full object-fill"
+      : "absolute inset-0 size-full object-cover object-center";
+    const artwork = (composition: "desktop" | "mobile") =>
+      createElement("img", {
+        alt: "",
+        className: artworkClassName,
+        "data-testid": `${composition}-hero-artwork`,
+        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='32'%3E%3Crect width='64' height='32' fill='%2360a5fa'/%3E%3Ccircle cx='18' cy='16' r='11' fill='%23f8fafc'/%3E%3C/svg%3E",
+      });
+    const heroCopy = createElement(ArtistHeroPresentation, {
+      composition: "desktop",
+      kicker: "Just landed",
+      artistName: "Quicksand",
+      intro: createElement("p", null, "Your music, ready to explore"),
+      genres: createElement("span", null, "post-hardcore"),
+      actions: createElement(
+        "button",
+        { type: "button", className: "hero-action" },
+        "Play artist",
+      ),
+    });
+    const mobileCopy = createElement(ArtistHeroPresentation, {
+      composition: "mobile",
+      kicker: "Just landed",
+      artistName: "Quicksand",
+      genres: createElement("span", null, "post-hardcore"),
+      actions: createElement(
+        "button",
+        { type: "button", className: "hero-action" },
+        "Play artist",
+      ),
+    });
+    heroRoot ??= createRoot(heroMount);
+    heroRoot.render(
+      createElement(
+        "div",
+        { className: "hero-pair" },
+        createElement(
+          ArtistHeroFrame,
+          {
+            composition: "desktop",
+            artwork: artwork("desktop"),
+            artworkBounds: usesExtendedArtwork ? bounds : undefined,
+            aspectRatio: "1480 / 600",
+            "data-artwork": heroArtworkMode,
+            "data-bounds": usesExtendedArtwork
+              ? `${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}`
+              : undefined,
+            "data-fit": usesExtendedArtwork
+              ? "object-fill"
+              : "object-cover object-center",
+            className: "hero-preview hero-preview-desktop",
+          },
+          heroCopy,
+        ),
+        createElement(
+          ArtistHeroFrame,
+          {
+            composition: "mobile",
+            artwork: artwork("mobile"),
+            aspectRatio: "4 / 5",
+            "data-artwork": heroArtworkMode,
+            "data-fit": usesExtendedArtwork
+              ? "object-fill"
+              : "object-cover object-center",
+            className: "hero-preview hero-preview-mobile",
+          },
+          mobileCopy,
+        ),
+      ),
+    );
+  }
+
+  const densityList = document.querySelector<HTMLElement>(
+    "[data-testid=density-list]",
+  );
+  if (densityList) {
+    const metrics = CONTENT_DENSITY_METRICS[primaryAppearance.density];
+    densityList.dataset.density = primaryAppearance.density;
+    densityList
+      .querySelector<HTMLElement>("[data-testid=density-anchor]")!
+      .setAttribute("data-estimate", String(metrics.rowEstimate));
   }
 
   mediaCleanup?.();
