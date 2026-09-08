@@ -2,14 +2,14 @@
    Single source of truth for all apps. */
 
 @theme inline {
-  --color-background: #0a0a0f;
-  --color-foreground: #f1f5f9;
-  --color-primary: #06b6d4;
-  --color-primary-foreground: #0a0a0f;
-  --color-muted-foreground: #64748b;
-  --color-destructive: #ef4444;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-info: #3b82f6;
-  --color-ring: #06b6d4;
+  --color-background: var(--crate-token-color-background);
+  --color-foreground: var(--crate-token-color-foreground);
+  --color-primary: var(--crate-token-color-primary);
+  --color-primary-foreground: var(--crate-token-color-primary-foreground);
+  --color-muted-foreground: var(--crate-token-color-muted-foreground);
+  --color-destructive: var(--crate-token-color-destructive);
+  --color-success: var(--crate-token-color-success);
+  --color-warning: var(--crate-token-color-warning);
+  --color-info: var(--crate-token-color-info);
+  --color-ring: var(--crate-token-color-ring);
 }

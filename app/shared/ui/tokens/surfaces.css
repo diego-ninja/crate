@@ -1,48 +1,56 @@
 /* crate-ui — Surface variants
-   Set data-surface="solid" or data-surface="glass" on any ancestor.
-   Default (no attribute) is solid. */
+   Runtime values live in themes.css. Recipes only select the requested
+   material, so a skin can replace both recipes without changing consumers. */
 
 :root,
 [data-surface="solid"] {
-  --color-card: #16161e;
-  --color-card-foreground: #f1f5f9;
-  --color-secondary: #1c1c28;
-  --color-secondary-foreground: #f1f5f9;
-  --color-muted: #16161e;
-  --color-accent: #1c1c28;
-  --color-accent-foreground: #f1f5f9;
-  --color-popover: #16161e;
-  --color-popover-foreground: #f1f5f9;
-  --color-border: #252535;
-  --color-input: #141419;
-  --surface-app: #0a0a0f;
-  --surface-panel: #0c0c14;
-  --surface-raised: #12121a;
-  --surface-modal: rgba(16, 16, 24, 0.95);
-  --surface-popover: rgba(18, 18, 26, 0.95);
-  --scrollbar-thumb: #252535;
-  --scrollbar-hover: #353545;
+  --color-card: var(--crate-token-surface-card-solid);
+  --color-card-foreground: var(--crate-token-surface-card-foreground-solid);
+  --color-secondary: var(--crate-token-surface-secondary-solid);
+  --color-secondary-foreground: var(
+    --crate-token-surface-secondary-foreground-solid
+  );
+  --color-muted: var(--crate-token-surface-muted-solid);
+  --color-accent: var(--crate-token-surface-accent-solid);
+  --color-accent-foreground: var(--crate-token-surface-accent-foreground-solid);
+  --color-popover: var(--crate-token-surface-popover-solid);
+  --color-popover-foreground: var(
+    --crate-token-surface-popover-foreground-solid
+  );
+  --color-border: var(--crate-token-surface-border-solid);
+  --color-input: var(--crate-token-surface-input-solid);
+  --surface-app: var(--crate-token-surface-app);
+  --surface-panel: var(--crate-token-surface-panel-solid);
+  --surface-raised: var(--crate-token-surface-raised-solid);
+  --surface-modal: var(--crate-token-surface-modal-solid);
+  --surface-popover: var(--crate-token-surface-overlay-solid);
+  --scrollbar-thumb: var(--crate-token-scrollbar-thumb);
+  --scrollbar-hover: var(--crate-token-scrollbar-hover);
 }
 
 [data-surface="glass"] {
-  --color-card: rgba(18, 18, 26, 0.78);
-  --color-card-foreground: #f1f5f9;
-  --color-secondary: rgba(28, 28, 40, 0.88);
-  --color-secondary-foreground: #f1f5f9;
-  --color-muted: rgba(22, 22, 30, 0.72);
-  --color-accent: rgba(255, 255, 255, 0.06);
-  --color-accent-foreground: #f1f5f9;
-  --color-popover: rgba(18, 18, 26, 0.95);
-  --color-popover-foreground: #f1f5f9;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-input: rgba(20, 20, 25, 0.72);
-  --surface-app: #0a0a0f;
-  --surface-panel: #0c0c14;
-  --surface-raised: rgba(18, 18, 26, 0.92);
-  --surface-modal: rgba(16, 16, 24, 0.95);
-  --surface-popover: rgba(18, 18, 26, 0.95);
-  --scrollbar-thumb: #252535;
-  --scrollbar-hover: #353545;
+  --color-card: var(--crate-token-surface-card-glass);
+  --color-card-foreground: var(--crate-token-surface-card-foreground-glass);
+  --color-secondary: var(--crate-token-surface-secondary-glass);
+  --color-secondary-foreground: var(
+    --crate-token-surface-secondary-foreground-glass
+  );
+  --color-muted: var(--crate-token-surface-muted-glass);
+  --color-accent: var(--crate-token-surface-accent-glass);
+  --color-accent-foreground: var(--crate-token-surface-accent-foreground-glass);
+  --color-popover: var(--crate-token-surface-popover-glass);
+  --color-popover-foreground: var(
+    --crate-token-surface-popover-foreground-glass
+  );
+  --color-border: var(--crate-token-surface-border-glass);
+  --color-input: var(--crate-token-surface-input-glass);
+  --surface-app: var(--crate-token-surface-app);
+  --surface-panel: var(--crate-token-surface-panel-glass);
+  --surface-raised: var(--crate-token-surface-raised-glass);
+  --surface-modal: var(--crate-token-surface-modal-glass);
+  --surface-popover: var(--crate-token-surface-overlay-glass);
+  --scrollbar-thumb: var(--crate-token-scrollbar-thumb);
+  --scrollbar-hover: var(--crate-token-scrollbar-hover);
 }
 
 /* Surface utility classes */

@@ -13,6 +13,7 @@ export default defineConfig({
       "shadcn/**/*.test.tsx",
       "composites/**/*.test.tsx",
       "domain/**/*.test.{ts,tsx}",
+      "tokens/**/*.test.ts",
     ],
     setupFiles: ["test-setup.ts"],
     coverage: {

@@ -43,9 +43,9 @@ describe("color contrast", () => {
   });
 
   it("checks the translucent surface tokens against their canvas", () => {
-    const surfaceTokens = readFileSync("tokens/surfaces.css", "utf8");
+    const surfaceTokens = readFileSync("tokens/themes.css", "utf8");
     const modalSurface = surfaceTokens.match(
-      /--surface-modal:\s*(rgba\([^;]+\))/,
+      /--crate-token-surface-modal-solid:\s*(rgba\([^;]+\))/,
     )?.[1];
 
     expect(modalSurface).toBe("rgba(16, 16, 24, 0.95)");

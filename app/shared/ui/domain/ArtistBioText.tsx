@@ -43,7 +43,7 @@ export function artistBioNodes(text: string): ReactNode[] {
         href={href}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+        className="text-accent-action underline decoration-accent-action/40 underline-offset-2 hover:decoration-accent-action"
       >
         {url}
       </a>,
