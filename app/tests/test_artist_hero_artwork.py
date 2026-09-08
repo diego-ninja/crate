@@ -328,6 +328,19 @@ def test_artist_hero_profile_round_trip(pg_db):
         desktop_recipe=_crop_recipe(1400, 600),
         mobile_recipe=_crop_recipe(800, 1000),
         revision="revision-1",
+        render_manifest={
+            "manifest_version": 1,
+            "editorial_revision": "revision-1",
+            "artifacts": {
+                "desktop": {
+                    "renderer_version": "cover-fit-v4",
+                    "render_revision": "artifact-desktop-1",
+                    "source_fingerprint": "sha256:desktop",
+                    "recipe_hash": "desktop-hash",
+                    "relative_path": "artist-hero/7/desktop/artifact.webp",
+                }
+            },
+        },
     )
 
     profile = get_artist_hero_artwork(artist_id)
@@ -337,6 +350,7 @@ def test_artist_hero_profile_round_trip(pg_db):
     assert profile["review_status"] == "approved"
     assert profile["desktop_recipe"]["mode"] == "crop"
     assert profile["revision"] == "revision-1"
+    assert profile["render_manifest"]["manifest_version"] == 1
     assert artist_id not in {
         row["id"]
         for row in list_artist_hero_backfill_candidates(

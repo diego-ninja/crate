@@ -8,11 +8,13 @@ from fastapi.responses import JSONResponse, Response
 
 from crate.api.artwork_delivery import deliver_artwork, deliver_original_artwork
 from crate.artist_hero_artwork import (
-    ARTIST_HERO_RENDER_VERSION,
     DESKTOP_HERO_SIZE,
     MOBILE_HERO_SIZE,
 )
-from crate.artist_hero_contract import artist_hero_profile_ready_compositions
+from crate.artist_hero_contract import (
+    artist_hero_profile_composition_is_supported,
+    artist_hero_profile_ready_compositions,
+)
 from crate.api._deps import (
     artist_name_from_id,
     artist_name_from_ref,
@@ -785,7 +787,8 @@ def api_artists(
         hero.mobile_recipe AS _hero_mobile_recipe,
         hero.desktop_enabled AS _hero_desktop_enabled,
         hero.mobile_enabled AS _hero_mobile_enabled,
-        hero.revision AS _hero_revision
+        hero.revision AS _hero_revision,
+        hero.render_manifest AS _hero_render_manifest
     """
     joins = """
         LEFT JOIN artist_hero_artwork hero ON hero.artist_id = la.id
@@ -871,6 +874,7 @@ def api_artists(
             "desktop_enabled": row.get("_hero_desktop_enabled"),
             "mobile_enabled": row.get("_hero_mobile_enabled"),
             "revision": row.get("_hero_revision"),
+            "render_manifest": row.get("_hero_render_manifest"),
         }
         item = {
             "id": row.get("id"),
@@ -1427,7 +1431,9 @@ def api_artist_hero(
     )
     if has_eligible_profile and profile is not None:
         revision = str(profile.get("revision") or "")
-        renderer_is_current = revision.startswith(f"{ARTIST_HERO_RENDER_VERSION}:")
+        renderer_is_current = artist_hero_profile_composition_is_supported(
+            profile, composition
+        )
         if (
             local_original is None
             or not local_original.is_file()

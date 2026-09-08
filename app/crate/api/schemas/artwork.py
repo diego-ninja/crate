@@ -6,7 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from crate.api.schemas.common import TaskEnqueueResponse
-from crate.api.schemas.artist_hero import ArtistHeroCompositionView
+from crate.api.schemas.artist_hero import (
+    ArtistHeroCompositionView,
+    ArtistHeroRenderManifestView,
+)
 from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
 
 
@@ -96,6 +99,7 @@ class ArtistHeroArtworkResponse(BaseModel):
     schema_version: int = 1
     render_version: str = ARTIST_HERO_RENDER_VERSION
     compositions: dict[str, ArtistHeroCompositionView] = Field(default_factory=dict)
+    render_manifest: ArtistHeroRenderManifestView | None = None
 
 
 class ArtistHeroReviewRequest(BaseModel):

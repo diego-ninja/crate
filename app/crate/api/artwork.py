@@ -501,12 +501,14 @@ def api_artist_hero_profile(request: Request, artist_id: int):
     if not profile:
         return JSONResponse({"error": "Artist hero not found"}, status_code=404)
     featured_state = get_artist_featured_state(artist_id) or {}
-    payload = {
-        **profile,
-        "is_featured": bool(featured_state.get("is_featured")),
-        "featured_devices": list(artist_hero_profile_ready_compositions(profile)),
-        **artist_hero_profile_contract(artist_id=artist_id, profile=profile),
-    }
+    payload = {key: value for key, value in profile.items() if key != "render_manifest"}
+    payload.update(
+        {
+            "is_featured": bool(featured_state.get("is_featured")),
+            "featured_devices": list(artist_hero_profile_ready_compositions(profile)),
+        }
+    )
+    payload.update(artist_hero_profile_contract(artist_id=artist_id, profile=profile))
     return JSONResponse(
         jsonable_encoder(payload), headers={"Cache-Control": "no-store"}
     )

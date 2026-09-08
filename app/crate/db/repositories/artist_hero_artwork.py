@@ -20,7 +20,8 @@ def get_artist_hero_artwork(artist_id: int, *, session=None) -> dict | None:
                            desktop_source_height, desktop_source_origin,
                            mobile_source_width, mobile_source_height,
                            mobile_source_origin, desktop_recipe, mobile_recipe,
-                           desktop_enabled, mobile_enabled, revision, updated_at
+                           desktop_enabled, mobile_enabled, revision,
+                           render_manifest, updated_at
                     FROM artist_hero_artwork
                     WHERE artist_id = :artist_id
                     """
@@ -56,6 +57,7 @@ def upsert_artist_hero_artwork(
     mobile_source_origin: str | None = None,
     desktop_enabled: bool | None = None,
     mobile_enabled: bool | None = None,
+    render_manifest: dict | None = None,
     session=None,
 ) -> None:
     def _write(active_session) -> None:
@@ -68,7 +70,8 @@ def upsert_artist_hero_artwork(
                     desktop_source_height, desktop_source_origin,
                     mobile_source_width, mobile_source_height,
                     mobile_source_origin, desktop_recipe, mobile_recipe,
-                    desktop_enabled, mobile_enabled, revision, updated_at
+                    desktop_enabled, mobile_enabled, revision,
+                    render_manifest, updated_at
                 ) VALUES (
                     :artist_id, :provenance, :review_status, :source_width,
                     :source_height, :desktop_source_width,
@@ -88,7 +91,13 @@ def upsert_artist_hero_artwork(
                          WHERE artist_id = :artist_id),
                         TRUE
                     ),
-                    :revision, NOW()
+                    :revision,
+                    COALESCE(
+                        CAST(:render_manifest AS JSONB),
+                        (SELECT render_manifest FROM artist_hero_artwork
+                         WHERE artist_id = :artist_id)
+                    ),
+                    NOW()
                 )
                 ON CONFLICT (artist_id) DO UPDATE SET
                     provenance = EXCLUDED.provenance,
@@ -106,6 +115,7 @@ def upsert_artist_hero_artwork(
                     desktop_enabled = EXCLUDED.desktop_enabled,
                     mobile_enabled = EXCLUDED.mobile_enabled,
                     revision = EXCLUDED.revision,
+                    render_manifest = EXCLUDED.render_manifest,
                     updated_at = NOW()
                 """
             ),
@@ -126,6 +136,9 @@ def upsert_artist_hero_artwork(
                 "desktop_recipe": json.dumps(desktop_recipe),
                 "mobile_recipe": json.dumps(mobile_recipe),
                 "revision": revision,
+                "render_manifest": (
+                    json.dumps(render_manifest) if render_manifest is not None else None
+                ),
             },
         )
 
