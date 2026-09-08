@@ -89,3 +89,38 @@ def test_retention_plans_only_known_stale_publication_directories(tmp_path):
     assert paths == [
         artist_hero_artifact_root(stale, root=tmp_path),
     ]
+
+
+def test_manifest_retention_keeps_active_and_previous_complete_bundles():
+    from crate.artist_hero_retention import (
+        retained_artist_hero_revisions_from_manifests,
+    )
+
+    def row(manifest_id: str, revision: str, created_at: str) -> dict:
+        return {
+            "manifest_id": manifest_id,
+            "created_at": created_at,
+            "manifest": {
+                "artifacts": {
+                    "desktop": {"render_revision": revision},
+                    "mobile": {"render_revision": revision},
+                }
+            },
+        }
+
+    retained = retained_artist_hero_revisions_from_manifests(
+        [
+            row("manifest-c", "artifact-c", "2026-09-08T12:00:00+00:00"),
+            row("manifest-b", "artifact-b", "2026-09-08T11:00:00+00:00"),
+            row("manifest-a", "artifact-a", "2026-09-08T10:00:00+00:00"),
+        ],
+        active_manifest_id="manifest-c",
+        keep_manifest_count=2,
+    )
+
+    assert retained == {
+        ("desktop", "artifact-c"),
+        ("desktop", "artifact-b"),
+        ("mobile", "artifact-c"),
+        ("mobile", "artifact-b"),
+    }

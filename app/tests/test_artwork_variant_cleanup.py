@@ -110,6 +110,10 @@ def test_cleanup_artist_hero_publications_keeps_active_previous_and_unknown_orph
             },
         ],
     )
+    monkeypatch.setattr(
+        "crate.artwork_maintenance.list_artist_hero_manifest_history",
+        lambda _artist_id: [],
+    )
     result = cleanup_artist_hero_publications(max_artists=10)
 
     assert not artist_hero_artifact_root(stale).exists()

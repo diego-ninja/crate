@@ -11,7 +11,10 @@ from crate.artist_hero_publication import (
     ArtistHeroArtifactIdentity,
     artist_hero_artifact_root,
 )
-from crate.artist_hero_retention import retained_artist_hero_revisions
+from crate.artist_hero_retention import (
+    retained_artist_hero_revisions,
+    retained_artist_hero_revisions_from_manifests,
+)
 from crate.artwork_variants import (
     ARTWORK_KINDS,
     ArtworkAsset,
@@ -20,7 +23,9 @@ from crate.artwork_variants import (
     load_current_manifest,
 )
 from crate.db.repositories.artist_hero_artwork import (
+    artist_hero_manifest_id,
     get_artist_hero_artwork,
+    list_artist_hero_manifest_history,
     list_artist_hero_render_revision_artists,
     list_artist_hero_render_revisions,
 )
@@ -248,11 +253,20 @@ def cleanup_artist_hero_publications(
             if composition in {"desktop", "mobile"} and isinstance(artifact, dict)
         }
         history = list_artist_hero_render_revisions(artist_id)
-        retained = retained_artist_hero_revisions(
-            history,
-            active_revisions,
-            keep_per_composition=keep_per_composition,
-        )
+        manifest_history = list_artist_hero_manifest_history(artist_id)
+        if isinstance(manifest, dict) and manifest_history:
+            retained = retained_artist_hero_revisions_from_manifests(
+                manifest_history,
+                artist_hero_manifest_id(manifest),
+                keep_manifest_count=max(2, keep_per_composition),
+            )
+            retained.update(active_revisions.items())
+        else:
+            retained = retained_artist_hero_revisions(
+                history,
+                active_revisions,
+                keep_per_composition=keep_per_composition,
+            )
         for row in history:
             composition = str(row.get("composition") or "")
             revision = str(row.get("render_revision") or "")

@@ -45,6 +45,50 @@ def retained_artist_hero_revisions(
     return retained
 
 
+def retained_artist_hero_revisions_from_manifests(
+    history: Sequence[Mapping[str, object]],
+    active_manifest_id: str,
+    *,
+    keep_manifest_count: int = 2,
+) -> set[tuple[str, str]]:
+    """Keep complete retained bundles instead of mixing slots from revisions."""
+
+    keep_count = max(1, int(keep_manifest_count))
+    ordered = sorted(
+        history,
+        key=lambda row: str(row.get("created_at") or ""),
+        reverse=True,
+    )
+    retained_ids: list[str] = []
+    if active_manifest_id:
+        retained_ids.append(active_manifest_id)
+    for row in ordered:
+        manifest_id = str(row.get("manifest_id") or "")
+        if manifest_id and manifest_id not in retained_ids:
+            retained_ids.append(manifest_id)
+        if len(retained_ids) >= keep_count:
+            break
+
+    retained: set[tuple[str, str]] = set()
+    for row in ordered:
+        if str(row.get("manifest_id") or "") not in retained_ids:
+            continue
+        manifest = row.get("manifest")
+        artifacts = manifest.get("artifacts") if isinstance(manifest, Mapping) else None
+        if not isinstance(artifacts, Mapping):
+            continue
+        for composition in ("desktop", "mobile"):
+            artifact = artifacts.get(composition)
+            render_revision = (
+                str(artifact.get("render_revision") or "")
+                if isinstance(artifact, Mapping)
+                else ""
+            )
+            if render_revision:
+                retained.add((composition, render_revision))
+    return retained
+
+
 def plan_artist_hero_publication_cleanup(
     *,
     artist_entity_uid: str,
@@ -83,4 +127,5 @@ def plan_artist_hero_publication_cleanup(
 __all__ = [
     "plan_artist_hero_publication_cleanup",
     "retained_artist_hero_revisions",
+    "retained_artist_hero_revisions_from_manifests",
 ]
