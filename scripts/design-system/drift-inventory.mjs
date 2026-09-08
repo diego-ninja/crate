@@ -53,6 +53,15 @@ const RAW_COLOR_ALLOWLIST = new Map([
     },
   ],
   [
+    "app/listen/src/lib/theme-color.ts",
+    {
+      pattern: /#[0-9a-f]{3,8}\b/gi,
+      owner: "listen-platform",
+      reason: "Theme-color fallbacks must cover the pre-CSS cold-boot surface.",
+      reviewBy: "2026-12-31",
+    },
+  ],
+  [
     "app/listen/src/lib/capacitor-init.ts",
     {
       pattern: /color:\s*"#00000000"/gi,

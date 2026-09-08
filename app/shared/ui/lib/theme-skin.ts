@@ -1,6 +1,9 @@
 import {
+  applyAppearanceToRoot,
+  createDefaultAppearancePreferences,
   inspectAppearancePreferences,
   readAppearancePreferences,
+  resolveAppearance,
   writeAppearancePreferences,
 } from "./appearance-resolver";
 import type { AppearanceStorage } from "./appearance-types";
@@ -482,10 +485,16 @@ export function readStoredThemeSkin(
 }
 
 const systemListenerCleanup = new WeakMap<HTMLElement, () => void>();
+const runtimeAppearanceCleanup = new WeakMap<HTMLElement, () => void>();
 
 function clearSystemListener(root: HTMLElement): void {
   systemListenerCleanup.get(root)?.();
   systemListenerCleanup.delete(root);
+}
+
+function clearRuntimeAppearance(root: HTMLElement): void {
+  runtimeAppearanceCleanup.get(root)?.();
+  runtimeAppearanceCleanup.delete(root);
 }
 
 function clearAppliedVariables(root: HTMLElement): void {
@@ -524,6 +533,33 @@ function applySkinVariables(
   }
 }
 
+function applyRuntimeAppearance(
+  root: HTMLElement,
+  selection: ThemeSkinSelection,
+  resolvedMode: ResolvedColorMode,
+  prefersReducedMotion: boolean,
+  storage: ThemeSkinOptions["storage"],
+): void {
+  clearRuntimeAppearance(root);
+
+  const storedPreferences = storage?.getItem
+    ? readAppearancePreferences(storage)
+    : createDefaultAppearancePreferences();
+  const appearance = resolveAppearance(
+    {
+      ...storedPreferences,
+      mode: selection.mode,
+      preset: selection.skin,
+    },
+    {
+      prefersColorSchemeDark: resolvedMode === "dark",
+      prefersReducedMotion,
+    },
+  );
+
+  runtimeAppearanceCleanup.set(root, applyAppearanceToRoot(root, appearance));
+}
+
 export function applyThemeSkin(
   mode: unknown,
   skin: unknown,
@@ -535,6 +571,8 @@ export function applyThemeSkin(
     (typeof document === "undefined" ? undefined : document.documentElement);
   const matchMedia = options.matchMedia ?? getBrowserMatchMedia();
   const mediaQuery = matchMedia?.("(prefers-color-scheme: dark)");
+  const reducedMotionQuery = matchMedia?.("(prefers-reduced-motion: reduce)");
+  const storage = options.storage ?? getBrowserStorage();
   const resolvedMode = resolveColorMode(
     selection.mode,
     mediaQuery?.matches ?? true,
@@ -542,12 +580,20 @@ export function applyThemeSkin(
 
   if (root) {
     clearSystemListener(root);
+    clearRuntimeAppearance(root);
     root.dataset.crateApp = "listen";
     root.dataset.crateMode = resolvedMode;
     root.dataset.crateModePreference = selection.mode;
     root.dataset.crateSkin = selection.skin;
     root.style.colorScheme = MODE_REGISTRY[resolvedMode].colorScheme;
     applySkinVariables(root, selection.skin, resolvedMode);
+    applyRuntimeAppearance(
+      root,
+      selection,
+      resolvedMode,
+      reducedMotionQuery?.matches ?? false,
+      storage,
+    );
 
     if (selection.mode === "system" && mediaQuery) {
       const onChange = (event: MediaQueryListEvent) => {
@@ -555,6 +601,13 @@ export function applyThemeSkin(
         root.dataset.crateMode = nextMode;
         root.style.colorScheme = MODE_REGISTRY[nextMode].colorScheme;
         applySkinVariables(root, selection.skin, nextMode);
+        applyRuntimeAppearance(
+          root,
+          selection,
+          nextMode,
+          reducedMotionQuery?.matches ?? false,
+          storage,
+        );
         publishThemeSkin({
           ...selection,
           resolvedMode: nextMode,
@@ -568,7 +621,6 @@ export function applyThemeSkin(
     }
   }
 
-  const storage = options.storage ?? getBrowserStorage();
   if (storage?.getItem && storage.setItem) {
     const preferences = readAppearancePreferences(storage);
     writeAppearancePreferences(storage as AppearanceStorage, {

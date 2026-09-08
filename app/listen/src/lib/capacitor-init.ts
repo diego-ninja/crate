@@ -5,6 +5,10 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 
 import { consumeOAuthCallbackUrl } from "@/lib/capacitor-oauth";
 import { isIosRuntime, isNative, platform } from "@/lib/capacitor-runtime";
+import {
+  getAppliedThemeSkin,
+  type ResolvedColorMode,
+} from "@crate/ui/lib/theme-skin";
 
 let viewportFallbackInitialized = false;
 let keyboardInitialized = false;
@@ -91,7 +95,7 @@ async function initializeCapacitor(): Promise<string | null> {
   await initKeyboardHandling();
 
   try {
-    await StatusBar.setStyle({ style: Style.Dark });
+    await applyNativeColorMode(getAppliedThemeSkin().resolvedMode);
     await StatusBar.setOverlaysWebView({ overlay: true });
     if (platform === "android") {
       await StatusBar.setBackgroundColor({ color: "#00000000" });
@@ -149,6 +153,20 @@ async function initializeCapacitor(): Promise<string | null> {
   });
 
   return null;
+}
+
+export async function applyNativeColorMode(
+  mode: ResolvedColorMode,
+): Promise<void> {
+  if (!isNative) return;
+
+  try {
+    await StatusBar.setStyle({
+      style: mode === "dark" ? Style.Dark : Style.Light,
+    });
+  } catch {
+    // Native status-bar support is best-effort across Capacitor shells.
+  }
 }
 
 export function initCapacitor(): Promise<string | null> {

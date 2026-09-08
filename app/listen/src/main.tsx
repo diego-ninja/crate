@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { Toaster } from "sonner";
@@ -6,6 +6,7 @@ import { App } from "./App";
 import { I18nProvider } from "./i18n/I18nProvider";
 import { startMediaAccessTicketRefresh } from "./lib/api";
 import { initCapacitor } from "./lib/capacitor";
+import { applyNativeColorMode } from "./lib/capacitor-init";
 import { primeOfflineRuntimeProfile } from "./lib/offline";
 import {
   isCapacitorRuntime,
@@ -14,6 +15,7 @@ import {
 } from "./lib/platform";
 import { bootstrapNativeSessionStore } from "./lib/server-store";
 import { renderSecureSessionError } from "./lib/secure-session-error";
+import { syncThemeColor } from "./lib/theme-color";
 import {
   getAppliedThemeSkin,
   initializeThemeSkin,
@@ -58,6 +60,11 @@ function ThemeAwareToaster() {
     () => getAppliedThemeSkin().resolvedMode,
     () => "dark" as const,
   );
+
+  useEffect(() => {
+    syncThemeColor(document.documentElement, resolvedMode);
+    void applyNativeColorMode(resolvedMode);
+  }, [resolvedMode]);
 
   return (
     <Toaster
@@ -107,9 +114,10 @@ async function bootstrap(): Promise<void> {
   }
 
   startMediaAccessTicketRefresh();
-  initCapacitor();
+  const appliedTheme = initializeThemeSkin();
+  syncThemeColor(document.documentElement, appliedTheme.resolvedMode);
+  await initCapacitor();
   void primeOfflineRuntimeProfile();
-  initializeThemeSkin();
 
   if (
     shouldRegisterServiceWorker &&

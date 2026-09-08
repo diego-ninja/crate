@@ -191,6 +191,12 @@ test("exposes ownership metadata for every raw color exception", () => {
       reviewBy: "2026-12-31",
     },
     {
+      path: "app/listen/src/lib/theme-color.ts",
+      owner: "listen-platform",
+      reason: "Theme-color fallbacks must cover the pre-CSS cold-boot surface.",
+      reviewBy: "2026-12-31",
+    },
+    {
       path: "app/listen/src/lib/capacitor-init.ts",
       owner: "listen-platform",
       reason: "Capacitor requires a fully transparent native status-bar color.",

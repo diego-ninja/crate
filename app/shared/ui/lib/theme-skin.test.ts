@@ -46,9 +46,14 @@ function createMatchMedia(initiallyDark: boolean) {
 
 describe("theme and skin runtime", () => {
   beforeEach(() => {
+    document.documentElement.removeAttribute("style");
+    document.documentElement.removeAttribute("data-crate-app");
     document.documentElement.removeAttribute("data-crate-mode");
     document.documentElement.removeAttribute("data-crate-mode-preference");
     document.documentElement.removeAttribute("data-crate-skin");
+    document.documentElement.removeAttribute("data-crate-effects");
+    document.documentElement.removeAttribute("data-crate-motion");
+    document.documentElement.removeAttribute("data-surface");
   });
 
   it("keeps translated labels out of the shared runtime registry", async () => {
@@ -143,6 +148,33 @@ describe("theme and skin runtime", () => {
     expect(root.dataset.crateSkin).toBe("default");
     expect(values.get("crate.listen.theme-skin")).toBe(
       JSON.stringify({ mode: "light", skin: "default" }),
+    );
+  });
+
+  it("applies runtime appearance tokens on cold boot and system changes", () => {
+    const root = document.documentElement;
+    const darkMedia = createMatchMedia(true);
+
+    applyThemeSkin("system", "crateRed", {
+      root,
+      storage: undefined,
+      matchMedia: () => darkMedia.mediaQuery,
+    });
+
+    expect(root.style.getPropertyValue("--crate-token-color-primary")).toBe(
+      "#ff375f",
+    );
+    expect(root.style.getPropertyValue("--crate-token-surface-app")).toBe(
+      "#1c1c1e",
+    );
+
+    darkMedia.setDark(false);
+
+    expect(root.style.getPropertyValue("--crate-token-color-primary")).toBe(
+      "#d61f45",
+    );
+    expect(root.style.getPropertyValue("--crate-token-surface-app")).toBe(
+      "#f5f5f7",
     );
   });
 

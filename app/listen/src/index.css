@@ -16,6 +16,14 @@ body {
   min-height: var(--listen-viewport-height);
 }
 
+html[data-crate-app="listen"] {
+  color-scheme: dark;
+}
+
+html[data-crate-app="listen"][data-crate-mode="light"] {
+  color-scheme: light;
+}
+
 #root {
   min-height: var(--listen-viewport-height);
   background: var(--surface-canvas);

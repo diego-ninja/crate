@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useSyncExternalStore, type MutableRefObject } from "react";
 
 import type { CrossfadeTransition } from "@/contexts/PlayerContext";
 import type { Track } from "@/contexts/player-types";
@@ -10,6 +10,10 @@ import {
   type VisualizerColorTriplet,
 } from "./visualizer-colors";
 import { adjustPaletteColor, clamp } from "./visualizer-palette-math";
+import {
+  getAppliedThemeSkin,
+  subscribeThemeSkin,
+} from "@crate/ui/lib/theme-skin";
 
 type PaletteTriplet = VisualizerColorTriplet;
 
@@ -57,6 +61,12 @@ export function useVisualizerPalette({
   useAlbumPalette,
   vizEnabled,
 }: VisualizerPaletteProps) {
+  const appearanceVersion = useSyncExternalStore(
+    subscribeThemeSkin,
+    () => `${getAppliedThemeSkin().skin}:${getAppliedThemeSkin().resolvedMode}`,
+    () => "default:dark",
+  );
+
   useEffect(() => {
     if (!isOpen || !vizEnabled || crossfadeTransition) return;
 
@@ -133,6 +143,7 @@ export function useVisualizerPalette({
     useAlbumPalette,
     vizEnabled,
     vizRef,
+    appearanceVersion,
   ]);
 
   useEffect(() => {
