@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import socket
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from urllib.parse import quote, urljoin, urlparse
 
 import requests
@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 
 MAX_SOURCES = 8
 MAX_EXCERPT_CHARS = 3000
+MIN_SUBSTANTIAL_BIO_CHARS = 600
+MIN_ACCEPTED_BIO_RATIO = 0.8
+MIN_BIO_CONTENT_COVERAGE = 0.45
 MAX_PUBLIC_PAGE_REDIRECTS = 3
 _USER_AGENT = "Crate/artist-bio-research (+https://cratemusic.app)"
 _BLOCKED_HOSTS = {"localhost", "metadata.google.internal", "host.docker.internal"}
@@ -26,6 +29,25 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _UNSAFE_HTML_RE = re.compile(
     r"<(script|style|noscript|svg|template)\b[^>]*>.*?</\1>", re.I | re.S
 )
+_BIO_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'’\-]{2,}", re.I)
+_BIO_STOP_WORDS = {
+    "about",
+    "after",
+    "also",
+    "been",
+    "from",
+    "have",
+    "into",
+    "more",
+    "that",
+    "their",
+    "them",
+    "they",
+    "this",
+    "were",
+    "which",
+    "with",
+}
 _WEB_SEARCH_PROVIDER_LABELS = {"tavily": "Tavily", "brave": "Brave"}
 
 
@@ -91,6 +113,92 @@ def _clean_excerpt(value: str, *, max_chars: int = MAX_EXCERPT_CHARS) -> str:
     value = html.unescape(value)
     value = re.sub(r"\s+", " ", value).strip()
     return value[:max_chars]
+
+
+def _bio_paragraphs(value: str) -> list[str]:
+    return [paragraph.strip() for paragraph in value.split("\n\n") if paragraph.strip()]
+
+
+def _draft_loses_substantial_detail(current_bio: str, draft: str) -> bool:
+    if len(current_bio) < MIN_SUBSTANTIAL_BIO_CHARS:
+        return False
+    if len(draft) < len(current_bio) * MIN_ACCEPTED_BIO_RATIO:
+        return True
+    current_paragraphs = _bio_paragraphs(current_bio)
+    draft_paragraphs = _bio_paragraphs(draft)
+    return (
+        len(current_paragraphs) >= 4
+        and len(draft_paragraphs) < len(current_paragraphs) - 1
+    )
+
+
+def _bio_content_tokens(value: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in _BIO_TOKEN_RE.findall(value)
+        if token.casefold() not in _BIO_STOP_WORDS
+    }
+
+
+def _content_coverage(expected: str, candidate: str) -> float:
+    expected_tokens = _bio_content_tokens(expected)
+    if not expected_tokens:
+        return 1.0
+    return len(expected_tokens & _bio_content_tokens(candidate)) / len(expected_tokens)
+
+
+def _draft_omits_existing_content(
+    current_bio: str,
+    draft: str,
+    changes: Sequence[object],
+) -> bool:
+    """Reject a rewrite that silently drops existing factual paragraphs.
+
+    The LLM is asked to return a semantic diff, but this guard treats the
+    existing text as the safer source of truth when a paragraph is neither
+    represented in the draft nor explicitly marked as removed or updated. An
+    unchanged item must still be present in the draft itself. It is deliberately
+    conservative because the result is only a review proposal, not an automatic
+    replacement.
+    """
+    current_paragraphs = _bio_paragraphs(current_bio)
+    if len(current_paragraphs) < 3:
+        return False
+
+    candidates = _bio_paragraphs(draft)
+    for change in changes:
+        status = getattr(change, "status", None)
+        if status not in {"removed", "updated"}:
+            continue
+        text = getattr(change, "text", None)
+        previous_text = getattr(change, "previous_text", None)
+        candidates.extend(
+            value
+            for value in (text, previous_text)
+            if isinstance(value, str) and value.strip()
+        )
+
+    omitted = sum(
+        max(
+            (_content_coverage(paragraph, candidate) for candidate in candidates),
+            default=0.0,
+        )
+        < MIN_BIO_CONTENT_COVERAGE
+        for paragraph in current_paragraphs
+    )
+    return omitted >= max(1, len(current_paragraphs) // 4)
+
+
+def _unchanged_bio_changes(current_bio: str) -> list[dict[str, object]]:
+    return [
+        {
+            "status": "unchanged",
+            "text": paragraph,
+            "previous_text": None,
+            "source_ids": [],
+        }
+        for paragraph in _bio_paragraphs(current_bio)
+    ]
 
 
 def _get_json(
@@ -477,28 +585,71 @@ def research_artist_bio(
     from crate.llm import get_config
     from crate.llm.prompts.artist_bio_research import consolidate_artist_bio
 
+    current_bio = normalize_artist_bio(str(artist.get("bio") or ""))
     sources = collect_artist_research_sources(artist, progress=progress)
     if progress:
         progress("Consolidating evidence with AI")
     response = consolidate_artist_bio(
         artist_name=str(artist["name"]),
-        current_bio=normalize_artist_bio(str(artist.get("bio") or "")),
+        current_bio=current_bio,
         artist_context=dict(artist),
         sources=sources,
         language=language,
     )
+    draft = "\n\n".join(response.paragraphs)
+    preserve_current_bio = bool(current_bio) and response.bio_action == "preserve"
+    warnings = list(response.warnings)
+    shorter_draft = (
+        bool(current_bio)
+        and response.bio_action == "update"
+        and _draft_loses_substantial_detail(current_bio, draft)
+    )
+    omitted_content = (
+        bool(current_bio)
+        and response.bio_action == "update"
+        and _draft_omits_existing_content(current_bio, draft, response.bio_changes)
+    )
+    draft_loses_detail = shorter_draft or omitted_content
+    if draft_loses_detail:
+        preserve_current_bio = True
+        warnings.append(
+            (
+                "The generated draft was substantially shorter than the existing biography, so the current text was preserved for review."
+                if shorter_draft
+                else "The generated draft omitted supported detail from the existing biography, so the current text was preserved for review."
+            )
+        )
+    paragraphs = (
+        _bio_paragraphs(current_bio) if preserve_current_bio else response.paragraphs
+    )
+    bio_changes = [change.model_dump() for change in response.bio_changes]
+    if not bio_changes and preserve_current_bio:
+        bio_changes = _unchanged_bio_changes(current_bio)
+    if not bio_changes and not preserve_current_bio:
+        bio_changes = [
+            {
+                "status": "updated",
+                "text": draft,
+                "previous_text": current_bio or None,
+                "source_ids": [],
+            }
+        ]
+    proposal = "\n\n".join(paragraphs)
     return {
         "schema_version": 1,
         "artist": str(artist["name"]),
-        "proposal": "\n\n".join(response.paragraphs),
-        "bio": {"paragraphs": response.paragraphs},
+        "proposal": proposal,
+        "bio": {"paragraphs": paragraphs},
+        "bio_action": "preserve" if preserve_current_bio else response.bio_action,
+        "review_items": [item.model_dump() for item in response.review_items],
+        "bio_changes": bio_changes,
         "members": {
             "current": [member.model_dump() for member in response.current_members],
             "former": [member.model_dump() for member in response.former_members],
         },
         "claims": [claim.model_dump() for claim in response.claims],
         "conflicts": response.conflicts,
-        "warnings": response.warnings,
+        "warnings": warnings[:8],
         "sources": sources,
         "model": get_config().get("model"),
         "generated_at": datetime.now(timezone.utc).isoformat(),

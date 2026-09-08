@@ -38,6 +38,21 @@ interface ResearchMember {
   source_ids?: string[];
 }
 
+interface ResearchReviewItem {
+  kind: string;
+  summary: string;
+  source_ids?: string[];
+}
+
+type BioChangeStatus = "unchanged" | "added" | "removed" | "updated";
+
+interface ResearchBioChange {
+  status: BioChangeStatus;
+  text: string;
+  previous_text?: string | null;
+  source_ids?: string[];
+}
+
 interface ResearchResult {
   proposal?: string;
   bio?: { paragraphs?: string[] };
@@ -48,6 +63,9 @@ interface ResearchResult {
   };
   current_members?: ResearchMember[];
   former_members?: ResearchMember[];
+  bio_action?: "preserve" | "update";
+  review_items?: ResearchReviewItem[];
+  bio_changes?: ResearchBioChange[];
   claims?: { claim: string; source_ids: string[] }[];
   conflicts?: string[];
   warnings?: string[];
@@ -55,7 +73,10 @@ interface ResearchResult {
   model?: string;
 }
 
-type ReviewTab = "preview" | "edit" | "sources";
+type ReviewTab = "preview" | "review" | "edit" | "sources";
+
+const MIN_SUBSTANTIAL_BIO_CHARS = 600;
+const MIN_ACCEPTED_BIO_RATIO = 0.8;
 
 interface ArtistBioResearchDialogProps {
   open: boolean;
@@ -68,13 +89,42 @@ interface ArtistBioResearchDialogProps {
 function getProposalParagraphs(result: ResearchResult): string[] {
   const paragraphs = result.bio?.paragraphs ?? result.paragraphs;
   if (Array.isArray(paragraphs)) {
-    return paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
+    return paragraphs.flatMap((paragraph) => {
+      const trimmed = paragraph.trim();
+      return trimmed ? [trimmed] : [];
+    });
   }
   return result.proposal?.trim() ? [result.proposal.trim()] : [];
 }
 
 function getProposalText(result: ResearchResult): string {
   return getProposalParagraphs(result).join("\n\n");
+}
+
+function normalizeResearchResult(
+  result: ResearchResult,
+  currentBio: string,
+): ResearchResult {
+  const existing = currentBio.trim();
+  if (!existing || existing.length < MIN_SUBSTANTIAL_BIO_CHARS) return result;
+
+  const proposal = getProposalText(result);
+  const resultRequestsUpdate = result.bio_action === "update";
+  const proposalLosesDetail =
+    proposal.length < existing.length * MIN_ACCEPTED_BIO_RATIO;
+  if (resultRequestsUpdate && !proposalLosesDetail) return result;
+
+  const warning = resultRequestsUpdate
+    ? "The generated draft was shorter than the existing biography, so the current text was preserved for review."
+    : "The research result did not confirm a safe biography update, so the current text was preserved for review.";
+
+  return {
+    ...result,
+    bio_action: "preserve",
+    proposal: existing,
+    bio: { paragraphs: existing.split(/\n\s*\n/) },
+    warnings: [...(result.warnings ?? []), warning].slice(0, 8),
+  };
 }
 
 function toProfileMember(member: ResearchMember): ArtistBioMember {
@@ -89,9 +139,9 @@ function toProfileMember(member: ResearchMember): ArtistBioMember {
 function getProposalMembers(result: ResearchResult): ArtistBioMember[] {
   const current = result.members?.current ?? result.current_members ?? [];
   const former = result.members?.former ?? result.former_members ?? [];
-  return [...current, ...former]
-    .filter((member) => member.name.trim())
-    .map(toProfileMember);
+  return [...current, ...former].flatMap((member) => {
+    return member.name.trim() ? [toProfileMember(member)] : [];
+  });
 }
 
 function ReviewTabs({
@@ -107,7 +157,7 @@ function ReviewTabs({
       role="tablist"
       aria-label="Biography research views"
     >
-      {(["preview", "edit", "sources"] as const).map((tab) => (
+      {(["preview", "review", "edit", "sources"] as const).map((tab) => (
         <button
           key={tab}
           type="button"
@@ -122,9 +172,11 @@ function ReviewTabs({
         >
           {tab === "preview"
             ? "Listen preview"
-            : tab === "edit"
-              ? "Edit"
-              : "Sources"}
+            : tab === "review"
+              ? "Review changes"
+              : tab === "edit"
+                ? "Edit"
+                : "Sources"}
         </button>
       ))}
     </div>
@@ -178,6 +230,112 @@ function ReviewNotes({ result }: { result: ResearchResult }) {
   );
 }
 
+function ReviewSummary({ result }: { result: ResearchResult }) {
+  const findings = result.review_items ?? [];
+  const warnings = result.warnings ?? [];
+  const preserved = result.bio_action === "preserve";
+
+  return (
+    <div
+      data-testid="artist-bio-review-summary"
+      className="rounded-lg border border-border-quiet-subtle bg-surface-quiet-subtle/40 p-3"
+    >
+      <p className="text-sm font-medium text-text-secondary-strong">
+        {preserved
+          ? "Existing biography preserved"
+          : "Biography update proposed"}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-text-muted">
+        {preserved
+          ? "The current biography is used as the base. Only the findings below need review."
+          : "The proposal keeps supported existing detail and adds only material findings from the sources."}
+      </p>
+      {findings.length ? (
+        <ul className="mt-2 space-y-1 text-sm text-text-secondary">
+          {findings.map((finding) => (
+            <li
+              key={`${finding.kind}-${finding.summary}-${
+                finding.source_ids?.join(",") ?? ""
+              }`}
+            >
+              <span className="mr-2 text-xs font-medium uppercase tracking-wide text-accent-action">
+                {finding.kind.split("_").join(" ")}
+              </span>
+              {finding.summary}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {warnings.length ? (
+        <div className="mt-2 space-y-1 text-xs text-state-warning-text">
+          {warnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReviewChanges({ result }: { result: ResearchResult }) {
+  const changes = result.bio_changes ?? [];
+  if (!changes.length) {
+    return (
+      <p className="text-sm text-text-muted">
+        No semantic biography changes were returned.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="artist-bio-review-changes">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
+        <span className="text-state-success-text">Added</span>
+        <span className="text-state-danger-text">Removed</span>
+        <span className="text-state-warning-text">Updated</span>
+      </div>
+      <div className="space-y-2 text-sm leading-relaxed">
+        {changes.map((change) => {
+          const key = `${change.status}-${change.text}-${
+            change.previous_text ?? ""
+          }-${change.source_ids?.join(",") ?? ""}`;
+          if (change.status === "updated") {
+            return (
+              <div
+                key={key}
+                data-testid="bio-change-updated"
+                className="rounded-md border border-state-warning bg-state-warning/5 p-3"
+              >
+                {change.previous_text ? (
+                  <p className="text-state-danger-text line-through">
+                    {change.previous_text}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-state-success-text">{change.text}</p>
+              </div>
+            );
+          }
+          const className =
+            change.status === "added"
+              ? "text-state-success-text"
+              : change.status === "removed"
+                ? "text-state-danger-text line-through"
+                : "text-text-secondary-strong";
+          return (
+            <p
+              key={key}
+              data-testid={`bio-change-${change.status}`}
+              className={className}
+            >
+              {change.text}
+            </p>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ResearchResultContent({
   artist,
   result,
@@ -219,6 +377,7 @@ function ResearchResultContent({
         </span>
         <span>Model: {result.model || "configured provider"}</span>
       </div>
+      <ReviewSummary result={result} />
       <ReviewTabs activeTab={activeTab} onChange={onTabChange} />
 
       {activeTab === "preview" ? (
@@ -243,6 +402,8 @@ function ResearchResultContent({
           />
         </div>
       ) : null}
+
+      {activeTab === "review" ? <ReviewChanges result={result} /> : null}
 
       {activeTab === "edit" ? (
         <div className="space-y-4">
@@ -392,7 +553,10 @@ export function ArtistBioResearchDialog({
       if (task.status !== "completed" || !task.result) {
         throw new Error(task.error || "Research task failed");
       }
-      const nextResult = task.result as unknown as ResearchResult;
+      const nextResult = normalizeResearchResult(
+        task.result as unknown as ResearchResult,
+        currentBio,
+      );
       setResult(nextResult);
       setProposal(getProposalText(nextResult));
     } catch (nextError) {
@@ -429,7 +593,7 @@ export function ArtistBioResearchDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(92dvh,960px)] max-w-4xl flex-col overflow-hidden"
+        className="flex h-[min(92dvh,960px)] w-[min(92vw,72rem)] max-h-[min(92dvh,960px)] !max-w-5xl flex-col overflow-hidden"
         onOpenAutoFocus={() => void runResearch()}
       >
         <DialogHeader className="shrink-0">

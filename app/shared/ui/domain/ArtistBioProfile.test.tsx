@@ -34,4 +34,24 @@ describe("ArtistBioProfile", () => {
       screen.getByRole("table", { name: "Former members" }),
     ).toBeInTheDocument();
   });
+
+  it("formats partial and full member dates for readable table cells", () => {
+    render(
+      <ArtistBioProfile
+        artistName="Example Band"
+        bio="Band biography."
+        members={[
+          { name: "Former Member", begin: "1994-10", end: "1998-08-28" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("cell", { name: "Oct 1994" })).toHaveClass(
+      "whitespace-nowrap",
+    );
+    expect(screen.getByRole("cell", { name: "28 Aug 1998" })).toHaveClass(
+      "whitespace-nowrap",
+    );
+    expect(screen.queryByText("1994-10")).not.toBeInTheDocument();
+  });
 });

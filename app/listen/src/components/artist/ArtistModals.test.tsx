@@ -83,6 +83,7 @@ describe("artist mobile modals", () => {
 
     const panel = screen.getByText("Kneecap").closest(".listen-glass-panel");
     expect(panel).toBeInTheDocument();
+    expect(panel).toHaveClass("sm:max-w-4xl", "max-w-4xl");
     expect(panel).not.toHaveClass("fixed");
     expect(panel?.className).not.toContain(
       "listen-mobile-bottom-chrome-height",

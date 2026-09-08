@@ -62,6 +62,22 @@ export interface ArtistBioProfileProps {
   className?: string;
 }
 
+const EMPTY_META: string[] = [];
+const EMPTY_GENRES: GenreProfileItem[] = [];
+const EMPTY_MEMBERS: ArtistBioMember[] = [];
+const EMPTY_URLS: ArtistBioExternalLink[] = [];
+const MEMBER_MONTH_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  month: "short",
+  timeZone: "UTC",
+  year: "numeric",
+});
+const MEMBER_DAY_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+  year: "numeric",
+});
+
 const LINK_LABELS: Record<string, string> = {
   "official homepage": "Website",
   discogs: "Discogs",
@@ -86,7 +102,32 @@ function linkLabel(type: string, url: string): string {
 }
 
 function formatMemberDate(value: string | null | undefined, fallback: string) {
-  return value || fallback;
+  const normalized = value?.trim();
+  if (!normalized) return fallback;
+
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(normalized);
+  if (!match) return normalized;
+
+  const year = Number(match[1]);
+  const month = match[2] ? Number(match[2]) : undefined;
+  const day = match[3] ? Number(match[3]) : undefined;
+  if (!month) return String(year);
+  if (month < 1 || month > 12 || (day !== undefined && (day < 1 || day > 31))) {
+    return normalized;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day ?? 1));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    (day !== undefined && date.getUTCDate() !== day)
+  ) {
+    return normalized;
+  }
+
+  return (
+    day !== undefined ? MEMBER_DAY_FORMATTER : MEMBER_MONTH_FORMATTER
+  ).format(date);
 }
 
 function splitBioParagraphs(text: string): string[] {
@@ -158,11 +199,11 @@ function ArtistBioMemberTable({
                 <td className="px-3 py-2 text-text-secondary">
                   {member.roles?.join(", ") || "—"}
                 </td>
-                <td className="px-3 py-2 text-text-quiet">
+                <td className="whitespace-nowrap px-3 py-2 text-text-quiet">
                   {formatMemberDate(member.begin, "Unknown")}
                 </td>
                 {!current ? (
-                  <td className="px-3 py-2 text-text-quiet">
+                  <td className="whitespace-nowrap px-3 py-2 text-text-quiet">
                     {formatMemberDate(member.end, "Unknown")}
                   </td>
                 ) : null}
@@ -258,15 +299,15 @@ export function ArtistBioProfile({
   artistName,
   photoUrl,
   photoContent,
-  meta = [],
-  genres = [],
+  meta = EMPTY_META,
+  genres = EMPTY_GENRES,
   bio,
   bioExpanded = true,
   onBioToggle,
-  members = [],
+  members = EMPTY_MEMBERS,
   stats,
   libraryStats,
-  urls = [],
+  urls = EMPTY_URLS,
   onClose,
   onGenreSelect,
   onExternalLink,

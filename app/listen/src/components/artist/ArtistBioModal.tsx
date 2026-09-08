@@ -33,14 +33,18 @@ export function ArtistBioModal({
 
   const mb = enrichment?.musicbrainz;
   const members: ArtistBioMember[] =
-    mb?.members
-      ?.filter((member) => member.name)
-      .map((member) => ({
-        name: member.name,
-        roles: member.attributes,
-        begin: member.begin,
-        end: member.end,
-      })) ?? [];
+    mb?.members?.flatMap((member) =>
+      member.name
+        ? [
+            {
+              name: member.name,
+              roles: member.attributes,
+              begin: member.begin,
+              end: member.end,
+            },
+          ]
+        : [],
+    ) ?? [];
   const urls = mb?.urls
     ? Object.entries(mb.urls).map(([type, url]) => ({ type, url }))
     : [];
@@ -54,9 +58,9 @@ export function ArtistBioModal({
     <AppModal
       open={open}
       onClose={onClose}
-      maxWidthClassName="sm:max-w-2xl"
+      maxWidthClassName="sm:max-w-4xl"
       overlayClassName="bg-surface-canvas-overlay"
-      panelClassName="listen-glass-panel flex min-h-0 w-full max-w-2xl flex-col overflow-hidden border-0 sm:max-h-[92vh]"
+      panelClassName="listen-glass-panel flex min-h-0 w-full max-w-4xl flex-col overflow-hidden border-0 sm:max-h-[92vh]"
       mobileSafeArea
     >
       <ArtistBioProfile

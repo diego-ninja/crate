@@ -628,9 +628,8 @@ export function Discover() {
   const opportunityArtists = useMemo(() => {
     const source = completeness ?? [];
     return source
-      .filter((artist) => artist.pct < 100)
-      .filter((artist) => artist.missing.length > 0)
       .filter((artist) => {
+        if (artist.pct >= 100 || artist.missing.length === 0) return false;
         if (!normalizedSearch) return true;
         return `${artist.artist} ${artist.missing
           .map((album) => album.title)

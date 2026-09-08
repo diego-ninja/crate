@@ -141,5 +141,151 @@ describe("ArtistBioResearchDialog", () => {
     const content = document.querySelector('[data-slot="dialog-content"]');
     expect(body).toHaveClass("flex-1", "overflow-y-auto");
     expect(content).toHaveClass("flex", "flex-col", "overflow-hidden");
+    expect(content).toHaveClass("!max-w-5xl");
+  });
+
+  it("shows incremental review findings when the existing biography is preserved", async () => {
+    vi.mocked(waitForTask).mockResolvedValueOnce({
+      status: "completed",
+      result: {
+        bio_action: "preserve",
+        proposal:
+          "A rewritten biography that should not replace the current one.",
+        review_items: [
+          {
+            kind: "new_release",
+            summary: "The official site lists a new album.",
+            source_ids: ["official"],
+          },
+        ],
+        warnings: [
+          "The generated draft was shorter than the existing biography, so the current text was preserved.",
+        ],
+        bio: {
+          paragraphs: [
+            "A rewritten biography that should not replace the current one.",
+          ],
+        },
+        sources: [],
+      },
+    });
+
+    render(
+      <ArtistBioResearchDialog
+        open
+        onOpenChange={vi.fn()}
+        artist={artist}
+        currentBio="The existing canonical biography."
+        onApply={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Existing biography preserved"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("The official site lists a new album."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/generated draft was shorter/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renders semantic bio changes with the review color coding", async () => {
+    vi.mocked(waitForTask).mockResolvedValueOnce({
+      status: "completed",
+      result: {
+        bio_action: "update",
+        bio: { paragraphs: ["Updated biography."] },
+        bio_changes: [
+          { status: "unchanged", text: "Existing context.", source_ids: [] },
+          {
+            status: "removed",
+            text: "Old stale detail.",
+            source_ids: ["official"],
+          },
+          {
+            status: "added",
+            text: "New verified release.",
+            source_ids: ["official"],
+          },
+          {
+            status: "updated",
+            previous_text: "The band formed in 1994.",
+            text: "The band formed in 1995.",
+            source_ids: ["musicbrainz"],
+          },
+        ],
+        sources: [],
+      },
+    });
+
+    render(
+      <ArtistBioResearchDialog
+        open
+        onOpenChange={vi.fn()}
+        artist={artist}
+        currentBio="Existing context."
+        onApply={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId("artist-bio-preview");
+    await userEvent.click(screen.getByRole("tab", { name: "Review changes" }));
+
+    expect(screen.getByTestId("bio-change-added")).toHaveClass(
+      "text-state-success-text",
+    );
+    expect(screen.getByTestId("bio-change-removed")).toHaveClass(
+      "text-state-danger-text",
+      "line-through",
+    );
+    expect(screen.getByTestId("bio-change-updated")).toHaveTextContent(
+      "The band formed in 1995.",
+    );
+    expect(screen.getByText("The band formed in 1994.")).toHaveClass(
+      "text-state-danger-text",
+      "line-through",
+    );
+    expect(screen.getByTestId("bio-change-updated")).toHaveClass(
+      "border-state-warning",
+    );
+  });
+
+  it("does not expose a legacy short result over a substantial current bio", async () => {
+    const currentBio = [
+      "Hot Water Music are a Gainesville, Florida punk outfit known for their raspy vocals and urgent guitars.",
+      "The band has released a detailed catalogue across multiple labels and has toured internationally for decades.",
+      "Its history includes hiatuses, reunions, side projects, collaborations, and important recording milestones.",
+      "The current library biography preserves the band's formation, releases, touring history, lineup changes, recording sessions, label history, and collaborations with related artists.",
+      "It also captures the context around the band's songwriting, performances, related projects, and continuing place in the scene so that a short generated summary cannot silently replace it.",
+    ].join("\n\n");
+
+    vi.mocked(waitForTask).mockResolvedValueOnce({
+      status: "completed",
+      result: {
+        proposal: "Hot Water Music is a punk band from Florida.",
+        bio: { paragraphs: ["Hot Water Music is a punk band from Florida."] },
+        sources: [],
+      },
+    });
+
+    render(
+      <ArtistBioResearchDialog
+        open
+        onOpenChange={vi.fn()}
+        artist={artist}
+        currentBio={currentBio}
+        onApply={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Existing biography preserved"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    expect(
+      screen.getByRole("textbox", { name: "Proposed biography" }),
+    ).toHaveValue(currentBio);
   });
 });
