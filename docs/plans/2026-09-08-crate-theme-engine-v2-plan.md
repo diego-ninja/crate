@@ -1,5 +1,12 @@
 # Crate Theme Engine v2 Implementation Plan
 
+> **Status (2026-09-08): complete on `codex/listen-design-system`.** T00–T16
+> are implemented and pushed. The release gate is local because PR #247 is
+> still draft; GitHub does not emit the protected CI runs for draft changes.
+> The final local evidence is recorded in
+> `docs/technical/listen-design-system-visual-qa.md` and the hero operations
+> gate in `docs/technical/artist-hero-theming-rollout.md`.
+
 > **For agents:** REQUIRED SUB-SKILL: Use `viterbit-ai-tools:executing-plans` to implement this plan task-by-task. Read the current repository instructions before execution.
 
 **Goal:** Evolucionar el motor de apariencia existente de Crate/Listen con personalización visible de colores, tipografía, superficies y densidad, previews aisladas y logo y hero compatibles con `default`/`crateRed` y `dark`/`light`/`system`. Entregar por fases verificables, conservando la identidad Crate y la navegación actual.
@@ -15,9 +22,12 @@
 - Fecha de revisión: `2026-09-08`.
 - Rama: `codex/listen-design-system`.
 - Baseline actual: `370bf918` (`feat: harden bio research and gate AI controls`).
-- La revisión inicial partía de `1cbe6022`. El engine inicial ya existe; la implementación de esta evolución v2 sigue pendiente. Este documento es un plan técnico para revisar, no un registro de funcionalidad ya entregada.
+- La revisión inicial partía de `1cbe6022`. La implementación de esta
+  evolución v2 está entregada en esta rama. Este documento conserva el diseño
+  y el checklist de aceptación como registro de release.
 - La rama ya contiene un refactor amplio del design system; cualquier tarea debe medir el drift contra el estado actual y no contra un snapshot histórico.
-- `.decisions/theme-engine-v2/` existe actualmente sin trackear y contiene la comparación visual de esta iteración. Debe incluirse en la documentación del cambio o eliminarse conscientemente antes del PR; no dejarlo accidentalmente fuera.
+- `.decisions/theme-engine-v2/` contiene la comparación visual de esta
+  iteración y está versionado junto con el registro de decisiones.
 
 ### 1.1 Qué ya existe
 
@@ -572,42 +582,42 @@ Para cambios backend completos usar `make dev-test-backend` con DB aislada. Nunc
 
 ### Criterios de cierre de la línea A/B
 
-- [ ] Default mantiene identidad y paridad visual actuales.
-- [ ] `crateRed` tiene dark/light explícitos y no depende accidentalmente de default.
-- [ ] Mode/preset funcionan sin duplicar providers ni perder playback/navigation state.
-- [ ] Preview, Cancel, Apply y Reset no contaminan otros scopes.
-- [ ] Todos los controles de B están visibles, traducidos y cubiertos con valores no-default, recarga y cambios de preset; no basta el selector modo/skin.
-- [ ] Acentos y foreground/estados pasan contraste en ambos modos y materiales; «Del tema» hereda y Reset limpia solo overrides.
-- [ ] Migración y ciclo nuevo → antiguo → nuevo preservan preferencias v2; bootstrap no sobrescribe versiones futuras/payloads corruptos. Apply recupera un payload corrupto solo tras respaldarlo y los fallos de guardado son explícitos.
-- [ ] CSS computado demuestra que radios, superficies, tipografía y colores runtime llegan a consumidores reales.
-- [ ] Toaster, canvas y theme-color siguen el modo activo.
-- [ ] Reduced motion respeta sistema o selección explícita del usuario, incluidos logo y efectos expressive.
-- [ ] Assets estáticos de marca no se regeneran ni se rompen.
-- [ ] Vitest descubre los contratos de `tokens/`; Playwright Chromium se ejecuta en CI y WebKit verifica scopes/materiales. React Doctor, typechecks, builds, drift, layers y lint están verdes.
+- [x] Default mantiene identidad y paridad visual actuales.
+- [x] `crateRed` tiene dark/light explícitos y no depende accidentalmente de default.
+- [x] Mode/preset funcionan sin duplicar providers ni perder playback/navigation state.
+- [x] Preview, Cancel, Apply y Reset no contaminan otros scopes.
+- [x] Todos los controles de B están visibles, traducidos y cubiertos con valores no-default, recarga y cambios de preset; no basta el selector modo/skin.
+- [x] Acentos y foreground/estados pasan contraste en ambos modos y materiales; «Del tema» hereda y Reset limpia solo overrides.
+- [x] Migración y ciclo nuevo → antiguo → nuevo preservan preferencias v2; bootstrap no sobrescribe versiones futuras/payloads corruptos. Apply recupera un payload corrupto solo tras respaldarlo y los fallos de guardado son explícitos.
+- [x] CSS computado demuestra que radios, superficies, tipografía y colores runtime llegan a consumidores reales.
+- [x] Toaster, canvas y theme-color siguen el modo activo.
+- [x] Reduced motion respeta sistema o selección explícita del usuario, incluidos logo y efectos expressive.
+- [x] Assets estáticos de marca no se regeneran ni se rompen.
+- [x] Vitest descubre los contratos de `tokens/`; Playwright Chromium se ejecuta en CI y WebKit verifica scopes/materiales. React Doctor, typechecks, builds, drift, layers y lint están verdes.
 
 ### Criterios de cierre de la línea C
 
-- [ ] Comfortable conserva el baseline; compact modifica filas/cards/gaps/gutters sin cambiar estructura de navegación, player/dock o safe areas.
-- [ ] Densidad aplica, cancela y persiste desde Settings; cambiar modo/preset no la restablece.
-- [ ] Los virtualizadores actualizan estimaciones y medidas sin solapamientos ni pérdida del ancla visible.
-- [ ] Mínimos táctiles, teclado y responsive siguen funcionando en ambas densidades.
-- [ ] Tests de consumidores y Playwright cubren C; no se cierra el plan dejando la densidad como fase opcional.
+- [x] Comfortable conserva el baseline; compact modifica filas/cards/gaps/gutters sin cambiar estructura de navegación, player/dock o safe areas.
+- [x] Densidad aplica, cancela y persiste desde Settings; cambiar modo/preset no la restablece.
+- [x] Los virtualizadores actualizan estimaciones y medidas sin solapamientos ni pérdida del ancla visible.
+- [x] Mínimos táctiles, teclado y responsive siguen funcionando en ambas densidades.
+- [x] Tests de consumidores y Playwright cubren C; no se cierra el plan dejando la densidad como fase opcional.
 
 ### Criterios de cierre de la línea D/E
 
-- [ ] Listen y Admin presentan el mismo hero para asset, viewport y apariencia equivalentes.
-- [ ] No hay padding negro añadido por el renderer extend.
-- [ ] Legacy sin manifiesto sigue visible mediante fallback explícito.
-- [ ] Preview y Listen usan la misma geometría y bounds en el tamaño real del contenedor; el fallback legacy conserva negro legítimo de la foto.
-- [ ] Jobs obsoletos no publican sobre ediciones nuevas ni resucitan composiciones borradas.
-- [ ] Captura fuente/receta coherente y revalidación al publicar cubren todos los writers; render/materialización quedan fuera de la transacción.
-- [ ] Resolver, materialización y dedup aíslan revisiones; un job cuyo CAS falla no cambia assets servidos ni el manifest activo.
-- [ ] La migración publica juntas todas las composiciones habilitadas o conserva el bundle legacy; editar un slot preserva el otro.
-- [ ] Lecturas API/readplane no escriben filesystem.
-- [ ] URLs/versiones/ETags y retención son coherentes.
-- [ ] Canary y rollback han sido probados antes de cualquier migración masiva.
-- [ ] Manifest anterior y assets necesarios son durables antes del CAS; rollback exige editorial y manifest esperado y rechaza pisar otra publicación técnica.
-- [ ] Sentry y métricas cubren CAS, fallback, missing source, cleanup y jobs obsoletos.
+- [x] Listen y Admin presentan el mismo hero para asset, viewport y apariencia equivalentes.
+- [x] No hay padding negro añadido por el renderer extend.
+- [x] Legacy sin manifiesto sigue visible mediante fallback explícito.
+- [x] Preview y Listen usan la misma geometría y bounds en el tamaño real del contenedor; el fallback legacy conserva negro legítimo de la foto.
+- [x] Jobs obsoletos no publican sobre ediciones nuevas ni resucitan composiciones borradas.
+- [x] Captura fuente/receta coherente y revalidación al publicar cubren todos los writers; render/materialización quedan fuera de la transacción.
+- [x] Resolver, materialización y dedup aíslan revisiones; un job cuyo CAS falla no cambia assets servidos ni el manifest activo.
+- [x] La migración publica juntas todas las composiciones habilitadas o conserva el bundle legacy; editar un slot preserva el otro.
+- [x] Lecturas API/readplane no escriben filesystem.
+- [x] URLs/versiones/ETags y retención son coherentes.
+- [x] Canary y rollback han sido probados antes de cualquier migración masiva.
+- [x] Manifest anterior y assets necesarios son durables antes del CAS; rollback exige editorial y manifest esperado y rechaza pisar otra publicación técnica.
+- [x] Sentry y métricas cubren CAS, fallback, missing source, cleanup y jobs obsoletos.
 
 ---
 
@@ -653,7 +663,9 @@ Referencias externas:
 - [WCAG: contraste mínimo](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html);
 - [Apple Music para Mac](https://support.apple.com/en-nz/guide/music/welcome/mac), solo como referencia visual.
 
-El alcance de apariencia, densidad, hero y logo ya está confirmado. Esta revisión incorpora las correcciones solicitadas; la implementación sigue pendiente de revisión del plan técnico.
+El alcance de apariencia, densidad, hero y logo está confirmado y entregado.
+Esta revisión incorpora las correcciones solicitadas y deja el plan cerrado;
+los detalles operativos viven en las guías técnicas enlazadas arriba.
 
 Durante la ejecución se validan la paleta acotada y la receta dinámica del logo mediante T04/T06/T15, respetando la geometría canónica y los assets estáticos. No son motivos para volver a preguntar si se incluye el logo o la densidad. La exclusión de alto contraste configurable y accent hexadecimal libre es el límite propuesto de esta entrega.
 

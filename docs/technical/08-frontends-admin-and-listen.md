@@ -66,7 +66,17 @@ explicit variable allowlist covering identity colors, surfaces, rings, radii,
 shadows, and brand typography; they cannot change layout, spacing, motion or
 component behavior. Settings applies the selection immediately and persists it
 per device. The shared appearance store also keeps the Listen Toaster aligned
-with the resolved mode.
+with the resolved mode. `ThemeScope` applies the same resolver to an isolated
+preview or portal without writing storage or mutating the main scope. The
+presentation density is orthogonal to the skin: `comfortable` is the baseline
+and `compact` changes only bounded content metrics and virtualized row
+estimates; hit targets, player geometry and safe areas remain stable.
+
+The appearance browser gate lives in
+[`listen-design-system-visual-qa.md`](listen-design-system-visual-qa.md).
+The shared Artist Hero frame and the versioned artifact/rollback lifecycle are
+documented separately in
+[`artist-hero-theming-rollout.md`](artist-hero-theming-rollout.md).
 
 The quality gates also enforce the shared UI layer graph, explicit WCAG AA
 pairings for supported skins and destructive controls, and a reproducible
