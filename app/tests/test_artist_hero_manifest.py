@@ -160,10 +160,10 @@ def test_manifest_readiness_uses_supported_renderer_policy() -> None:
 
 def test_artist_hero_manifest_migration_is_the_next_revision() -> None:
     migration = (
-        ROOT / "app/crate/db/migrations/versions/090_artist_hero_render_manifest.py"
+        ROOT / "app/crate/db/migrations/versions/091_artist_hero_render_manifest.py"
     ).read_text()
 
-    assert 'revision = "090"' in migration
-    assert 'down_revision = "089"' in migration
+    assert 'revision = "091"' in migration
+    assert 'down_revision = "090"' in migration
     assert '"render_manifest"' in migration
     assert "JSONB" in migration
