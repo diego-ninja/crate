@@ -39,73 +39,91 @@ export function useEqualizer() {
     trackGenre,
   } = useResolvedEqualizer(snapshot, currentTrack);
 
-  const toggleEnabled = useCallback((enabled: boolean) => {
-    setEqualizerEnabled(enabled);
-    setSnapshot((prev) => ({ ...prev, enabled }));
-  }, []);
+  const toggleEnabled = useCallback(
+    (enabled: boolean) => {
+      setEqualizerEnabled(enabled);
+      setSnapshot((prev) => ({ ...prev, enabled }));
+    },
+    [setSnapshot],
+  );
 
-  const applyPreset = useCallback((preset: EqPresetName) => {
-    const gains = applyEqualizerPreset(preset);
-    setSnapshot((prev) => ({
-      ...prev,
-      preset,
-      gains: [...gains],
-      smart: false,
-      adaptive: false,
-      genreAdaptive: false,
-    }));
-  }, []);
-
-  const updateBand = useCallback((bandIndex: number, dB: number) => {
-    setSnapshot((prev) => {
-      const nextGains = [...prev.gains];
-      nextGains[bandIndex] = dB;
-      setCustomEqualizerGains(nextGains);
-      return {
+  const applyPreset = useCallback(
+    (preset: EqPresetName) => {
+      const gains = applyEqualizerPreset(preset);
+      setSnapshot((prev) => ({
         ...prev,
-        preset: "custom",
-        gains: nextGains,
+        preset,
+        gains: [...gains],
         smart: false,
         adaptive: false,
         genreAdaptive: false,
-      };
-    });
-  }, []);
+      }));
+    },
+    [setSnapshot],
+  );
+
+  const updateBand = useCallback(
+    (bandIndex: number, dB: number) => {
+      setSnapshot((prev) => {
+        const nextGains = [...prev.gains];
+        nextGains[bandIndex] = dB;
+        setCustomEqualizerGains(nextGains);
+        return {
+          ...prev,
+          preset: "custom",
+          gains: nextGains,
+          smart: false,
+          adaptive: false,
+          genreAdaptive: false,
+        };
+      });
+    },
+    [setSnapshot],
+  );
 
   const resetToFlat = useCallback(() => {
     applyPreset("flat");
   }, [applyPreset]);
 
-  const toggleAdaptive = useCallback((value: boolean) => {
-    setEqualizerAdaptive(value);
-    setSnapshot((prev) => ({
-      ...prev,
-      adaptive: value,
-      smart: value ? false : prev.smart,
-      // Genre-adaptive loses mutually-exclusive fight with adaptive.
-      genreAdaptive: value ? false : prev.genreAdaptive,
-    }));
-  }, []);
+  const toggleAdaptive = useCallback(
+    (value: boolean) => {
+      setEqualizerAdaptive(value);
+      setSnapshot((prev) => ({
+        ...prev,
+        adaptive: value,
+        smart: value ? false : prev.smart,
+        // Genre-adaptive loses mutually-exclusive fight with adaptive.
+        genreAdaptive: value ? false : prev.genreAdaptive,
+      }));
+    },
+    [setSnapshot],
+  );
 
-  const toggleGenreAdaptive = useCallback((value: boolean) => {
-    setEqualizerGenreAdaptive(value);
-    setSnapshot((prev) => ({
-      ...prev,
-      genreAdaptive: value,
-      smart: value ? false : prev.smart,
-      adaptive: value ? false : prev.adaptive,
-    }));
-  }, []);
+  const toggleGenreAdaptive = useCallback(
+    (value: boolean) => {
+      setEqualizerGenreAdaptive(value);
+      setSnapshot((prev) => ({
+        ...prev,
+        genreAdaptive: value,
+        smart: value ? false : prev.smart,
+        adaptive: value ? false : prev.adaptive,
+      }));
+    },
+    [setSnapshot],
+  );
 
-  const toggleSmart = useCallback((value: boolean) => {
-    setEqualizerSmart(value);
-    setSnapshot((prev) => ({
-      ...prev,
-      smart: value,
-      adaptive: value ? false : prev.adaptive,
-      genreAdaptive: value ? false : prev.genreAdaptive,
-    }));
-  }, []);
+  const toggleSmart = useCallback(
+    (value: boolean) => {
+      setEqualizerSmart(value);
+      setSnapshot((prev) => ({
+        ...prev,
+        smart: value,
+        adaptive: value ? false : prev.adaptive,
+        genreAdaptive: value ? false : prev.genreAdaptive,
+      }));
+    },
+    [setSnapshot],
+  );
 
   const saveForCurrentTrack = useCallback(async () => {
     if (!currentTrack) return null;
@@ -122,7 +140,7 @@ export function useEqualizer() {
       }));
     }
     return preset;
-  }, [currentTrack, effectiveEqState, effectiveGains]);
+  }, [currentTrack, effectiveEqState, effectiveGains, setSnapshot]);
 
   const clearCurrentTrackPreset = useCallback(async () => {
     if (!currentTrack) return null;
@@ -137,7 +155,7 @@ export function useEqualizer() {
       gains: preset ? [...preset.gains] : prev.gains,
     }));
     return preset;
-  }, [currentTrack, effectiveEqState]);
+  }, [currentTrack, effectiveEqState, setSnapshot]);
 
   return {
     enabled: snapshot.enabled,

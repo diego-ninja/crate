@@ -25,7 +25,7 @@ describe("native server credential migration", () => {
 
   it("moves legacy tokens to native secure storage before stripping metadata", async () => {
     localStorage.setItem(
-      "crate-servers",
+      "crate-servers:v1",
       JSON.stringify([
         {
           id: "server-1",
@@ -59,10 +59,10 @@ describe("native server credential migration", () => {
       token: "access-secret",
       refreshToken: "refresh-secret",
     });
-    expect(localStorage.getItem("crate-servers")).not.toContain(
+    expect(localStorage.getItem("crate-servers:v1")).not.toContain(
       "access-secret",
     );
-    expect(localStorage.getItem("crate-servers")).not.toContain(
+    expect(localStorage.getItem("crate-servers:v1")).not.toContain(
       "refresh-secret",
     );
   });
@@ -78,7 +78,7 @@ describe("native server credential migration", () => {
         refreshToken: "refresh-secret",
       },
     ]);
-    localStorage.setItem("crate-servers", legacy);
+    localStorage.setItem("crate-servers:v1", legacy);
     secureSet.mockRejectedValue(new Error("keystore unavailable"));
     const store = await import("./server-store");
 
@@ -86,12 +86,12 @@ describe("native server credential migration", () => {
       "Native session migration failed",
     );
 
-    expect(localStorage.getItem("crate-servers")).toBe(legacy);
+    expect(localStorage.getItem("crate-servers:v1")).toBe(legacy);
   });
 
   it("loads an existing secure session into memory before React renders", async () => {
     localStorage.setItem(
-      "crate-servers",
+      "crate-servers:v1",
       JSON.stringify([
         {
           id: "server-1",
@@ -131,20 +131,20 @@ describe("native server credential migration", () => {
     store.migrateLegacyToken("https://api.example.com");
 
     expect(localStorage.getItem("crate-auth-token")).toBe("access-secret");
-    expect(localStorage.getItem("crate-servers")).toContain("access-secret");
+    expect(localStorage.getItem("crate-servers:v1")).toContain("access-secret");
 
     await store.bootstrapNativeSessionStore();
 
     expect(store.getCurrentServer()?.token).toBe("access-secret");
     expect(localStorage.getItem("crate-auth-token")).toBeNull();
-    expect(localStorage.getItem("crate-servers")).not.toContain(
+    expect(localStorage.getItem("crate-servers:v1")).not.toContain(
       "access-secret",
     );
   });
 
   it("surfaces secure persistence failures to the login flow", async () => {
     localStorage.setItem(
-      "crate-servers",
+      "crate-servers:v1",
       JSON.stringify([
         {
           id: "server-1",

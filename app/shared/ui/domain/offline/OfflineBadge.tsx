@@ -47,13 +47,13 @@ export function OfflineBadge({
             ? "text-[var(--status-ready-text)]"
             : state === "error"
               ? "text-[var(--status-error-text)]"
-              : "text-primary/85",
+              : "text-accent-action/85",
           className,
         )}
       >
         {icon}
         {!compact ? (
-          <span className="text-[11px] font-medium tracking-wide">{label}</span>
+          <span className="text-xs font-medium tracking-wide">{label}</span>
         ) : null}
       </span>
     );
@@ -63,7 +63,7 @@ export function OfflineBadge({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium uppercase tracking-wide",
           "border-[var(--status-ready-border)] bg-[var(--status-ready-bg)] text-[var(--status-ready-text)]",
           className,
         )}
@@ -78,7 +78,7 @@ export function OfflineBadge({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium uppercase tracking-wide",
           "border-[var(--status-error-border)] bg-[var(--status-error-bg)] text-[var(--status-error-text)]",
           className,
         )}
@@ -92,8 +92,8 @@ export function OfflineBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        "border-[var(--active-border)] bg-[var(--active-bg)] text-primary",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium uppercase tracking-wide",
+        "border-[var(--active-border)] bg-[var(--active-bg)] text-accent-action",
         className,
       )}
     >

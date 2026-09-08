@@ -95,8 +95,10 @@ describe("PlaybackTargetMenu", () => {
 
     const outputButton = screen.getByRole("button", { name: "Output" });
     expect(outputButton.className).not.toContain("hover:bg");
-    expect(outputButton.className).toContain("hover:text-primary");
-    expect(outputButton.className).toContain("hover:drop-shadow");
+    expect(outputButton.className).toContain("hover:text-accent-action");
+    expect(outputButton.className).toContain("hover:drop-shadow-accent-action");
+    expect(outputButton.className).not.toContain("text-white/30");
+    expect(outputButton.className).not.toContain("rgba(");
 
     fireEvent.click(outputButton);
 
@@ -104,6 +106,16 @@ describe("PlaybackTargetMenu", () => {
     expect(screen.getByText("System-selected output")).toBeVisible();
     expect(screen.getByText("Desktop")).toBeVisible();
     expect(screen.getByText("Unavailable")).toBeVisible();
+
+    const menu = screen.getByRole("menu", { name: "Output targets" });
+    const localRow = menu.querySelector('[role="menuitemradio"]');
+
+    expect(localRow).toHaveClass(
+      "text-text-primary",
+      "hover:bg-surface-control",
+    );
+    expect(menu.innerHTML).not.toContain("rgba(");
+    expect(menu.innerHTML).not.toContain("bg-white");
   });
 
   it("surfaces the active remote Connect device", async () => {

@@ -98,11 +98,11 @@ export function OAuthButtons({
   return (
     <>
       <div className="relative flex items-center gap-3 py-1">
-        <div className="flex-1 border-t border-white/10" />
-        <span className="text-xs text-white/40">
+        <div className="flex-1 border-t border-border-quiet" />
+        <span className="text-xs text-text-primary/40">
           {labels?.separator ?? "or"}
         </span>
-        <div className="flex-1 border-t border-white/10" />
+        <div className="flex-1 border-t border-border-quiet" />
       </div>
 
       <div className="flex items-center justify-center gap-3">
@@ -112,13 +112,13 @@ export function OAuthButtons({
             disabled={!google.configured}
             onClick={() => handleOAuth(google)}
             className={cn(
-              "flex h-10 w-10 items-center justify-center border border-white/10 bg-white/5 transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+              "flex h-10 w-10 items-center justify-center border border-border-quiet bg-text-primary/5 transition-colors hover:bg-text-primary/10 disabled:opacity-30 disabled:cursor-not-allowed",
               buttonClassName,
             )}
             aria-label={labels?.google ?? "Continue with Google"}
             title={labels?.google ?? "Continue with Google"}
           >
-            <GoogleIcon className="h-5 w-5" />
+            <GoogleIcon className=" size-5" />
           </button>
         ) : null}
         {apple?.enabled ? (
@@ -127,7 +127,7 @@ export function OAuthButtons({
             disabled={!apple.configured}
             onClick={() => apple.configured && handleOAuth(apple)}
             className={cn(
-              "flex h-10 w-10 items-center justify-center border border-white/10 bg-white/5 text-white transition-colors hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed",
+              "flex h-10 w-10 items-center justify-center border border-border-quiet bg-text-primary/5 text-text-primary transition-colors hover:bg-text-primary/10 disabled:opacity-30 disabled:cursor-not-allowed",
               buttonClassName,
             )}
             aria-label={labels?.apple ?? "Continue with Apple"}
@@ -137,7 +137,7 @@ export function OAuthButtons({
                 : labels?.appleUnavailable ?? "Apple Sign In — coming soon"
             }
           >
-            <AppleIcon className="h-5 w-5" />
+            <AppleIcon className=" size-5" />
           </button>
         ) : null}
       </div>

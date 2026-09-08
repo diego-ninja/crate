@@ -7,6 +7,12 @@ import { Badge } from "@crate/ui/shadcn/badge";
 import { toast } from "sonner";
 import { User, Lock, Link2, Unlink } from "lucide-react";
 
+function startProviderLink(provider: string): void {
+  window.location.href = `/api/auth/${provider}?return_to=${encodeURIComponent(
+    window.location.origin + "/profile",
+  )}`;
+}
+
 export function Profile() {
   const { user, refetch } = useAuth();
   const [name, setName] = useState(user?.name || "");
@@ -20,11 +26,10 @@ export function Profile() {
   const [changingPw, setChangingPw] = useState(false);
 
   const connectedAccounts = user?.connected_accounts || [];
-  const linkedProviders = new Set(
-    connectedAccounts
-      .filter((item) => item.status !== "unlinked")
-      .map((item) => item.provider),
-  );
+  const linkedProviders = connectedAccounts.reduce((providers, item) => {
+    if (item.status !== "unlinked") providers.add(item.provider);
+    return providers;
+  }, new Set<string>());
 
   async function handleSaveProfile(e: FormEvent) {
     e.preventDefault();
@@ -83,12 +88,6 @@ export function Profile() {
     }
   }
 
-  function startProviderLink(provider: string) {
-    window.location.href = `/api/auth/${provider}?return_to=${encodeURIComponent(
-      window.location.origin + "/profile",
-    )}`;
-  }
-
   if (!user) return null;
 
   return (
@@ -118,25 +117,43 @@ export function Profile() {
 
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">
+            <label
+              htmlFor="profile-display-name"
+              className="text-sm text-muted-foreground mb-1 block"
+            >
               Display Name
             </label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="profile-display-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">
+            <label
+              htmlFor="profile-username"
+              className="text-sm text-muted-foreground mb-1 block"
+            >
               Username
             </label>
             <Input
+              id="profile-username"
               value={username}
               onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "-"))}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground mb-1 block">
+            <label
+              htmlFor="profile-bio"
+              className="text-sm text-muted-foreground mb-1 block"
+            >
               Bio
             </label>
-            <Input value={bio} onChange={(e) => setBio(e.target.value)} />
+            <Input
+              id="profile-bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+            />
           </div>
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? "Saving..." : "Save"}

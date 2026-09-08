@@ -45,7 +45,15 @@ describe("SearchResults", () => {
     const input = screen.getByPlaceholderText(
       "Search artists, albums, tracks...",
     );
+    const surface = screen
+      .getByRole("heading", { name: "Search" })
+      .closest(".shadow-card");
+    expect(surface).not.toBeNull();
+    expect(surface).toHaveClass("shadow-card");
     await user.type(input, "Converge");
+    expect(screen.getByRole("button", { name: "Search" })).toHaveClass(
+      "shadow-action",
+    );
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() => {

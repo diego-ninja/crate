@@ -379,12 +379,17 @@ describe("Album page", () => {
     const primary = screen.getByRole("group", {
       name: "Primary album actions",
     });
-    expect(
-      within(primary).getByRole("button", { name: "Play" }),
-    ).toHaveTextContent("Play");
-    expect(
-      within(primary).getByRole("button", { name: "Shuffle" }),
-    ).toHaveTextContent("Shuffle");
+    const playButton = within(primary).getByRole("button", { name: "Play" });
+    expect(playButton).toHaveTextContent("Play");
+    expect(playButton).toHaveClass(
+      "shadow-action-solid",
+      "hover:shadow-action-solid-hover",
+    );
+    const shuffleButton = within(primary).getByRole("button", {
+      name: "Shuffle",
+    });
+    expect(shuffleButton).toHaveTextContent("Shuffle");
+    expect(shuffleButton).toHaveClass("shadow-control-inset");
 
     const secondary = screen.getByRole("group", {
       name: "Secondary album actions",
@@ -568,7 +573,7 @@ describe("Album page", () => {
       name: "Album Radio",
     });
     expect(radio).toHaveTextContent("Radio");
-    expect(radio).toHaveClass("hover:text-primary");
+    expect(radio).toHaveClass("hover:text-accent-action");
     expect(radio.className).toContain("hover:drop-shadow");
     expect(radio).not.toHaveClass("rounded-lg");
 
@@ -651,6 +656,12 @@ describe("Album page", () => {
     expect(screen.getByTestId("album-hero-background")).not.toHaveClass(
       "grayscale",
     );
+    expect(screen.getByTestId("album-hero-mobile-gradient")).toHaveStyle({
+      background: "var(--hero-artwork-gradient-mobile)",
+    });
+    expect(screen.getByTestId("album-hero-desktop-gradient")).toHaveStyle({
+      background: "var(--hero-artwork-gradient-desktop)",
+    });
     expect(screen.getByTestId("album-hero-content")).toHaveClass(
       "pb-[calc(var(--album-mobile-action-overlap)+var(--album-mobile-info-action-gap))]",
       "sm:pb-6",

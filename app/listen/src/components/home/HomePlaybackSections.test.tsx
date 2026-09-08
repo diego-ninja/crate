@@ -32,7 +32,7 @@ const replay: ReplayMix = {
 
 describe("HomeReplaySection", () => {
   it("presents the monthly replay as Crate DNA", () => {
-    renderWithListenProviders(
+    const { container } = renderWithListenProviders(
       <HomeReplaySection
         replay={replay}
         replayPreview={replay.items}
@@ -46,5 +46,7 @@ describe("HomeReplaySection", () => {
     expect(screen.getByText("Replay June 2026")).toBeInTheDocument();
     expect(screen.getByText("Play month replay")).toBeInTheDocument();
     expect(screen.getByText("Month replay")).toBeInTheDocument();
+    expect(container.querySelector(".home-replay-card")).toBeInTheDocument();
+    expect(container.querySelector(".home-replay-panel")).toBeInTheDocument();
   });
 });

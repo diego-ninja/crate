@@ -36,6 +36,26 @@ export function useMusicVisualizer(
     const canvas = canvasRef.current;
     let cancelled = false;
     let attempts = 0;
+    const timeoutIds = new Set<number>();
+    const animationFrameIds = new Set<number>();
+
+    const scheduleTimeout = (callback: () => void, delay: number) => {
+      const id = window.setTimeout(() => {
+        timeoutIds.delete(id);
+        callback();
+      }, delay);
+      timeoutIds.add(id);
+      return id;
+    };
+
+    const scheduleAnimationFrame = (callback: () => void) => {
+      const id = window.requestAnimationFrame(() => {
+        animationFrameIds.delete(id);
+        callback();
+      });
+      animationFrameIds.add(id);
+      return id;
+    };
 
     const tryInit = () => {
       if (cancelled) return;
@@ -46,14 +66,14 @@ export function useMusicVisualizer(
 
       if (!w || !h) {
         dbg(`attempt ${attempts}: ${w}x${h} waiting...`);
-        if (attempts < 50) requestAnimationFrame(tryInit);
+        if (attempts < 50) scheduleAnimationFrame(tryInit);
         return;
       }
 
       const node = createAnalyserNode(2048);
       if (!node) {
         dbg(`attempt ${attempts}: no analyser, retrying`);
-        if (attempts < 50) setTimeout(tryInit, 200);
+        if (attempts < 50) scheduleTimeout(tryInit, 200);
         return;
       }
 
@@ -67,9 +87,9 @@ export function useMusicVisualizer(
       const forceResize = (viz: MusicVisualizer) => {
         const origW = canvas.style.width;
         canvas.style.width = canvas.clientWidth - 1 + "px";
-        requestAnimationFrame(() => {
+        scheduleAnimationFrame(() => {
           canvas.style.width = origW;
-          requestAnimationFrame(() => {
+          scheduleAnimationFrame(() => {
             const cw = canvas.clientWidth;
             const ch = canvas.clientHeight;
             if (cw > 0 && ch > 0) viz.setSize(cw, ch);
@@ -86,7 +106,7 @@ export function useMusicVisualizer(
         );
         vizRef.current = viz;
         viz.start();
-        setTimeout(() => forceResize(viz), 100);
+        scheduleTimeout(() => forceResize(viz), 100);
         dbg(`created ${w}x${h}`);
       } catch (e) {
         dbg(`FAIL: ${e}`);
@@ -94,20 +114,25 @@ export function useMusicVisualizer(
     };
 
     // Small delay to let the DOM settle after display:none → visible
-    const id = setTimeout(tryInit, 50);
+    scheduleTimeout(tryInit, 50);
 
     return () => {
       cancelled = true;
-      clearTimeout(id);
+      for (const id of timeoutIds) window.clearTimeout(id);
+      timeoutIds.clear();
+      for (const id of animationFrameIds) {
+        window.cancelAnimationFrame(id);
+      }
+      animationFrameIds.clear();
     };
-  }, [canvasRef, active, mode, trackKey]);
+  }, [active, canvasRef, externalVizRef, mode, trackKey]);
 
   useEffect(() => {
     if (!active && vizRef.current) {
       vizRef.current.stop();
       vizRef.current = null;
     }
-  }, [active]);
+  }, [active, externalVizRef]);
 
   return vizRef;
 }

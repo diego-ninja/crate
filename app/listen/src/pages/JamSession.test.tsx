@@ -237,7 +237,7 @@ async function openRoomActionsMenu() {
 describe("JamSession lobby (no roomId)", () => {
   it("renders the lobby heading, create form, and open rooms section", () => {
     mockUseApiData.value = makeRoomsResponse([]);
-    renderWithListenProviders(<JamSession />);
+    const { container } = renderWithListenProviders(<JamSession />);
 
     expect(
       screen.getByRole("heading", { name: "Jam sessions" }),
@@ -248,6 +248,8 @@ describe("JamSession lobby (no roomId)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Open rooms")).toBeInTheDocument();
     expect(screen.getByText("Join from invite")).toBeInTheDocument();
+    expect(container.querySelector(".jam-lobby-header")).toBeInTheDocument();
+    expect(container.querySelector(".jam-panel")).toBeInTheDocument();
   });
 
   it("localizes the lobby chrome", () => {
@@ -747,7 +749,9 @@ describe("JamSession active room - host", () => {
   });
 
   it("localizes the active room chrome", async () => {
-    renderWithListenProviders(<JamSession />, { locale: "es" });
+    const { container } = renderWithListenProviders(<JamSession />, {
+      locale: "es",
+    });
 
     expect(screen.getByText("Sala Jam")).toBeInTheDocument();
     expect(screen.getByText("Conectando con la sala...")).toBeInTheDocument();
@@ -764,6 +768,11 @@ describe("JamSession active room - host", () => {
     expect(
       screen.getByPlaceholderText("Busca pistas para añadir a esta sala"),
     ).toBeInTheDocument();
+    expect(container.querySelector(".jam-room-header")).toBeInTheDocument();
+    expect(container.querySelector(".jam-now-playing")).toBeInTheDocument();
+    expect(container.querySelector(".jam-members-panel")).toBeInTheDocument();
+    expect(container.querySelector(".jam-queue-panel")).toBeInTheDocument();
+    expect(container.querySelector(".jam-activity-panel")).toBeInTheDocument();
 
     await openRoomActionsMenu();
     await userEvent.click(

@@ -110,20 +110,22 @@ export function ArtistTopTracks() {
                 }),
               )
             }
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/70 transition-colors hover:bg-white/5 hover:text-white"
+            className="flex size-10 items-center justify-center rounded-full border border-border-quiet text-text-primary/70 transition-colors hover:bg-text-primary/5 hover:text-text-primary"
           >
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{artistName}</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 className="text-2xl font-bold text-text-primary">
+              {artistName}
+            </h1>
+            <p className="text-sm text-text-muted">
               {t("artist.sections.topTracks")}
             </p>
           </div>
         </div>
 
         <button
-          className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="flex items-center gap-2 rounded-lg bg-accent-action px-5 py-2.5 text-sm font-medium text-accent-action-foreground transition-colors hover:bg-accent-action/90"
           onClick={handlePlayAll}
         >
           <Play size={15} fill="currentColor" />
@@ -131,10 +133,16 @@ export function ArtistTopTracks() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-white/5 bg-white/[0.02]">
+      <div className="rounded-xl border border-text-primary/5 bg-text-primary/[0.02]">
         {(topTracks || []).map((track, index) => (
           <TrackRow
-            key={`${track.id}-${index}`}
+            key={
+              track.id ??
+              track.global_track_uid ??
+              track.track_entity_uid ??
+              track.library_track_id ??
+              [track.artist, track.album, track.title].join(":")
+            }
             track={trackRows[index]!}
             index={track.track || index + 1}
             showAlbum

@@ -409,6 +409,42 @@ describe("TrackRow playback behavior", () => {
     expect(container.innerHTML).toContain("stroke-dashoffset");
   });
 
+  it("consumes semantic classes for row states and playback progress", () => {
+    const track: TrackRowData = {
+      id: 1,
+      entity_uid: "entity-1",
+      title: "Track One",
+      artist: "Artist",
+      album: "Album",
+    };
+
+    const { container } = renderWithListenProviders(
+      <TrackRow track={track} showCoverThumb />,
+      {
+        playerActions: {
+          currentTrack: {
+            id: "entity-1",
+            entityUid: "entity-1",
+            title: "Track One",
+            artist: "Artist",
+          },
+        },
+        playerState: {
+          isPlaying: true,
+        },
+      },
+    );
+
+    expect(container.firstElementChild).toHaveClass("track-row");
+    expect(container.firstElementChild).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("track-row-playback-progress")).toHaveClass(
+      "track-row-playback-progress",
+    );
+    expect(
+      screen.getByTestId("track-row-playback-progress").firstElementChild,
+    ).toHaveClass("track-row-playback-aura");
+  });
+
   it("uses normalized global album artwork for catalog-only rows", () => {
     const track = toTrackRowData({
       id: "track-global-1",

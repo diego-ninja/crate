@@ -156,8 +156,10 @@ def test_home_hero_builder_preserves_recent_arrival_order(monkeypatch):
     )
     monkeypatch.setattr(
         queries,
-        "get_artist_genres_map",
-        lambda names: {name: ["hardcore", "mathcore"] for name in names},
+        "get_artist_genre_profiles_map",
+        lambda names, **_: {
+            name: [{"name": "hardcore"}, {"name": "mathcore"}] for name in names
+        },
     )
 
     with collect_home_debug() as diagnostics:
@@ -200,7 +202,9 @@ def test_home_hero_builder_personalizes_a_larger_candidate_pool(monkeypatch):
         ]
 
     monkeypatch.setattr(queries, "get_home_hero_rows", get_rows)
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     heroes = queries.get_home_hero(7, ["followed match"], [], ["hardcore"])
 
@@ -226,7 +230,9 @@ def test_home_hero_builder_deduplicates_visible_artist_names(monkeypatch):
         "get_home_hero_rows",
         lambda **_: [first_dredg, second_dredg, other],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     heroes = queries.get_home_hero(7, [], [], [])
 
@@ -240,7 +246,9 @@ def test_home_hero_builder_preserves_artwork_provenance(monkeypatch):
     specific = _hero_row("Editorial Hero", listeners=1_000)
     specific["artwork_provenance"] = "specific"
     monkeypatch.setattr(queries, "get_home_hero_rows", lambda **_: [specific])
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     heroes = queries.get_home_hero(7, [], [], [])
 
@@ -275,7 +283,9 @@ def test_home_hero_builder_exposes_fill_bounds_without_internal_recipe(monkeypat
         }
     )
     monkeypatch.setattr(queries, "get_home_hero_rows", lambda **_: [specific])
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     heroes = queries.get_home_hero(7, [], [], [])
 
@@ -301,13 +311,15 @@ def _prepared_hero_row(
     review_status: str = "approved",
     provenance: str = "manual",
 ) -> dict:
+    from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
+
     row = _hero_row(name, listeners=1_000)
     row.update(
         {
             "_hero_provenance": provenance,
             "_hero_review_status": review_status,
             "artwork_provenance": "specific" if provenance == "manual" else "derived",
-            "artwork_revision": "cover-fit-v4:prepared",
+            "artwork_revision": f"{ARTIST_HERO_RENDER_VERSION}:prepared",
             "_hero_source_width": 1480,
             "_hero_source_height": 600,
         }
@@ -339,7 +351,9 @@ def test_home_hero_bundle_selects_ready_artists_per_surface(monkeypatch):
         "get_home_hero_rows",
         lambda **_: [desktop_only, mobile_only, unavailable],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -365,7 +379,9 @@ def test_home_hero_bundle_selects_up_to_eight_desktop_artists(monkeypatch):
         "get_home_hero_rows",
         lambda **_: desktop_ready,
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -396,7 +412,9 @@ def test_home_hero_bundle_does_not_lose_ready_desktop_artists_to_fallbacks(
         "get_home_hero_rows",
         lambda **_: fallback_candidates + desktop_ready,
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -424,7 +442,9 @@ def test_home_hero_bundle_skips_artist_without_mobile_source(monkeypatch):
         "get_home_hero_rows",
         lambda **_: [desktop_only, mobile_ready],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -446,7 +466,9 @@ def test_home_hero_bundle_hides_surfaces_without_manual_approved_artwork(
         "get_home_hero_rows",
         lambda **_: [derived, pending],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -469,7 +491,9 @@ def test_home_hero_bundle_falls_back_to_legacy_without_featured_candidates(monke
         "get_home_hero_rows",
         lambda **_: [legacy],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 
@@ -496,7 +520,9 @@ def test_home_hero_bundle_keeps_non_featured_artists_out_of_canonical_surfaces(
         "get_home_hero_rows",
         lambda **_: [legacy, featured],
     )
-    monkeypatch.setattr(queries, "get_artist_genres_map", lambda _names: {})
+    monkeypatch.setattr(
+        queries, "get_artist_genre_profiles_map", lambda _names, **_: {}
+    )
 
     bundle = queries.get_home_hero_bundle(7, [], [], [])
 

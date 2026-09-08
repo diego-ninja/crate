@@ -99,7 +99,12 @@ export function Shell() {
       </div>
 
       <div className="z-app-header fixed inset-x-0 top-0 flex items-center gap-3 border-b border-white/6 bg-app-surface/75 px-4 py-3 backdrop-blur-xl md:hidden">
-        <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Open navigation"
+          onClick={() => setMobileOpen(true)}
+        >
           <Menu size={20} />
         </Button>
         <div className="text-sm font-bold text-white">Crate Admin</div>

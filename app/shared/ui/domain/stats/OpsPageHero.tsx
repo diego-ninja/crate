@@ -21,21 +21,21 @@ export function OpsPageHero({
   return (
     <section
       className={cn(
-        "rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+        "rounded-md border border-border-quiet bg-panel-surface/95 p-5 shadow-card backdrop-blur-xl",
         className,
       )}
     >
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+            <div className="flex size-12 items-center justify-center rounded-md border border-accent-action/20 bg-accent-action/12 text-accent-action shadow-accent-action-status">
               <Icon size={22} />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 {title}
               </h1>
-              <p className="text-sm text-white/55">{description}</p>
+              <p className="text-sm text-text-primary/55">{description}</p>
             </div>
           </div>
           {children ? (

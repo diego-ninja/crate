@@ -16,8 +16,11 @@ describe("PlayerVolumeControl", () => {
 
     const button = screen.getByRole("button", { name: "Volume" });
     expect(button.className).not.toContain("hover:bg");
-    expect(button.className).toContain("hover:text-primary");
-    expect(button.className).toContain("hover:drop-shadow");
+    expect(button.className).toContain("text-text-muted");
+    expect(button.className).toContain("hover:text-accent-action");
+    expect(button.className).toContain("hover:drop-shadow-accent-action");
+    expect(button.className).not.toContain("text-white/30");
+    expect(button.className).not.toContain("rgba(");
   });
 
   it("localizes volume controls", () => {
@@ -33,5 +36,23 @@ describe("PlayerVolumeControl", () => {
     fireEvent.click(screen.getByRole("button", { name: "Activar sonido" }));
 
     expect(screen.getByRole("slider", { name: "Volumen" })).toBeVisible();
+  });
+
+  it("uses semantic tokens for the volume track and thumb", () => {
+    renderWithListenProviders(
+      <PlayerVolumeControl
+        volume={0.5}
+        onVolumeChange={vi.fn()}
+        onOverlayChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Volume" }));
+
+    const slider = screen.getByRole("slider", { name: "Volume" });
+    const progressTrack = slider;
+
+    expect(progressTrack?.className).toContain("listen-player-progress");
+    expect(progressTrack?.innerHTML).not.toContain("rgba(");
   });
 });

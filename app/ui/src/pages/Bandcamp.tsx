@@ -472,7 +472,9 @@ function MatchRow({
             variant="ghost"
             size="sm"
             className="gap-2 rounded-full"
-            onClick={() => window.open(match.item_url || "", "_blank")}
+            onClick={() =>
+              window.open(match.item_url || "", "_blank", "noopener,noreferrer")
+            }
           >
             <ExternalLink className="h-4 w-4" />
             Open
@@ -511,7 +513,10 @@ function ConfirmedMatchCard({ match }: { match: BandcampMatch }) {
     <button
       type="button"
       className="group min-w-0 rounded-2xl border border-white/8 bg-black/18 p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
-      onClick={() => match.item_url && window.open(match.item_url, "_blank")}
+      onClick={() =>
+        match.item_url &&
+        window.open(match.item_url, "_blank", "noopener,noreferrer")
+      }
     >
       <ItemCover item={match} large />
       <div className="mt-3 min-w-0">
@@ -543,7 +548,10 @@ function CompactItemList({
           key={`${item.id}-${item.item_url}`}
           type="button"
           className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-black/16 p-3 text-left transition hover:border-primary/35"
-          onClick={() => item.item_url && window.open(item.item_url, "_blank")}
+          onClick={() =>
+            item.item_url &&
+            window.open(item.item_url, "_blank", "noopener,noreferrer")
+          }
         >
           <ItemCover item={item} />
           <div className="min-w-0 flex-1">
@@ -599,7 +607,10 @@ function AdminCollectionList({ items }: { items: BandcampItem[] }) {
           key={`${item.user_email}-${item.id}-${item.item_url}`}
           type="button"
           className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-black/16 p-3 text-left transition hover:border-primary/35"
-          onClick={() => item.item_url && window.open(item.item_url, "_blank")}
+          onClick={() =>
+            item.item_url &&
+            window.open(item.item_url, "_blank", "noopener,noreferrer")
+          }
         >
           <ItemCover item={item} />
           <div className="min-w-0 flex-1">

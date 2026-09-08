@@ -119,6 +119,8 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
     } finally {
       if (likedTracksRequestRef.current === controller) {
         likedTracksRequestRef.current = null;
+        // The identity guard prevents an older request from clearing a newer one.
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally
         setLoading(false);
       }
     }

@@ -2025,12 +2025,18 @@ def _handle_update_artist_metadata(task_id: str, params: dict, config: dict) -> 
     )
 
     try:
-        from crate.api.cache_events import broadcast_invalidation
+        from crate.api.cache_events import (
+            broadcast_invalidation,
+            wait_for_cache_invalidation,
+        )
 
         scopes = ["library", "home"]
+        if "bio" in changed_fields:
+            scopes.append("artist_bio")
         if result.get("artist_id"):
             scopes.append(f"artist:{result['artist_id']}")
         broadcast_invalidation(*scopes)
+        wait_for_cache_invalidation()
     except Exception:
         log.debug("Failed to broadcast artist metadata invalidation", exc_info=True)
 

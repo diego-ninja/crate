@@ -5,8 +5,9 @@ import { CratePill, CrateChip } from "./CrateBadge";
 
 describe("CratePill", () => {
   it("renders children", () => {
-    render(<CratePill>Label</CratePill>);
+    const { container } = render(<CratePill>Label</CratePill>);
     expect(screen.getByText("Label")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveClass("text-badge");
   });
 
   it("renders as a button when onClick is provided", () => {
@@ -38,8 +39,9 @@ describe("CratePill", () => {
 
 describe("CrateChip", () => {
   it("renders children", () => {
-    render(<CrateChip>Tag</CrateChip>);
+    const { container } = render(<CrateChip>Tag</CrateChip>);
     expect(screen.getByText("Tag")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveClass("text-badge");
   });
 
   it("renders as a span", () => {

@@ -101,6 +101,9 @@ describe("TopBarUserMenu", () => {
   it("uses the canonical glass context menu on desktop", async () => {
     renderMenu();
 
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveClass(
+      "shadow-icon-control",
+    );
     fireEvent.click(screen.getByRole("button", { name: "User menu" }));
 
     const menu = screen.getByRole("menu");
@@ -171,7 +174,7 @@ describe("TopBarUserMenu", () => {
       screen.getByPlaceholderText("High Vis, Denzel Curry, ..."),
     ).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("Bandcamp, Tidal, Spotify, YouTube..."),
+      screen.getByPlaceholderText("Bandcamp, Tidal, Spotify, YouTube…"),
     ).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("¿Por qué debería estar en Crate?"),

@@ -411,11 +411,12 @@ function NodeDetailPanel({
               </Button>
             </div>
           </div>
-          <label className="block">
+          <label htmlFor="genre-description" className="block">
             <span className="text-[11px] uppercase tracking-wider text-white/35">
               Description
             </span>
             <textarea
+              id="genre-description"
               value={descriptionDraft}
               onChange={(event) => setDescriptionDraft(event.target.value)}
               rows={3}
@@ -423,8 +424,12 @@ function NodeDetailPanel({
               placeholder="Short editorial description for this genre."
             />
           </label>
-          <label className="inline-flex items-center gap-2 text-xs text-white/60">
+          <label
+            htmlFor="genre-top-level"
+            className="inline-flex items-center gap-2 text-xs text-white/60"
+          >
             <input
+              id="genre-top-level"
               type="checkbox"
               checked={topLevelDraft}
               onChange={(event) => setTopLevelDraft(event.target.checked)}
@@ -677,7 +682,14 @@ function NodeDetailPanel({
                     Save
                   </Button>
                 </div>
+                <label
+                  htmlFor={`genre-relation-${config.key}`}
+                  className="sr-only"
+                >
+                  {config.label}
+                </label>
                 <input
+                  id={`genre-relation-${config.key}`}
                   value={value}
                   onChange={(event) =>
                     setRelationDrafts((prev) => ({
@@ -1018,24 +1030,20 @@ export function GenreTaxonomyTree({
 
     return (
       <div key={slug}>
-        <button
-          type="button"
+        <div
           className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
             isSelected
               ? "border-cyan-400/40 bg-cyan-400/10"
               : "border-white/6 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]"
           }`}
           style={{ paddingLeft: depth * 16 + 10 }}
-          onClick={() => setSelectedSlug(isSelected ? null : slug)}
         >
           {hasChildren ? (
-            <span
-              role="button"
+            <button
+              type="button"
+              aria-label={`${open ? "Collapse" : "Expand"} ${node.name}`}
               className="flex-shrink-0 p-0.5 rounded hover:bg-white/10"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpand(slug);
-              }}
+              onClick={() => toggleExpand(slug)}
             >
               <ChevronRight
                 size={12}
@@ -1043,34 +1051,44 @@ export function GenreTaxonomyTree({
                   open ? "rotate-90" : ""
                 }`}
               />
-            </span>
+            </button>
           ) : (
             <span className="w-4 flex-shrink-0" />
           )}
-          <span
-            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-              empty ? "bg-white/15" : hasPreset ? "bg-cyan-400" : "bg-white/25"
-            }`}
-          />
-          <span
-            className={`flex-1 truncate font-medium ${
-              isSelected
-                ? "text-cyan-100"
-                : empty
-                  ? "text-white/30"
-                  : node.top_level
-                    ? "text-white"
-                    : "text-white/75"
-            }`}
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent p-0 text-left text-sm"
+            onClick={() => setSelectedSlug(isSelected ? null : slug)}
           >
-            {node.name}
-          </span>
-          {node.artist_count > 0 && (
-            <span className="text-[10px] tabular-nums text-white/30 flex-shrink-0">
-              {node.artist_count}
+            <span
+              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+                empty
+                  ? "bg-white/15"
+                  : hasPreset
+                    ? "bg-cyan-400"
+                    : "bg-white/25"
+              }`}
+            />
+            <span
+              className={`flex-1 truncate font-medium ${
+                isSelected
+                  ? "text-cyan-100"
+                  : empty
+                    ? "text-white/30"
+                    : node.top_level
+                      ? "text-white"
+                      : "text-white/75"
+              }`}
+            >
+              {node.name}
             </span>
-          )}
-        </button>
+            {node.artist_count > 0 && (
+              <span className="text-[10px] tabular-nums text-white/30 flex-shrink-0">
+                {node.artist_count}
+              </span>
+            )}
+          </button>
+        </div>
         {open &&
           node.children_slugs.map((childSlug) =>
             renderNode(childSlug, depth + 1),

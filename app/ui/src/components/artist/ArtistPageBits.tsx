@@ -74,7 +74,7 @@ export function SimilarArtistCard({
 
   const content = (
     <>
-      <div className="w-full aspect-square rounded-md overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-primary/30 transition-all duration-300 group-hover:scale-[1.03]">
+      <div className="w-full aspect-square rounded-md overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-primary/30 transition-[box-shadow,transform] duration-300 group-hover:scale-[1.03]">
         {!imgError && imageUrl ? (
           <img
             src={imageUrl}

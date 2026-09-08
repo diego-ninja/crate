@@ -35,7 +35,11 @@ describe("useCrateConnectEnabled", () => {
     cacheListener = null;
     mocks.isCrateConnectEnabled.mockReturnValue(false);
     mocks.fetchCrateConnectPreferences.mockResolvedValue({ enabled: false });
-    mocks.refreshCrateConnectPreferences.mockResolvedValue({ enabled: true });
+    mocks.refreshCrateConnectPreferences.mockImplementation(async () => {
+      mocks.isCrateConnectEnabled.mockReturnValue(true);
+      window.dispatchEvent(new Event("crate:connect-enabled-changed"));
+      return { enabled: true };
+    });
     mocks.onCacheInvalidation.mockImplementation((listener) => {
       cacheListener = listener;
       return vi.fn();

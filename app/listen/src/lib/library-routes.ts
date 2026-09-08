@@ -50,11 +50,13 @@ export const globalAlbumUidFromRouteRef = _globalAlbumUidFromRouteRef;
 export const albumSharePath = _albumSharePath;
 export const isReservedArtistChildSlug = _isReservedArtistChildSlug;
 
-function artworkUrl<F extends (...args: any[]) => string>(fn: F): F {
-  return ((...args: Parameters<F>) => {
+function artworkUrl<TArgs extends unknown[], TResult extends string>(
+  fn: (...args: TArgs) => TResult,
+): (...args: TArgs) => TResult {
+  return ((...args: TArgs) => {
     const path = fn(...args);
     return path ? apiAssetUrl(path) : path;
-  }) as F;
+  }) as (...args: TArgs) => TResult;
 }
 
 function withAssetAuth(path: string): string {
@@ -84,10 +86,14 @@ export function responsiveImageSrcSet(
   buildUrl: (size: number) => string,
 ): string | undefined {
   const candidates = [...new Set(widths)]
-    .filter((width) => Number.isFinite(width) && width > 0)
-    .sort((left, right) => left - right)
-    .map((width) => [Math.round(width), buildUrl(Math.round(width))] as const)
-    .filter(([, url]) => Boolean(url));
+    .reduce<Array<readonly [number, string]>>((items, width) => {
+      if (!Number.isFinite(width) || width <= 0) return items;
+      const roundedWidth = Math.round(width);
+      const url = buildUrl(roundedWidth);
+      if (url) items.push([roundedWidth, url]);
+      return items;
+    }, [])
+    .sort(([left], [right]) => left - right);
 
   return candidates.length
     ? candidates.map(([width, url]) => `${url} ${width}w`).join(", ")

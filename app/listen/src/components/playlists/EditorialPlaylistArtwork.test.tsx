@@ -22,10 +22,15 @@ describe("EditorialPlaylistArtwork", () => {
   });
 
   it("renders the Crate editorial mark instead of decorative diamonds", () => {
-    render(<EditorialPlaylistArtwork title="Hardcore" kicker="Core Tracks" />);
+    const { container } = render(
+      <EditorialPlaylistArtwork title="Hardcore" kicker="Core Tracks" />,
+    );
 
     expect(screen.getByText("Hardcore")).toBeInTheDocument();
     expect(screen.getByText("Core Tracks")).toBeInTheDocument();
-    expect(screen.getByTestId("crate-editorial-mark")).toBeInTheDocument();
+    expect(screen.getByTestId("crate-editorial-mark")).toHaveClass(
+      "drop-shadow-artwork-mark",
+    );
+    expect(container.innerHTML).not.toContain("rgba(");
   });
 });

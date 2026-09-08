@@ -101,13 +101,12 @@ export const AlbumCard = React.memo(function AlbumCard({
         "POST",
       );
       toast.success("Searching for cover...");
-      setTimeout(() => {
-        setImgError(false);
-        setImgLoaded(false);
-        setFetchingCover(false);
-      }, 8000);
+      await new Promise((resolve) => window.setTimeout(resolve, 8000));
+      setImgError(false);
+      setImgLoaded(false);
     } catch {
       toast.error("Failed to search for cover");
+    } finally {
       setFetchingCover(false);
     }
   }
@@ -125,6 +124,8 @@ export const AlbumCard = React.memo(function AlbumCard({
       albumSlug={albumSlug}
     >
       <div
+        role="link"
+        tabIndex={0}
         onClick={() =>
           navigate(
             albumPagePath({
@@ -136,6 +137,21 @@ export const AlbumCard = React.memo(function AlbumCard({
             }),
           )
         }
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            navigate(
+              albumPagePath({
+                albumId,
+                albumSlug,
+                artistSlug,
+                artistName: artist,
+                albumName: name,
+              }),
+            );
+          }
+        }}
         className="group cursor-pointer rounded-md p-2 text-left transition-colors hover:bg-white/5"
       >
         <div className="relative mb-3 aspect-square overflow-hidden rounded-md bg-white/5">

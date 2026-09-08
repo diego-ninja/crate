@@ -205,9 +205,7 @@ export function HomePlaylist() {
   if (!data) {
     return (
       <div className="space-y-4 py-16 text-center">
-        <p className="text-sm text-muted-foreground">
-          {t("playlist.notFound")}
-        </p>
+        <p className="text-sm text-text-muted">{t("playlist.notFound")}</p>
       </div>
     );
   }
@@ -289,7 +287,7 @@ export function HomePlaylist() {
         description={data.description}
         metaItems={playlistMetaItems}
         badges={
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-accent-action/25 bg-accent-action/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-accent-action">
             <Sparkles size={12} />
             {data.badge}
           </span>
@@ -313,13 +311,13 @@ export function HomePlaylist() {
 
         {data.tracks.length === 0 ? (
           <div className="flex items-center justify-center py-16">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-text-muted">
               {t("playlist.empty.noTracks")}
             </p>
           </div>
         ) : filteredTracks.length === 0 ? (
           <div className="flex items-center justify-center py-16">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-text-muted">
               {t("playlist.empty.noFilter")}
             </p>
           </div>
@@ -327,7 +325,13 @@ export function HomePlaylist() {
           <div className="space-y-1">
             {trackRows.map((row, index) => (
               <TrackRow
-                key={row.id ?? `${row.path}-${index}`}
+                key={
+                  row.id ??
+                  row.global_track_uid ??
+                  row.entity_uid ??
+                  row.path ??
+                  [row.artist, row.album, row.title].join(":")
+                }
                 track={row}
                 index={index + 1}
                 showCoverThumb

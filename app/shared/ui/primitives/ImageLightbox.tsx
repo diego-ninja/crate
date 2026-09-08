@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useRef,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useState,
   type TouchEvent as ReactTouchEvent,
@@ -18,14 +17,16 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
   const [open, setOpen] = useState(false);
   const isDismissedRef = useRef(false);
   const handleOverlayPointerDown = (
-    event: ReactPointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
     isDismissedRef.current = true;
     close();
   };
-  const handleOverlayTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+  const handleOverlayTouchStart = (
+    event: ReactTouchEvent<HTMLButtonElement>,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     isDismissedRef.current = true;
@@ -45,14 +46,21 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
 
   return (
     <>
-      <div onClick={() => setOpen(true)} className="cursor-zoom-in">
+      <button
+        type="button"
+        aria-label={`Open ${alt}`}
+        onClick={() => setOpen(true)}
+        className="block cursor-zoom-in border-0 bg-transparent p-0 text-left"
+      >
         {children}
-      </div>
+      </button>
       {open && (
-        <div
+        <button
+          type="button"
+          aria-label="Close image"
           onPointerDown={handleOverlayPointerDown}
           onTouchStart={handleOverlayTouchStart}
-          onClick={(event: ReactMouseEvent<HTMLDivElement>) => {
+          onClick={(event) => {
             if (isDismissedRef.current) {
               isDismissedRef.current = false;
               event.preventDefault();
@@ -61,7 +69,7 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
             }
             close();
           }}
-          className="fixed inset-0 z-app-modal flex items-center justify-center bg-black/80 animate-in fade-in duration-200"
+          className="fixed inset-0 z-app-modal flex items-center justify-center border-0 bg-surface-canvas/80 p-0 animate-in fade-in duration-200"
         >
           <img
             src={src}
@@ -69,7 +77,7 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
             onClick={(e) => e.stopPropagation()}
             className="max-w-[90vw] max-h-[90vh] rounded-md object-contain animate-in zoom-in-90 duration-200"
           />
-        </div>
+        </button>
       )}
     </>
   );

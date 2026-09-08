@@ -99,6 +99,8 @@ async function chunkedUpload(
         `${file.name}.part-${chunkIndex}`,
       );
 
+      // Chunks are sent in order so the server can commit a deterministic upload.
+      // react-doctor-disable-next-line async-await-in-loop
       await api(
         `/api/acquisition/upload/chunked/${init.upload_id}/chunk`,
         "POST",
@@ -178,29 +180,29 @@ export function Upload() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border-quiet bg-text-primary/[0.04] px-3 py-1 text-xs uppercase tracking-wider text-text-muted">
           <UploadIcon size={12} />
           {t("upload.badge")}
         </div>
-        <h1 className="text-3xl font-bold text-foreground">
+        <h1 className="text-3xl font-bold text-text-primary">
           {t("upload.title")}
         </h1>
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+        <p className="max-w-2xl text-sm leading-6 text-text-muted">
           {t("upload.subtitle")}
         </p>
       </div>
 
-      <div className="rounded-[12px] border border-white/10 bg-white/[0.04] p-6">
+      <div className="rounded-[12px] border border-border-quiet bg-text-primary/[0.04] p-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="space-y-4">
-            <label className="flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-10 text-center transition-colors hover:border-primary/40 hover:bg-white/[0.05]">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <label className="flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-text-primary/15 bg-text-primary/[0.03] px-6 py-10 text-center transition-colors hover:border-accent-action/40 hover:bg-text-primary/[0.05]">
+              <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-accent-action/15 text-accent-action">
                 <UploadIcon size={24} />
               </div>
-              <div className="text-base font-semibold text-foreground">
+              <div className="text-base font-semibold text-text-primary">
                 {t("upload.dropzone.title")}
               </div>
-              <div className="mt-2 text-sm text-muted-foreground">
+              <div className="mt-2 text-sm text-text-muted">
                 {t("upload.dropzone.formats")}
               </div>
               <input
@@ -213,13 +215,13 @@ export function Upload() {
             </label>
 
             {files.length > 0 ? (
-              <div className="space-y-2 rounded-xl border border-white/10 bg-[var(--gradient-bg-50)] p-4">
+              <div className="space-y-2 border-t border-border-quiet bg-surface-canvas/50 pt-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-semibold text-foreground">
+                    <div className="text-sm font-semibold text-text-primary">
                       {t("upload.ready.title")}
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-text-muted">
                       {t("upload.selectedFiles", {
                         count: files.length,
                         size: formatBytes(totalBytes),
@@ -228,7 +230,7 @@ export function Upload() {
                   </div>
                   <button
                     onClick={() => setFiles([])}
-                    className="text-xs text-muted-foreground transition-colors hover:text-white/70"
+                    className="text-xs text-text-muted transition-colors hover:text-text-primary/70"
                   >
                     {t("common.clear")}
                   </button>
@@ -237,17 +239,23 @@ export function Upload() {
                   {files.map((file) => (
                     <div
                       key={`${file.name}-${file.size}-${file.lastModified}`}
-                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-white/75"
+                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-text-primary/75"
                     >
                       {file.name.toLowerCase().endsWith(".zip") ? (
-                        <Archive size={14} className="shrink-0 text-primary" />
+                        <Archive
+                          size={14}
+                          className="shrink-0 text-accent-action"
+                        />
                       ) : (
-                        <Music size={14} className="shrink-0 text-primary" />
+                        <Music
+                          size={14}
+                          className="shrink-0 text-accent-action"
+                        />
                       )}
                       <span className="min-w-0 flex-1 truncate">
                         {file.name}
                       </span>
-                      <span className="text-[11px] text-white/40">
+                      <span className="text-xs text-text-primary/40">
                         {formatBytes(file.size)}
                       </span>
                     </div>
@@ -257,11 +265,11 @@ export function Upload() {
             ) : null}
           </div>
 
-          <div className="space-y-4 rounded-xl border border-white/10 bg-[var(--gradient-bg-50)] p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="space-y-4 border-l border-border-quiet pl-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
               {t("upload.next.title")}
             </h2>
-            <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
+            <ul className="space-y-3 text-sm leading-6 text-text-muted">
               <li>{t("upload.next.import")}</li>
               <li>{t("upload.next.enrichment")}</li>
               <li>{t("upload.next.liked")}</li>
@@ -271,7 +279,7 @@ export function Upload() {
             <button
               onClick={handleSubmit}
               disabled={submitting || files.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-accent-action px-4 py-3 text-sm font-semibold text-accent-action-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -286,12 +294,12 @@ export function Upload() {
                 : t("upload.import")}
             </button>
             {lastUpload ? (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              <div className="border-l-2 border-state-success/40 bg-state-success/10 px-4 py-3 text-sm text-state-success-text">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 size={15} />
                   {t("upload.status.queued")}
                 </div>
-                <div className="mt-1 text-xs text-emerald-100/80">
+                <div className="mt-1 text-xs text-state-success-text/80">
                   {t("upload.status.processing", {
                     taskId: lastUpload.task_id,
                     count: lastUpload.file_count,

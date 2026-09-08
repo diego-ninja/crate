@@ -131,6 +131,14 @@ describe("Explore", () => {
       screen.getByText("Find the route between scenes, artists and records."),
     ).toBeInTheDocument();
     expect(
+      screen
+        .getByText("Start from a track, artist, album or genre.")
+        .closest("button"),
+    ).toHaveClass("explore-feature-card");
+    expect(screen.getByText("Mathcore").closest("button")).toHaveClass(
+      "explore-genre-card",
+    );
+    expect(
       screen.getByText("Angular hardcore, odd meters and controlled chaos."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Scene")).toBeNull();
@@ -356,6 +364,9 @@ describe("Explore", () => {
     expect(
       screen.getByRole("button", { name: "Play genre radio" }),
     ).toHaveTextContent("Play");
+    expect(
+      screen.getByRole("button", { name: "Play genre radio" }),
+    ).toHaveClass("explore-genre-primary-action");
     expect(
       screen.getByRole("button", { name: "Open next genre show in Radar" }),
     ).toHaveTextContent("Next show");

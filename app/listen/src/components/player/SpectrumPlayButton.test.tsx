@@ -4,18 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 import { SpectrumPlayButton } from "./SpectrumPlayButton";
 
 describe("SpectrumPlayButton", () => {
-  it("renders an accessible cyan glow playback button", () => {
-    render(
+  it("renders an accessible tokenized glow playback button", () => {
+    const { container } = render(
       <SpectrumPlayButton aria-label="Play" size="lg">
         <span>Icon</span>
       </SpectrumPlayButton>,
     );
 
     const button = screen.getByRole("button", { name: "Play" });
-    expect(button.className).toContain("bg-[conic-gradient");
-    expect(button).toHaveClass("h-16");
-    expect(button.className).toContain("#22d3ee");
-    expect(button.className).toContain("rgba(34,211,238");
+    expect(button).toHaveClass("spectrum-play-button", "h-16");
+    expect(
+      container.querySelector(".spectrum-play-button-aura"),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".spectrum-play-button-rim"),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".spectrum-play-button-core"),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".spectrum-play-button-icon")).toHaveClass(
+      "text-text-primary",
+    );
+    expect(button.className).not.toContain("#");
+    expect(button.innerHTML).not.toContain("rgba(");
   });
 
   it("forwards click handlers", () => {
@@ -40,6 +51,7 @@ describe("SpectrumPlayButton", () => {
 
     const button = screen.getByRole("button", { name: "Pause" });
     expect(button).toHaveAttribute("data-active", "true");
+    expect(button).toHaveClass("spectrum-play-button");
     expect(button.innerHTML).toContain("animate-crate-play-aura-pulse");
     expect(button.innerHTML).toContain("animate-crate-play-rim-pulse");
     expect(button.innerHTML).toContain("animate-crate-play-core-pulse");

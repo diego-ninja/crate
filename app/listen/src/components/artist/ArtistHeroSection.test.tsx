@@ -119,6 +119,15 @@ describe("ArtistHeroSection", () => {
     );
 
     expect(screen.queryByText("hardcore")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-artist-hero-frame")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("mobile-artist-hero-frame").parentElement,
+    ).toHaveClass("h-full");
+    expect(screen.getByTestId("desktop-artist-hero-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-hero-scrim")).toBeInTheDocument();
+    expect(screen.getByTestId("desktop-hero-bottom-scrim")).toBeInTheDocument();
+    expect(screen.queryByTestId("artist-hero-mobile-gradient")).toBeNull();
+    expect(screen.queryByTestId("artist-hero-desktop-gradient")).toBeNull();
   });
 
   it("groups desktop hero actions into primary pills and secondary icon labels", () => {
@@ -164,12 +173,16 @@ describe("ArtistHeroSection", () => {
     });
     const playButton = within(primary).getByRole("button", { name: "Play" });
     expect(playButton).toHaveTextContent("Play");
-    expect(playButton).toHaveClass("rounded-lg");
+    expect(playButton).toHaveClass(
+      "rounded-lg",
+      "shadow-action-solid",
+      "hover:shadow-action-solid-hover",
+    );
     const shuffleButton = within(primary).getByRole("button", {
       name: "Shuffle",
     });
     expect(shuffleButton).toHaveTextContent("Shuffle");
-    expect(shuffleButton).toHaveClass("rounded-lg");
+    expect(shuffleButton).toHaveClass("rounded-lg", "shadow-control-inset");
 
     const actionRail = primary.parentElement;
     expect(actionRail).not.toBeNull();
@@ -299,13 +312,7 @@ describe("ArtistHeroSection", () => {
 
     const picture = screen.getByAltText("Crossed");
     expect(picture).toHaveAttribute("src", "/artist.jpg");
-    expect(picture.parentElement).toHaveClass(
-      "hidden",
-      "sm:block",
-      "rounded-full",
-      "h-40",
-      "w-40",
-    );
+    expect(picture.parentElement).toHaveClass("rounded-full", "size-40");
   });
 
   it("renders the desktop more menu outside the horizontally scrolling action row", async () => {
@@ -424,7 +431,7 @@ describe("ArtistHeroSection", () => {
       name: "Artist Radio",
     });
     expect(radio).toHaveTextContent("Radio");
-    expect(radio).toHaveClass("hover:text-primary");
+    expect(radio).toHaveClass("hover:text-accent-action");
     expect(radio.className).toContain("hover:drop-shadow");
     expect(radio).not.toHaveClass("rounded-lg");
 

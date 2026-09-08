@@ -51,7 +51,7 @@ const MULTIPLE_PREVIEW_ITEMS: HomeUpcomingItem[] = [
 
 describe("HomeUpcomingSection", () => {
   it("uses Radar as the visible destination name", () => {
-    renderWithRouter(
+    const { container } = renderWithRouter(
       <HomeUpcomingSection
         previewItems={PREVIEW_ITEMS}
         summary={{
@@ -70,6 +70,10 @@ describe("HomeUpcomingSection", () => {
       screen.getByRole("button", { name: "Open Radar" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Upcoming")).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".home-upcoming-feature"),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".home-upcoming-panel")).toBeInTheDocument();
   });
 
   it("does not repeat the featured event in the next-up list", () => {

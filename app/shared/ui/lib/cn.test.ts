@@ -14,6 +14,12 @@ describe("cn", () => {
     expect(cn("px-2", "px-4")).toBe("px-4");
   });
 
+  it("keeps badge typography when merged with a text color", () => {
+    expect(cn("text-badge", "text-[var(--active-text)]")).toBe(
+      "text-badge text-[var(--active-text)]",
+    );
+  });
+
   it("handles arrays and objects", () => {
     expect(cn(["a", "b"], { c: true, d: false })).toBe("a b c");
   });

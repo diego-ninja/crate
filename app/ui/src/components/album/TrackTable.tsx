@@ -67,6 +67,13 @@ interface Track {
   path?: string;
 }
 
+function getTrackLyricsSyncKey(track: Track): string {
+  if (track.id != null) return `id:${track.id}`;
+  if (track.entity_uid) return `uid:${track.entity_uid}`;
+  if (track.path) return `path:${track.path}`;
+  return `file:${track.filename}`;
+}
+
 export interface TrackLyricsStatus {
   status?: string;
   found?: boolean;
@@ -485,7 +492,10 @@ function MoveTrackDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label
+            htmlFor="move-track-target"
+            className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
             Target album
           </label>
           <div className="relative">
@@ -494,6 +504,7 @@ function MoveTrackDialog({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
             />
             <Input
+              id="move-track-target"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="pl-9"
@@ -603,6 +614,7 @@ function TrackAudioInfo({ track }: { track: AudioAnalysisTrack }) {
             variant="ghost"
             size="icon-xs"
             className="text-muted-foreground hover:text-primary"
+            aria-label="Show audio profile"
           >
             <BarChart3 size={13} />
           </Button>
@@ -734,13 +746,6 @@ export function TrackTable({
   function getTrackId(track: Track): string {
     if (track.id != null) return String(track.id);
     return track.path ?? `${artist}/${track.filename}`;
-  }
-
-  function getTrackLyricsSyncKey(track: Track): string {
-    if (track.id != null) return `id:${track.id}`;
-    if (track.entity_uid) return `uid:${track.entity_uid}`;
-    if (track.path) return `path:${track.path}`;
-    return `file:${track.filename}`;
   }
 
   async function quarantineTrack(track: Track) {

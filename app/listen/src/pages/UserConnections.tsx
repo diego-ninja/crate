@@ -19,7 +19,7 @@ function UserAvatar({
   name,
   avatar,
   userId,
-  className = "h-11 w-11",
+  className = " size-11",
 }: {
   name: string;
   avatar?: string | null;
@@ -40,7 +40,7 @@ function UserAvatar({
   const initial = name.trim().charAt(0).toUpperCase() || "U";
   return (
     <div
-      className={`${className} rounded-full bg-cyan-400/15 text-cyan-300 flex items-center justify-center font-semibold`}
+      className={`${className} rounded-full bg-accent-action/15 text-text-accent flex items-center justify-center font-semibold`}
     >
       {initial}
     </div>
@@ -64,28 +64,28 @@ export function UserConnections() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[12px] border border-white/10 bg-white/5 p-5 sm:p-6">
+      <div className="rounded-[12px] border border-border-quiet bg-text-primary/5 p-5 sm:p-6">
         <Link
           to={username ? `/users/${username}` : "/people"}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors"
         >
           <ArrowLeft size={14} />
           {t("userConnections.backToProfile")}
         </Link>
         <div className="mt-4 flex items-center gap-3">
-          <Users size={18} className="text-cyan-300" />
+          <Users size={18} className="text-text-accent" />
           <div>
-            <h1 className="text-3xl font-bold text-foreground">{title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h1 className="text-3xl font-bold text-text-primary">{title}</h1>
+            <p className="mt-1 text-sm text-text-muted">
               {t("userConnections.subtitle", { username })}
             </p>
           </div>
         </div>
       </div>
 
-      <section className="rounded-[12px] border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+      <section className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5 sm:p-6">
         {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <div className="flex items-center justify-center py-12 text-text-muted">
             <Loader2 size={18} className="animate-spin" />
           </div>
         ) : data && data.length > 0 ? (
@@ -98,7 +98,7 @@ export function UserConnections() {
                   key={`${mode}-${item.id}`}
                   username={item.username}
                   hoverClassName="block"
-                  className="flex items-center gap-4 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+                  className="flex items-center gap-4 rounded-lg border border-border-quiet bg-text-primary/[0.02] px-4 py-3 hover:bg-text-primary/[0.05] transition-colors"
                 >
                   <UserAvatar
                     name={label}
@@ -106,16 +106,16 @@ export function UserConnections() {
                     userId={item.id}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">
+                    <div className="truncate text-sm font-medium text-text-primary">
                       {label}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">
+                    <div className="truncate text-xs text-text-muted">
                       {item.username
                         ? `@${item.username}`
                         : t("people.noUsername")}
                     </div>
                   </div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/65">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-border-quiet px-3 py-1.5 text-xs text-text-primary/65">
                     <UserPlus size={13} />
                     {t("people.viewProfile")}
                   </div>
@@ -124,7 +124,7 @@ export function UserConnections() {
             })}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-white/10 px-4 py-10 text-center text-sm text-muted-foreground">
+          <div className="border-y border-dashed border-border-quiet px-4 py-10 text-center text-sm text-text-muted">
             {mode === "following"
               ? t("userConnections.empty.following")
               : t("userConnections.empty.followers")}

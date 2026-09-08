@@ -49,6 +49,9 @@ interface LogsSnapshotData {
   workers: WorkerInfo[];
 }
 
+const EMPTY_LOGS: LogEntry[] = [];
+const EMPTY_WORKERS: WorkerInfo[] = [];
+
 const KNOWN_CATEGORIES = [
   "general",
   "enrichment",
@@ -276,13 +279,14 @@ export function Logs() {
     };
   }, [autoRefresh]);
 
-  const logs = snapshot?.logs ?? [];
-  const workers = snapshot?.workers ?? [];
+  const logs = snapshot?.logs ?? EMPTY_LOGS;
+  const workers = snapshot?.workers ?? EMPTY_WORKERS;
 
   const categories = useMemo(() => {
-    const dynamic = new Set(
-      logs.map((entry) => entry.category).filter(Boolean),
-    );
+    const dynamic = new Set<string>();
+    for (const entry of logs) {
+      if (entry.category) dynamic.add(entry.category);
+    }
     for (const categoryName of KNOWN_CATEGORIES) dynamic.add(categoryName);
     return [...dynamic].sort((a, b) => a.localeCompare(b));
   }, [logs]);

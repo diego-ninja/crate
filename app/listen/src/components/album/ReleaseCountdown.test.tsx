@@ -31,7 +31,8 @@ describe("ReleaseCountdown", () => {
     renderWithListenProviders(<ReleaseCountdown releaseDate="2026-08-02" />);
 
     expect(screen.getByTestId("release-countdown")).toHaveClass(
-      "sm:bg-[#101419]/88",
+      "release-countdown-surface",
+      "shadow-card",
       "sm:backdrop-blur-none",
       "sm:backdrop-saturate-100",
     );
@@ -41,12 +42,13 @@ describe("ReleaseCountdown", () => {
     renderWithListenProviders(<ReleaseCountdown releaseDate="2026-08-02" />);
 
     expect(screen.getByTestId("release-countdown")).toHaveClass(
-      "bg-[#0b1520]/45",
+      "release-countdown-surface",
       "backdrop-blur-2xl",
       "backdrop-saturate-150",
-      "border-white/20",
+      "border-text-primary/20",
     );
     expect(screen.getByTestId("release-countdown-glass-sheen")).toHaveClass(
+      "release-countdown-sheen",
       "sm:hidden",
     );
   });
@@ -56,7 +58,7 @@ describe("ReleaseCountdown", () => {
 
     const countdown = screen.getByTestId("release-countdown");
     const hasCyanTopRule = Array.from(countdown.querySelectorAll("*")).some(
-      (element) => element.classList.contains("bg-primary/90"),
+      (element) => element.classList.contains("bg-accent-action/90"),
     );
 
     expect(hasCyanTopRule).toBe(false);

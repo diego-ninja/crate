@@ -114,6 +114,10 @@ export function getDevLogs(): DevLogEntry[] {
   return [...readLogs()];
 }
 
+export function getDevLogsSnapshot(): DevLogEntry[] {
+  return readLogs();
+}
+
 export function clearDevLogs(): void {
   if (typeof window === "undefined") return;
   window.__crateDevLogs = [];

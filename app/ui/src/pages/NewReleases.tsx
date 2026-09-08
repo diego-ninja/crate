@@ -58,6 +58,8 @@ interface NewReleasesSurface {
   releases: Release[];
 }
 
+const EMPTY_RELEASES: Release[] = [];
+
 type ViewMode = "timeline" | "grid";
 type StatusFilter =
   | "all"
@@ -403,7 +405,8 @@ export function NewReleases() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("detected");
   const [typeFilter, setTypeFilter] = useState("");
   const [view, setView] = useState<ViewMode>("timeline");
-  const releases = liveSurface?.releases ?? releaseSurface?.releases ?? [];
+  const releases =
+    liveSurface?.releases ?? releaseSurface?.releases ?? EMPTY_RELEASES;
 
   useEffect(() => {
     const stream = new EventSource(

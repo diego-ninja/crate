@@ -57,6 +57,20 @@ describe("TranslationOverlay", () => {
 
     expect(await screen.findByText("Translation Mode")).toBeInTheDocument();
     expect(screen.getAllByText("player.play").length).toBeGreaterThan(0);
+    expect(screen.getByText("Translation Mode").parentElement).toHaveClass(
+      "shadow-translation-marker",
+    );
+  });
+
+  it("uses the muted semantic shadow before a marker is hovered", async () => {
+    vi.stubEnv("VITE_TRANSLATION_MODE", "1");
+    renderOverlay();
+
+    fireEvent.keyDown(window, { key: "t", ctrlKey: true, altKey: true });
+
+    expect(screen.getByText("Translation Mode")).toHaveClass(
+      "shadow-translation-marker-muted",
+    );
   });
 
   it("opens an editor and saves changes to the dev catalog endpoint", async () => {
@@ -80,6 +94,7 @@ describe("TranslationOverlay", () => {
     expect(await screen.findByRole("dialog")).toHaveAccessibleName(
       "Edit translation",
     );
+    expect(screen.getByRole("dialog")).toHaveClass("shadow-translation-editor");
     expect(screen.getAllByText("player.play").length).toBeGreaterThan(0);
     expect(screen.getByText("Play")).toBeInTheDocument();
     expect(screen.getByText("Not checked locally")).toBeInTheDocument();

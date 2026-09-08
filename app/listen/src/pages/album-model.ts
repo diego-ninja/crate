@@ -76,9 +76,9 @@ export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
     data.cover_url ||
     undefined;
 
-  return data.tracks
-    .filter((track) => track.is_available !== false)
-    .map((track) =>
+  return data.tracks.reduce<Track[]>((tracks, track) => {
+    if (track.is_available === false) return tracks;
+    tracks.push(
       toPlayableTrack(
         {
           id: track.id,
@@ -114,6 +114,8 @@ export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
         { cover },
       ),
     );
+    return tracks;
+  }, []);
 }
 
 export function buildAlbumQualityBadges(

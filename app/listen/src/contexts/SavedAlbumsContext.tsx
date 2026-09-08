@@ -24,6 +24,31 @@ export interface SavedAlbum {
   total_duration: number;
 }
 
+type SavedAlbumMutation = "saved" | "unsaved";
+
+function albumReferenceKeys(
+  albumId?: number | null,
+  globalAlbumUid?: string | null,
+): string[] {
+  return [
+    ...(globalAlbumUid ? [`global:${globalAlbumUid}`] : []),
+    ...(albumId != null ? [`local:${albumId}`] : []),
+  ];
+}
+
+function savedAlbumReferenceKeys(album: SavedAlbum): string[] {
+  return albumReferenceKeys(album.id, album.global_album_uid);
+}
+
+function matchesSavedAlbum(
+  album: SavedAlbum,
+  albumId?: number | null,
+  globalAlbumUid?: string | null,
+): boolean {
+  const requestedKeys = new Set(albumReferenceKeys(albumId, globalAlbumUid));
+  return savedAlbumReferenceKeys(album).some((key) => requestedKeys.has(key));
+}
+
 interface SavedAlbumsContextValue {
   savedAlbums: SavedAlbum[];
   loading: boolean;
@@ -48,6 +73,9 @@ const SavedAlbumsContext = createContext<SavedAlbumsContextValue | null>(null);
 export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
   const [savedAlbums, setSavedAlbums] = useState<SavedAlbum[]>([]);
   const [loading, setLoading] = useState(true);
+  const [optimisticMutations, setOptimisticMutations] = useState<
+    Record<string, SavedAlbumMutation>
+  >({});
   const savedAlbumsRequestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
@@ -64,7 +92,25 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
           signal: controller.signal,
         },
       );
-      setSavedAlbums(Array.isArray(albums) ? albums : []);
+      if (savedAlbumsRequestRef.current !== controller) return;
+      const nextAlbums = Array.isArray(albums) ? albums : [];
+      const serverKeys = new Set(
+        nextAlbums.flatMap((album) => savedAlbumReferenceKeys(album)),
+      );
+      setSavedAlbums(nextAlbums);
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const [key, mutation] of Object.entries(current)) {
+          const present = serverKeys.has(key);
+          if (
+            (mutation === "saved" && present) ||
+            (mutation === "unsaved" && !present)
+          ) {
+            delete next[key];
+          }
+        }
+        return next;
+      });
     } catch (error) {
       if (controller.signal.aborted || (error as Error).name === "AbortError") {
         return;
@@ -72,6 +118,8 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
     } finally {
       if (savedAlbumsRequestRef.current === controller) {
         savedAlbumsRequestRef.current = null;
+        // The identity guard prevents an older request from clearing a newer one.
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally
         setLoading(false);
       }
     }
@@ -111,26 +159,48 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
 
   const isSaved = useCallback(
     (albumId?: number | null, globalAlbumUid?: string | null) => {
+      const keys = albumReferenceKeys(albumId, globalAlbumUid);
+      const preferredKey = keys[0];
+      const mutation = preferredKey ? optimisticMutations[preferredKey] : null;
+      if (mutation === "saved") return true;
+      if (mutation === "unsaved") return false;
       if (globalAlbumUid) return savedGlobalUids.has(globalAlbumUid);
       if (albumId == null) return false;
       return savedIds.has(albumId);
     },
-    [savedGlobalUids, savedIds],
+    [optimisticMutations, savedGlobalUids, savedIds],
   );
 
   const saveAlbum = useCallback(
     async (albumId?: number | null, globalAlbumUid?: string | null) => {
       if (albumId == null && !globalAlbumUid) return false;
-      if (globalAlbumUid) {
-        await api(
-          `/api/catalog/me/albums/${encodeURIComponent(globalAlbumUid)}/save`,
-          "POST",
-        );
-      } else {
-        await api("/api/me/albums", "POST", { album_id: albumId });
+      const keys = albumReferenceKeys(albumId, globalAlbumUid);
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const key of keys) next[key] = "saved";
+        return next;
+      });
+      try {
+        if (globalAlbumUid) {
+          await api(
+            `/api/catalog/me/albums/${encodeURIComponent(globalAlbumUid)}/save`,
+            "POST",
+          );
+        } else {
+          await api("/api/me/albums", "POST", { album_id: albumId });
+        }
+        await refetch();
+        return true;
+      } catch (error) {
+        setOptimisticMutations((current) => {
+          const next = { ...current };
+          for (const key of keys) {
+            if (next[key] === "saved") delete next[key];
+          }
+          return next;
+        });
+        throw error;
       }
-      await refetch();
-      return true;
     },
     [refetch],
   );
@@ -138,19 +208,34 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
   const unsaveAlbum = useCallback(
     async (albumId?: number | null, globalAlbumUid?: string | null) => {
       if (albumId == null && !globalAlbumUid) return false;
-      if (globalAlbumUid) {
-        await api(
-          `/api/catalog/me/albums/${encodeURIComponent(globalAlbumUid)}/save`,
-          "DELETE",
-        );
-      } else {
-        await api(`/api/me/albums/${albumId}`, "DELETE");
+      const keys = albumReferenceKeys(albumId, globalAlbumUid);
+      setOptimisticMutations((current) => {
+        const next = { ...current };
+        for (const key of keys) next[key] = "unsaved";
+        return next;
+      });
+      try {
+        if (globalAlbumUid) {
+          await api(
+            `/api/catalog/me/albums/${encodeURIComponent(globalAlbumUid)}/save`,
+            "DELETE",
+          );
+        } else {
+          await api(`/api/me/albums/${albumId}`, "DELETE");
+        }
+      } catch (error) {
+        setOptimisticMutations((current) => {
+          const next = { ...current };
+          for (const key of keys) {
+            if (next[key] === "unsaved") delete next[key];
+          }
+          return next;
+        });
+        throw error;
       }
       setSavedAlbums((prev) =>
-        prev.filter((album) =>
-          globalAlbumUid
-            ? album.global_album_uid !== globalAlbumUid
-            : album.id !== albumId,
+        prev.filter(
+          (album) => !matchesSavedAlbum(album, albumId, globalAlbumUid),
         ),
       );
       return true;
@@ -161,16 +246,12 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
   const toggleAlbumSaved = useCallback(
     async (albumId?: number | null, globalAlbumUid?: string | null) => {
       if (albumId == null && !globalAlbumUid) return false;
-      if (
-        globalAlbumUid
-          ? savedGlobalUids.has(globalAlbumUid)
-          : albumId != null && savedIds.has(albumId)
-      ) {
+      if (isSaved(albumId, globalAlbumUid)) {
         return unsaveAlbum(albumId, globalAlbumUid);
       }
       return saveAlbum(albumId, globalAlbumUid);
     },
-    [saveAlbum, savedGlobalUids, savedIds, unsaveAlbum],
+    [isSaved, saveAlbum, unsaveAlbum],
   );
 
   const value = useMemo<SavedAlbumsContextValue>(

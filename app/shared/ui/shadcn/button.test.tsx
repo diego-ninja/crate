@@ -31,6 +31,14 @@ describe("Button", () => {
     );
   });
 
+  it("uses semantic tokens for the default action", () => {
+    render(<Button>Save</Button>);
+    expect(screen.getByRole("button")).toHaveClass(
+      "bg-accent-action",
+      "text-accent-action-foreground",
+    );
+  });
+
   it("applies size data attribute", () => {
     render(<Button size="sm">Small</Button>);
     expect(screen.getByRole("button")).toHaveAttribute("data-size", "sm");

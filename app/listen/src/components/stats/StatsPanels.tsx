@@ -17,18 +17,16 @@ export function OverviewCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-[12px] border border-white/10 bg-white/[0.03] p-5">
+    <div className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-text-primary/40">
             {label}
           </p>
-          <p className="mt-3 text-2xl font-bold text-foreground">{value}</p>
-          {hint ? (
-            <p className="mt-2 text-sm text-muted-foreground">{hint}</p>
-          ) : null}
+          <p className="mt-3 text-2xl font-bold text-text-primary">{value}</p>
+          {hint ? <p className="mt-2 text-sm text-text-muted">{hint}</p> : null}
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
+        <div className="flex size-10 items-center justify-center rounded-xl border border-accent-action/15 bg-accent-action/10 text-accent-action">
           <Icon size={18} />
         </div>
       </div>
@@ -46,11 +44,11 @@ export function StatsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[12px] border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+    <section className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5 sm:p-6">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
         {subtitle ? (
-          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+          <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
         ) : null}
       </div>
       {children}
@@ -68,15 +66,15 @@ export function WindowPicker({
   const { t } = useTranslation();
 
   return (
-    <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-white/10 bg-black/25 p-1 shadow-2xl shadow-black/20 backdrop-blur">
+    <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-border-quiet bg-surface-canvas/25 p-1 backdrop-blur">
       {STATS_WINDOW_OPTIONS.map((option) => (
         <button
           key={option.value}
           onClick={() => onChange(option.value)}
           className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black uppercase tracking-[0.12em] transition-all ${
             value === option.value
-              ? "bg-primary text-primary-foreground shadow-[0_0_24px_rgba(34,211,238,0.28)]"
-              : "text-muted-foreground hover:bg-white/5 hover:text-white"
+              ? "bg-accent-action text-accent-action-foreground shadow-accent-action"
+              : "text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           }`}
         >
           {t(option.label)}
@@ -101,17 +99,15 @@ export function TopList({
   const hasVisibleItems = Children.count(children) > 0;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/10 p-4">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    <div className="rounded-xl border border-border-quiet bg-surface-canvas/10 p-4">
+      <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
       <div className="mt-3 space-y-2">
         {loading ? (
-          <p className="text-sm text-muted-foreground">
-            {t("common.loadingShort")}
-          </p>
+          <p className="text-sm text-text-muted">{t("common.loadingShort")}</p>
         ) : hasVisibleItems ? (
           children
         ) : (
-          <p className="text-sm text-muted-foreground">{emptyText}</p>
+          <p className="text-sm text-text-muted">{emptyText}</p>
         )}
       </div>
     </div>
@@ -141,7 +137,7 @@ export function TrendChart({
 
   if (loading) {
     return (
-      <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-sm text-muted-foreground">
+      <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border-quiet bg-surface-canvas/20 text-sm text-text-muted">
         {t("stats.trend.loading")}
       </div>
     );
@@ -149,14 +145,14 @@ export function TrendChart({
 
   if (points.length === 0) {
     return (
-      <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-sm text-muted-foreground">
+      <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border-quiet bg-surface-canvas/20 text-sm text-text-muted">
         {t("stats.trend.empty")}
       </div>
     );
   }
 
   return (
-    <div className="h-72 rounded-xl border border-white/10 bg-[radial-gradient(circle_at_20%_12%,rgba(34,211,238,0.10),transparent_30%),rgba(0,0,0,0.24)] p-3">
+    <div className="stats-trend-chart h-72 rounded-xl border border-border-quiet p-3">
       <ResponsiveLine
         data={data}
         margin={{ top: 22, right: 22, bottom: 40, left: 48 }}
@@ -170,33 +166,52 @@ export function TrendChart({
         }}
         axisTop={null}
         axisRight={null}
-        colors={["#22d3ee"]}
+        colors={["var(--accent-action)"]}
         enableGridX={false}
         enableArea
         areaOpacity={0.18}
         pointSize={8}
-        pointColor="#22d3ee"
+        pointColor="var(--accent-action)"
         pointBorderWidth={2}
-        pointBorderColor="#071017"
+        pointBorderColor="var(--surface-canvas)"
         lineWidth={3}
         curve="monotoneX"
         useMesh
         theme={{
-          text: { fill: "rgba(255,255,255,0.5)", fontSize: 11 },
-          axis: {
-            ticks: { text: { fill: "rgba(255,255,255,0.38)" } },
-            legend: { text: { fill: "rgba(255,255,255,0.35)" } },
-            domain: { line: { stroke: "rgba(255,255,255,0.08)" } },
+          text: {
+            fill: "color-mix(in srgb, var(--text-primary) 50%, transparent)",
+            fontSize: 11,
           },
-          grid: { line: { stroke: "rgba(255,255,255,0.06)" } },
+          axis: {
+            ticks: {
+              text: {
+                fill: "color-mix(in srgb, var(--text-primary) 38%, transparent)",
+              },
+            },
+            legend: {
+              text: {
+                fill: "color-mix(in srgb, var(--text-primary) 35%, transparent)",
+              },
+            },
+            domain: { line: { stroke: "var(--border-quiet)" } },
+          },
+          grid: {
+            line: {
+              stroke: "color-mix(in srgb, var(--text-primary) 6%, transparent)",
+            },
+          },
           crosshair: {
-            line: { stroke: "rgba(255,255,255,0.2)", strokeWidth: 1 },
+            line: {
+              stroke:
+                "color-mix(in srgb, var(--text-primary) 20%, transparent)",
+              strokeWidth: 1,
+            },
           },
           tooltip: {
             container: {
-              background: "#0f1117",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.08)",
+              background: "var(--surface-elevated)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-quiet)",
               borderRadius: "14px",
             },
           },
@@ -216,10 +231,10 @@ export function TrendChart({
         }}
         tooltip={({ point }) => (
           <div className="px-3 py-2">
-            <div className="text-xs font-semibold text-white">
+            <div className="text-xs font-semibold text-text-primary">
               {String(point.data.xFormatted)}
             </div>
-            <div className="mt-1 text-sm text-cyan-300">
+            <div className="mt-1 text-sm text-text-accent">
               {t("stats.trend.minutesValue", {
                 value: point.data.yFormatted,
               })}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 
 import type { RepeatMode, Track } from "@/contexts/player-types";
@@ -100,12 +100,12 @@ export function useRestoreOnMount({
   markSeekPosition,
   allowAutoplayRestore = true,
 }: UseRestoreOnMountOptions): RestoreController {
-  const storedRef = useRef(getStoredQueue());
+  const [stored] = useState(getStoredQueue);
   const pendingRestoreTimeRef = useRef(
-    storedRef.current.currentTime > 0 ? storedRef.current.currentTime : 0,
+    stored.currentTime > 0 ? stored.currentTime : 0,
   );
   const resumeAfterReloadRef = useRef(
-    allowAutoplayRestore && storedRef.current.wasPlaying,
+    allowAutoplayRestore && stored.wasPlaying,
   );
   const restoreAutoplayAttemptedRef = useRef(false);
   const restoreAutoplayTimerRef = useRef<number | null>(null);
@@ -153,23 +153,25 @@ export function useRestoreOnMount({
     if (playerReadyRef.current) return;
     playerReadyRef.current = true;
 
-    if (!storedRef.current.queue.length) return;
+    if (!stored.queue.length) return;
 
-    const restoredQueue = storedRef.current.queue;
+    const restoredQueue = stored.queue;
     const restoredIndex = Math.max(
       0,
-      Math.min(storedRef.current.currentIndex, restoredQueue.length - 1),
+      Math.min(stored.currentIndex, restoredQueue.length - 1),
     );
     pendingRestoreTimeRef.current =
-      storedRef.current.currentTime > 0 ? storedRef.current.currentTime : 0;
+      stored.currentTime > 0 ? stored.currentTime : 0;
 
     if (shouldUseAndroidNativePlayer()) {
       gpPause();
       gpStop();
       gpLoadQueue([], 0);
       resumeAfterReloadRef.current = false;
+      // Mount restoration must push the recovered queue into the player engine.
+      // react-doctor-disable-next-line no-pass-data-to-parent, no-pass-live-state-to-parent
       pushToEngine(restoredQueue, restoredIndex, {
-        autoplay: allowAutoplayRestore && storedRef.current.wasPlaying,
+        autoplay: allowAutoplayRestore && stored.wasPlaying,
         positionMs: Math.max(0, pendingRestoreTimeRef.current * 1000),
       });
       return;
@@ -208,6 +210,8 @@ export function useRestoreOnMount({
     pullFromEngine,
     pushToEngine,
     repeatRef,
+    stored,
+    allowAutoplayRestore,
   ]);
 
   // Timer cleanup on unmount.
@@ -216,8 +220,8 @@ export function useRestoreOnMount({
   return {
     pendingRestoreTimeRef,
     resumeAfterReloadRef,
-    restoredShuffle: storedRef.current.shuffle,
-    restoredUnshuffledQueue: storedRef.current.unshuffledQueue,
+    restoredShuffle: stored.shuffle,
+    restoredUnshuffledQueue: stored.unshuffledQueue,
     tryRestoreAutoplay,
     cancelRestoreAutoplay,
   };

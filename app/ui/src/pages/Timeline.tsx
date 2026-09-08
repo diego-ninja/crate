@@ -168,7 +168,7 @@ export function Timeline() {
               </span>
               <div className="flex-1 h-6 bg-secondary/20 rounded overflow-hidden">
                 <div
-                  className="h-full rounded transition-all duration-300 bg-primary/60 group-hover:bg-primary/80"
+                  className="h-full rounded transition-[width,background-color] duration-300 bg-primary/60 group-hover:bg-primary/80"
                   style={{ width: `${Math.max(pct, 2)}%` }}
                 />
               </div>
@@ -199,9 +199,13 @@ export function Timeline() {
             {expandedData.length !== 1 ? "s" : ""}
           </h3>
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {expandedData.map((album, i) => (
+            {expandedData.map((album) => (
               <button
-                key={`${album.artist}-${album.album}-${i}`}
+                key={
+                  album.id ??
+                  album.entity_uid ??
+                  `${album.artist}-${album.album}`
+                }
                 onClick={() =>
                   navigate(
                     albumPagePath({

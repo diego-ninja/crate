@@ -2,6 +2,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -325,9 +326,9 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
         {label}
-      </label>
+      </span>
       {children}
     </div>
   );
@@ -516,7 +517,10 @@ export function PlaylistEditor() {
   const basePlaylist = surface?.playlist ?? null;
   const isSmart = basePlaylist?.is_smart ?? false;
   const persistedSmartRules = basePlaylist?.smart_rules;
-  const currentSmartRules = { match, rules, limit, sort };
+  const currentSmartRules = useMemo(
+    () => ({ match, rules, limit, sort }),
+    [limit, match, rules, sort],
+  );
   const smartRulesChanged =
     isSmart &&
     JSON.stringify(currentSmartRules) !==
@@ -596,8 +600,6 @@ export function PlaylistEditor() {
     isActive,
     isCurated,
     isSmart,
-    limit,
-    match,
     name,
     currentSmartRules,
     refetch,
@@ -1245,7 +1247,7 @@ export function PlaylistEditor() {
 
                     return (
                       <div
-                        key={`${rule.field}-${index}`}
+                        key={`${rule.field}-${rule.op}-${String(rule.value)}`}
                         className="rounded-md border border-white/10 bg-black/10 p-3"
                       >
                         <div className="mb-3 flex items-center justify-between gap-3">
@@ -1468,8 +1470,8 @@ export function PlaylistEditor() {
                           {preview.tracks.slice(0, 8).map((track, index) => (
                             <div
                               key={`${track.artist ?? "artist"}-${
-                                track.title ?? "track"
-                              }-${index}`}
+                                track.album ?? "album"
+                              }-${track.title ?? "track"}`}
                               className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-white/[0.03]"
                             >
                               <span className="w-6 text-right text-xs text-muted-foreground">
@@ -1708,7 +1710,10 @@ export function PlaylistEditor() {
                     const rowId = track.id;
                     return (
                       <div
-                        key={rowId ?? index}
+                        key={
+                          rowId ??
+                          `${track.artist}-${track.album}-${track.title}`
+                        }
                         draggable={typeof rowId === "number"}
                         onDragStart={() => {
                           if (typeof rowId === "number") {

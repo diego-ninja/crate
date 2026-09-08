@@ -1,6 +1,6 @@
 const USE_ALBUM_PALETTE_KEY = "listen-viz-use-album-palette";
 const VISUALIZER_ENABLED_KEY = "listen-viz-enabled";
-const VISUALIZER_SETTINGS_KEY = "listen-viz-settings";
+const VISUALIZER_SETTINGS_KEY = "listen-viz-settings:v1";
 const TRACK_ADAPTIVE_VISUALIZER_KEY = "listen-viz-track-adaptive";
 const PLAYER_SURFACE_MODE_KEY = "listen-player-surface-mode";
 export const PLAYER_VIZ_PREFS_EVENT = "listen:viz-prefs-changed";

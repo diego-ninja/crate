@@ -6,29 +6,29 @@ const tierStyles: Record<
   { border: string; text: string; bg: string; glow?: string }
 > = {
   "hi-res": {
-    border: "border-amber-400/50",
-    text: "text-amber-300",
-    bg: "bg-amber-400/10",
-    glow: "shadow-[0_0_8px_rgba(251,191,36,0.15)]",
+    border: "border-state-warning/50",
+    text: "text-state-warning",
+    bg: "bg-state-warning/10",
+    glow: "quality-badge-hi-res-glow",
   },
   lossless: {
-    border: "border-cyan-400/40",
-    text: "text-cyan-300",
-    bg: "bg-cyan-400/8",
+    border: "border-accent-action/40",
+    text: "text-accent-action",
+    bg: "bg-accent-action/8",
   },
   high: {
-    border: "border-primary/30",
-    text: "text-primary/70",
+    border: "border-accent-action/30",
+    text: "text-accent-action/70",
     bg: "bg-transparent",
   },
   standard: {
-    border: "border-white/15",
-    text: "text-muted-foreground",
+    border: "border-border-quiet",
+    text: "text-text-muted",
     bg: "bg-transparent",
   },
   low: {
-    border: "border-white/10",
-    text: "text-white/40",
+    border: "border-border-quiet",
+    text: "text-text-subtle",
     bg: "bg-transparent",
   },
 };
@@ -51,11 +51,10 @@ export function QualityBadge({
   origin?: QualityBadgeOrigin;
 }) {
   const style = tierStyles[badge.tier];
-  const Icon = origin === "source" ? tierIcons[badge.tier] : null;
-  const streamTone =
-    origin === "stream"
-      ? "border-white/14 bg-white/[0.03] text-white/68 shadow-none"
-      : "";
+  const Icon = tierIcons[badge.tier];
+  const variantClass = `${style.border} ${style.text} ${style.bg} ${
+    style.glow || ""
+  }`;
   const title =
     origin === "stream"
       ? `Streaming delivery quality · ${badge.detail || badge.label}`
@@ -63,9 +62,7 @@ export function QualityBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none whitespace-nowrap border ${
-        style.border
-      } ${style.text} ${style.bg} ${style.glow || ""} ${streamTone}`}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-badge font-bold tracking-wider leading-none whitespace-nowrap border ${variantClass}`}
       title={title}
     >
       {Icon && <Icon size={9} />}

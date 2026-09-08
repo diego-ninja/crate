@@ -31,6 +31,15 @@ describe("ServerSetup", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("URL del servidor")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continuar/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Continuar/i })).toHaveClass(
+      "shadow-action-solid",
+    );
+    expect(
+      screen.getByRole("img", { name: "Crate" }).parentElement,
+    ).toHaveClass("shadow-accent-action-strong");
+    expect(
+      screen.getByRole("button", { name: /Continuar/i }).closest("form"),
+    ).toHaveClass("shadow-card");
     expect(
       screen.getByRole("button", { name: "Desarrollo local" }),
     ).toBeVisible();

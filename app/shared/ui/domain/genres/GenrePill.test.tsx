@@ -16,6 +16,16 @@ describe("GenrePill", () => {
     const removeButton = screen.getByRole("button", {
       name: "Remove Hardcore punk",
     });
-    expect(removeButton.closest("span")).toHaveClass("rounded-md", "border");
+    expect(removeButton.closest("span")).toHaveClass(
+      "rounded-md",
+      "border",
+      "text-badge",
+    );
+  });
+
+  it("uses compact badge typography for the percentage", () => {
+    render(<GenrePill item={{ name: "Hardcore punk", percent: 42 }} />);
+
+    expect(screen.getByText("42%")).toHaveClass("text-badge");
   });
 });

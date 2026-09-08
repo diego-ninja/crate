@@ -154,9 +154,12 @@ export function Dashboard() {
           <GridSkeleton count={1} columns="grid-cols-1" />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }, (_, i) => (
+          {Array.from(
+            { length: 4 },
+            (_, index) => `dashboard-card-skeleton-${index}`,
+          ).map((key) => (
             <div
-              key={i}
+              key={key}
               className="rounded-md border border-white/10 bg-panel-surface p-6"
             >
               <GridSkeleton count={1} columns="grid-cols-1" />
@@ -745,9 +748,9 @@ export function Dashboard() {
             <CardContent>
               {recentAlbums.length > 0 ? (
                 <div className="flex gap-3 overflow-x-auto pb-2">
-                  {recentAlbums.map((album, index) => (
+                  {recentAlbums.map((album) => (
                     <button
-                      key={`${album.artist}-${album.name}-${index}`}
+                      key={`${album.id}-${album.artist}-${album.name}`}
                       onClick={() =>
                         navigate(
                           albumPagePath({
@@ -826,9 +829,9 @@ export function Dashboard() {
               <CardContent>
                 {upcomingShows.length > 0 ? (
                   <div className="space-y-3">
-                    {upcomingShows.slice(0, 4).map((show, index) => (
+                    {upcomingShows.slice(0, 4).map((show) => (
                       <div
-                        key={index}
+                        key={`${show.date}-${show.artist_name}-${show.venue}`}
                         className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-3"
                       >
                         <div className="flex items-start justify-between gap-3">

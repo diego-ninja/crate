@@ -122,10 +122,10 @@ function ContextMenuMediaHeaderView({
   }, [header.imageUrl]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-white/10 px-4 py-4">
+    <div className="flex items-center gap-3 border-b border-border-quiet p-4 ">
       <div
         className={cn(
-          "relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden bg-white/5",
+          "relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden bg-text-primary/5",
           imageShape,
         )}
       >
@@ -159,29 +159,32 @@ function ContextMenuMediaHeaderView({
               setImageFailed(true);
               header.imageOnError?.();
             }}
-            className="h-full w-full object-cover"
+            className=" size-full object-cover"
           />
         ) : FallbackIcon ? (
-          <FallbackIcon size={CRATE_ICON_SIZE.xl} className="text-white/35" />
+          <FallbackIcon
+            size={CRATE_ICON_SIZE.xl}
+            className="text-text-primary/35"
+          />
         ) : null}
         {hasImage && renderMediaImage && imageFailed && FallbackIcon ? (
           <FallbackIcon
             size={CRATE_ICON_SIZE.xl}
-            className="absolute text-white/35"
+            className="absolute text-text-primary/35"
           />
         ) : null}
       </div>
       <div className="min-w-0">
-        <div className="truncate text-sm font-semibold text-foreground">
+        <div className="truncate text-sm font-semibold text-text-primary">
           {header.title}
         </div>
         {header.subtitle ? (
-          <div className="truncate text-xs text-muted-foreground">
+          <div className="truncate text-xs text-text-muted">
             {header.subtitle}
           </div>
         ) : null}
         {header.detail ? (
-          <div className="truncate text-[11px] text-white/55">
+          <div className="truncate text-xs text-text-primary/55">
             {header.detail}
           </div>
         ) : null}
@@ -240,7 +243,7 @@ function ContextMenuItems({
           return (
             <div
               key={entry.key}
-              className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-white/40"
+              className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-text-primary/40"
             >
               {entry.label}
             </div>
@@ -272,7 +275,10 @@ function ContextMenuItems({
                   )}
                   <span className="truncate">{entry.label}</span>
                 </span>
-                <Indicator size={17} className="shrink-0 text-white/45" />
+                <Indicator
+                  size={17}
+                  className="shrink-0 text-text-primary/45"
+                />
               </AppMenuButton>
               {entry.expanded ? (
                 <div className="space-y-1 px-3 pb-2">
@@ -294,7 +300,7 @@ function ContextMenuItems({
               handleSelect(entry);
             }}
             className={cn(
-              entry.active ? "text-primary" : undefined,
+              entry.active ? "text-accent-action" : undefined,
               entry.disabled ? "opacity-50" : undefined,
             )}
           >
@@ -313,7 +319,7 @@ function ContextMenuItems({
               <span className="truncate">{entry.label}</span>
             </span>
             {entry.active ? (
-              <Check size={17} className="shrink-0 text-primary" />
+              <Check size={17} className="shrink-0 text-accent-action" />
             ) : null}
           </AppMenuButton>
         );

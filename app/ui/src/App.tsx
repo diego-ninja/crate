@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@crate/ui/shadcn/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { LLMStatusProvider } from "@/hooks/use-llm";
 import { OpsSnapshotProvider } from "@/contexts/OpsSnapshotContext";
 import {
   CapabilityRoute,
@@ -208,9 +209,11 @@ export default function App() {
               <Route
                 element={
                   <ProtectedRoute>
-                    <OpsSnapshotProvider>
-                      <Shell />
-                    </OpsSnapshotProvider>
+                    <LLMStatusProvider>
+                      <OpsSnapshotProvider>
+                        <Shell />
+                      </OpsSnapshotProvider>
+                    </LLMStatusProvider>
                   </ProtectedRoute>
                 }
               >

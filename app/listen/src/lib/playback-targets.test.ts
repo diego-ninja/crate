@@ -81,11 +81,21 @@ import {
   loadPlaybackTargetGroups,
   localTargetProvider,
   nativeOutputRouteProvider,
+  playbackTargetProviders,
   selectPlaybackTarget,
   type PlaybackTargetProvider,
 } from "@/lib/playback-targets";
 
 describe("playback targets", () => {
+  it("keeps the default provider order stable", () => {
+    expect(playbackTargetProviders.map((provider) => provider.id)).toEqual([
+      "local",
+      "native-output",
+      "google-cast",
+      "crate-connect",
+    ]);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     isCrateConnectEnabledMock.mockReturnValue(true);

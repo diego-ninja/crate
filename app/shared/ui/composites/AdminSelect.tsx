@@ -32,7 +32,7 @@ interface AdminSelectProps {
 }
 
 const DEFAULT_TRIGGER_CLASS =
-  "flex h-11 min-w-[140px] max-w-[220px] items-center gap-2 rounded-md border border-white/10 bg-black/25 px-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] hover:border-white/20 hover:bg-black/35";
+  "flex h-11 min-w-[140px] max-w-[220px] items-center gap-2 rounded-md border border-border-quiet bg-surface-canvas/25 px-4 text-sm text-text-primary shadow-control-inset backdrop-blur-sm transition-[background-color,border-color,box-shadow] hover:border-text-primary/20 hover:bg-surface-canvas/35";
 
 export function AdminSelect({
   value,
@@ -78,7 +78,7 @@ export function AdminSelect({
           disabled={disabled}
           className={cn(
             DEFAULT_TRIGGER_CLASS,
-            value ? "text-white" : "text-white/40",
+            value ? "text-text-primary" : "text-text-primary/40",
             disabled && "cursor-not-allowed opacity-50",
             triggerClassName,
           )}
@@ -86,7 +86,7 @@ export function AdminSelect({
           <span className="truncate">{selectedLabel}</span>
           <ChevronDown
             size={CRATE_ICON_SIZE.sm}
-            className="ml-auto shrink-0 text-white/35"
+            className="ml-auto shrink-0 text-text-primary/35"
           />
         </button>
       </PopoverTrigger>
@@ -102,11 +102,11 @@ export function AdminSelect({
         className={cn("w-[240px] overflow-hidden p-2", menuClassName)}
       >
         {searchable ? (
-          <div className="border-b border-white/5 px-1 pb-2">
+          <div className="border-b border-text-primary/5 px-1 pb-2">
             <div className="relative">
               <Search
                 size={13}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-primary/35"
               />
               <Input
                 type="text"
@@ -114,7 +114,7 @@ export function AdminSelect({
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={searchPlaceholder}
                 autoFocus
-                className="h-10 border-white/10 bg-black/25 pl-9 text-sm"
+                className="h-10 border-border-quiet bg-surface-canvas/25 pl-9 text-sm"
               />
             </div>
           </div>
@@ -130,8 +130,8 @@ export function AdminSelect({
                 setSearch("");
               }}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white",
-                !value && "bg-primary/10 text-primary",
+                "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-text-primary/70 transition-colors hover:bg-text-primary/[0.06] hover:text-text-primary",
+                !value && "bg-accent-action/10 text-accent-action",
               )}
             >
               <span>{placeholder}</span>
@@ -150,18 +150,19 @@ export function AdminSelect({
                   setSearch("");
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white",
-                  value === option.value && "bg-primary/10 text-primary",
+                  "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-text-primary/70 transition-colors hover:bg-text-primary/[0.06] hover:text-text-primary",
+                  value === option.value &&
+                    "bg-accent-action/10 text-accent-action",
                 )}
               >
                 <span className="truncate">{option.label}</span>
                 {option.count != null ? (
-                  <CrateChip className="text-[10px]">{option.count}</CrateChip>
+                  <CrateChip className="text-xs">{option.count}</CrateChip>
                 ) : null}
               </button>
             ))
           ) : (
-            <div className="px-2 py-4 text-center text-sm text-white/40">
+            <div className="px-2 py-4 text-center text-sm text-text-primary/40">
               {noMatchesLabel}
             </div>
           )}

@@ -53,7 +53,9 @@ describe("Settings", () => {
   });
 
   it("localizes the settings page chrome", () => {
-    renderWithListenProviders(<Settings />, { locale: "es" });
+    const { container } = renderWithListenProviders(<Settings />, {
+      locale: "es",
+    });
 
     expect(
       screen.getByRole("heading", { name: "Ajustes" }),
@@ -66,6 +68,8 @@ describe("Settings", () => {
     expect(screen.getByText("Al terminar la pista")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("tu-handle")).toBeInTheDocument();
     expect(screen.getByText("Enlaces rápidos")).toBeInTheDocument();
+    expect(container.querySelector(".settings-header")).toBeInTheDocument();
+    expect(container.querySelector(".settings-section")).toBeInTheDocument();
   });
 
   it("changes and stores the selected Listen language", async () => {

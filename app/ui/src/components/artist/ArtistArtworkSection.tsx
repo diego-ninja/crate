@@ -25,11 +25,13 @@ interface ArtistArtworkSectionProps {
   canEdit: boolean;
 }
 
+const EMPTY_GENRES: string[] = [];
+
 export function ArtistArtworkSection({
   artistId,
   artistEntityUid,
   artistName,
-  genres = [],
+  genres = EMPTY_GENRES,
   imageVersion,
   canEdit,
 }: ArtistArtworkSectionProps) {

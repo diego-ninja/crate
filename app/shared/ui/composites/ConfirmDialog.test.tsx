@@ -78,7 +78,7 @@ describe("ConfirmDialog", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /Confirm/i })).toHaveClass(
-      "bg-destructive",
+      "bg-state-danger",
     );
   });
 });

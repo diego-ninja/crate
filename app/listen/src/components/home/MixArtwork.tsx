@@ -36,41 +36,41 @@ export function MixArtwork({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl bg-white/5",
+        "relative overflow-hidden rounded-xl bg-text-primary/5",
         className,
       )}
     >
-      <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+      <div className="grid size-full grid-cols-2 grid-rows-2">
         {Array.from({ length: 4 }).map((_, index) => {
           const artist = artists[index];
           const photoUrl = artist ? tilePhoto(artist) : null;
           return (
             <div
               key={`${artist?.artist_id ?? artist?.artist_name ?? index}`}
-              className="relative overflow-hidden bg-[linear-gradient(145deg,rgba(30,16,22,0.96),rgba(10,12,16,1))]"
+              className="mix-artwork-tile relative overflow-hidden"
             >
               {photoUrl ? (
                 <CrateImage
                   src={photoUrl}
                   alt={artist?.artist_name || ""}
-                  className="h-full w-full object-cover"
+                  className=" size-full object-cover"
                 />
               ) : null}
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,12,16,0.18)_0%,rgba(10,12,16,0.55)_100%)]" />
+              <div className="mix-artwork-tile-scrim absolute inset-0" />
             </div>
           );
         })}
       </div>
 
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,10,14,0.04)_0%,rgba(8,10,14,0.24)_48%,rgba(8,10,14,0.84)_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_42%)]" />
+      <div className="mix-artwork-scrim absolute inset-0" />
+      <div className="mix-artwork-accent absolute inset-0" />
 
       <div className="absolute right-3.5 top-3.5 flex items-center justify-center">
         <img
           src="/icons/logo.svg"
           alt=""
           aria-hidden="true"
-          className="h-4.5 w-4.5 opacity-95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+          className=" size-4.5 opacity-95 drop-shadow-artwork-compact-mark"
         />
       </div>
     </div>

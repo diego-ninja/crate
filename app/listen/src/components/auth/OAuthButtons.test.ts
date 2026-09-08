@@ -84,6 +84,8 @@ describe("OAuthButtons", () => {
     render(
       createElement(I18nProvider, {
         initialLocale: "es",
+        // The provider API requires children in its props type.
+        // react-doctor-disable-next-line no-children-prop
         children: createElement(OAuthButtons),
       }),
     );

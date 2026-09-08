@@ -159,7 +159,7 @@ function PipelineCoverage({
         <div className="h-2 overflow-hidden rounded-sm bg-white/[0.06]">
           <div
             className={cn(
-              "h-full rounded-sm transition-all duration-500",
+              "h-full rounded-sm transition-[width,background-color] duration-500",
               blocked
                 ? "bg-gradient-to-r from-red-500/60 to-amber-400/70"
                 : accentClassName.replace("text-", "bg-").replace("/80", ""),
@@ -612,7 +612,7 @@ export function Analysis() {
             <div className="space-y-3">
               <div className="h-2 overflow-hidden rounded-sm bg-white/[0.06]">
                 <div
-                  className="h-full rounded-sm bg-sky-400/80 transition-all duration-500"
+                  className="h-full rounded-sm bg-sky-400/80 transition-[width,background-color] duration-500"
                   style={{
                     width: `${Math.min(metrics.fingerprintPercent, 100)}%`,
                   }}

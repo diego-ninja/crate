@@ -23,12 +23,14 @@ export function EmptyState({
       )}
       data-testid="empty-state"
     >
-      <Icon size={48} className="text-white/25" />
+      <Icon size={48} className="text-text-primary/25" />
       {title ? (
-        <div className="text-lg font-semibold text-white/90">{title}</div>
+        <div className="text-lg font-semibold text-text-primary/90">
+          {title}
+        </div>
       ) : null}
       {message ? (
-        <div className="max-w-xs text-sm text-white/50">{message}</div>
+        <div className="max-w-xs text-sm text-text-primary/50">{message}</div>
       ) : null}
     </div>
   );

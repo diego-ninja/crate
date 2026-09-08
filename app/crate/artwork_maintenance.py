@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import shutil
 import time
+import logging
 from typing import Iterator, cast
 
+from crate.artist_hero_publication import (
+    ArtistHeroArtifactIdentity,
+    artist_hero_artifact_root,
+)
+from crate.artist_hero_retention import (
+    retained_artist_hero_revisions,
+    retained_artist_hero_revisions_from_manifests,
+)
 from crate.artwork_variants import (
     ARTWORK_KINDS,
     ArtworkAsset,
@@ -13,8 +22,17 @@ from crate.artwork_variants import (
     artwork_variant_root,
     load_current_manifest,
 )
+from crate.db.repositories.artist_hero_artwork import (
+    artist_hero_manifest_id,
+    get_artist_hero_artwork,
+    list_artist_hero_manifest_history,
+    list_artist_hero_render_revision_artists,
+    list_artist_hero_render_revisions,
+)
+from crate.streaming.paths import cache_root
 
 _TEMP_MAX_AGE_SECONDS = 24 * 3600
+log = logging.getLogger(__name__)
 
 
 def _iter_assets(max_assets: int) -> Iterator[ArtworkAsset]:
@@ -201,10 +219,77 @@ def cleanup_artwork_variants(*, max_assets: int = 1000) -> dict[str, int]:
                 continue
             shutil.rmtree(revision, ignore_errors=True)
             result["revisions_removed"] += 1
+    try:
+        hero_result = cleanup_artist_hero_publications(max_artists=max_assets)
+    except Exception:
+        log.warning("Artist hero publication cleanup failed", exc_info=True)
+        hero_result = {"artists_checked": 0, "revisions_removed": 0}
+    result.update(
+        {
+            "artist_hero_artists_checked": hero_result["artists_checked"],
+            "artist_hero_revisions_removed": hero_result["revisions_removed"],
+        }
+    )
+    return result
+
+
+def cleanup_artist_hero_publications(
+    *, max_artists: int = 1000, keep_per_composition: int = 2
+) -> dict[str, int]:
+    """Remove known stale hero revisions while preserving unknown directories."""
+
+    result = {"artists_checked": 0, "revisions_removed": 0}
+    artists = list_artist_hero_render_revision_artists(limit=max(1, int(max_artists)))
+    publication_root = cache_root()
+    for artist in artists:
+        result["artists_checked"] += 1
+        artist_id = int(artist["artist_id"])
+        profile = get_artist_hero_artwork(artist_id) or {}
+        manifest = profile.get("render_manifest")
+        artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else {}
+        active_revisions = {
+            composition: str(artifact.get("render_revision") or "")
+            for composition, artifact in (artifacts or {}).items()
+            if composition in {"desktop", "mobile"} and isinstance(artifact, dict)
+        }
+        history = list_artist_hero_render_revisions(artist_id)
+        manifest_history = list_artist_hero_manifest_history(artist_id)
+        if isinstance(manifest, dict) and manifest_history:
+            retained = retained_artist_hero_revisions_from_manifests(
+                manifest_history,
+                artist_hero_manifest_id(manifest),
+                keep_manifest_count=max(2, keep_per_composition),
+            )
+            retained.update(active_revisions.items())
+        else:
+            retained = retained_artist_hero_revisions(
+                history,
+                active_revisions,
+                keep_per_composition=keep_per_composition,
+            )
+        for row in history:
+            composition = str(row.get("composition") or "")
+            revision = str(row.get("render_revision") or "")
+            if (composition, revision) in retained:
+                continue
+            try:
+                identity = ArtistHeroArtifactIdentity(
+                    artist_entity_uid=str(artist.get("entity_uid") or ""),
+                    composition=composition,
+                    render_revision=revision,
+                )
+            except ValueError:
+                continue
+            path = artist_hero_artifact_root(identity, root=publication_root)
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+                if not path.exists():
+                    result["revisions_removed"] += 1
     return result
 
 
 __all__ = [
+    "cleanup_artist_hero_publications",
     "cleanup_artwork_variants",
     "find_corrupt_artwork_assets",
     "inspect_artwork_variants",

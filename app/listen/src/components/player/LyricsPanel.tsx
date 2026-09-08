@@ -68,7 +68,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
       })
       .catch(() => setLyrics({ synced: null, plain: null }))
       .finally(() => setLoading(false));
-  }, [open, currentTrack?.id]);
+  }, [currentTrack?.artist, currentTrack?.id, currentTrack?.title, open]);
 
   // Find active line index
   const activeIndex = useMemo(() => {
@@ -89,21 +89,17 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="listen-glass-panel listen-glass-panel--dock z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[480px] flex-col overflow-hidden border-l border-white/10">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-40 blur-3xl"
-        style={{
-          background:
-            "radial-gradient(circle at top, rgba(6,182,212,0.22) 0%, transparent 72%)",
-        }}
-      />
+    <div className="listen-glass-panel listen-glass-panel--dock z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[480px] flex-col overflow-hidden border-l border-border-quiet">
+      <div className="lyrics-ambient-glow pointer-events-none absolute inset-x-0 top-0 h-40 blur-3xl" />
       {/* Header */}
-      <div className="relative flex items-center justify-between border-b border-white/5 px-4 py-3">
-        <h2 className="text-sm font-bold text-white">{t("player.lyrics")}</h2>
+      <div className="relative flex items-center justify-between border-b border-border-quiet px-4 py-3">
+        <h2 className="text-sm font-bold text-text-primary">
+          {t("player.lyrics")}
+        </h2>
         <button
           onClick={onClose}
           aria-label={t("player.lyrics.close")}
-          className="flex size-10 items-center justify-center text-white/40 transition-colors hover:text-white"
+          className="flex size-10 items-center justify-center text-text-muted transition-colors hover:text-text-primary"
         >
           <X size={CRATE_ICON_SIZE.xl} />
         </button>
@@ -111,11 +107,11 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
       {/* Track info */}
       {currentTrack && (
-        <div className="relative border-b border-white/5 px-4 py-3">
-          <p className="text-[13px] font-medium text-white truncate">
+        <div className="relative border-b border-border-quiet px-4 py-3">
+          <p className="truncate text-[0.8125rem] font-medium text-text-primary">
             {currentTrack.title}
           </p>
-          <p className="text-[11px] text-muted-foreground truncate">
+          <p className="truncate text-xs text-text-muted">
             {currentTrack.artist}
           </p>
         </div>
@@ -128,12 +124,12 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
       >
         {loading && (
           <div className="flex items-center justify-center py-16">
-            <Loader2 size={20} className="text-primary animate-spin" />
+            <Loader2 size={20} className="animate-spin text-accent-action" />
           </div>
         )}
 
         {!loading && !lyrics?.synced && !lyrics?.plain && (
-          <div className="px-4 py-16 text-center text-white/20 text-sm">
+          <div className="px-4 py-16 text-center text-sm text-text-faint">
             {t("player.lyrics.empty")}
           </div>
         )}
@@ -149,23 +145,16 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
               const isPast = i < activeIndex;
               return (
                 <button
-                  key={i}
+                  key={[line.time, line.text].join(":")}
                   ref={isActive ? activeRef : null}
                   onClick={() => seek(line.time)}
                   className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
                     isActive
-                      ? "bg-primary/10 text-[17px] font-semibold text-primary"
+                      ? "lyrics-active-line bg-accent-action/10 text-[17px] font-semibold text-accent-action"
                       : isPast
-                        ? "text-[14px] text-white/25"
-                        : "text-[14px] text-white/50"
+                        ? "text-[0.875rem] text-text-faint"
+                        : "text-[0.875rem] text-text-secondary"
                   }`}
-                  style={
-                    isActive
-                      ? {
-                          textShadow: "0 0 20px rgba(6,182,212,0.28)",
-                        }
-                      : undefined
-                  }
                 >
                   {line.text}
                 </button>
@@ -177,7 +166,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
         {/* Plain lyrics (no sync) */}
         {!lyrics?.synced && lyrics?.plain && (
           <div className="px-4 py-8">
-            <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-muted-foreground">
+            <pre className="whitespace-pre-wrap font-sans text-[0.875rem] leading-relaxed text-text-muted">
               {lyrics.plain}
             </pre>
           </div>

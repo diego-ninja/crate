@@ -1,6 +1,53 @@
 from __future__ import annotations
 
 
+def test_revision_scoped_artist_hero_source_does_not_fall_back_to_legacy_file(
+    monkeypatch, tmp_path
+):
+    from PIL import Image
+
+    from crate import artwork_sources
+    from crate.artist_hero_publication import (
+        ArtistHeroArtifactIdentity,
+        publish_artist_hero_artifact,
+    )
+    from crate.artwork_variants import ArtworkAsset
+
+    monkeypatch.setenv("CACHE_DIR", str(tmp_path))
+    artist_dir = tmp_path / "Artist"
+    artist_dir.mkdir()
+    (artist_dir / "artist-hero-desktop.webp").write_bytes(b"legacy")
+    monkeypatch.setattr(
+        artwork_sources,
+        "get_library_artist_by_entity_uid",
+        lambda _uid: {"entity_uid": "artist-entity", "name": "Artist"},
+    )
+    monkeypatch.setattr(artwork_sources, "library_path", lambda: tmp_path)
+    monkeypatch.setattr(
+        artwork_sources,
+        "resolve_artist_dir",
+        lambda *_args, **_kwargs: artist_dir,
+    )
+    identity = ArtistHeroArtifactIdentity(
+        "artist-entity", "desktop", "renderer:revision-a"
+    )
+    publish_artist_hero_artifact(
+        identity,
+        Image.new("RGB", (16, 8), color="red"),
+        source_fingerprint="sha256:source-a",
+        recipe_hash="recipe-a",
+        renderer_version="renderer",
+    )
+
+    source = artwork_sources.resolve_artwork_source(
+        ArtworkAsset("artist-hero", identity.asset_key)
+    )
+
+    assert source is not None
+    assert source.content != b"legacy"
+    assert source.origin == "revision-artifact"
+
+
 def test_album_source_prefers_canonical_cover(monkeypatch, tmp_path):
     from crate import artwork_sources
     from crate.artwork_variants import ArtworkAsset

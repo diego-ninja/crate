@@ -157,6 +157,11 @@ describe("AuthCallback", () => {
         "Si la app de escritorio no se abrió automáticamente, usa el botón de abajo.",
       ),
     ).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("heading", { name: "Volver a Crate" })
+        .closest(".shadow-card"),
+    ).toHaveClass("shadow-card");
     expect(screen.getByRole("link", { name: "Abrir Crate" })).toBeVisible();
   });
 });

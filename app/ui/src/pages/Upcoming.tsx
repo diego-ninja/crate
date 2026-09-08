@@ -42,6 +42,17 @@ import {
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+function groupByMonth(list: UpcomingItem[]): [string, UpcomingItem[]][] {
+  const groups = new Map<string, UpcomingItem[]>();
+  for (const item of list) {
+    const month = (item.date || "").slice(0, 7) || "Unknown";
+    const existing = groups.get(month) || [];
+    existing.push(item);
+    groups.set(month, existing);
+  }
+  return [...groups.entries()];
+}
+
 // Fix Leaflet default marker icon
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
   ._getIconUrl;
@@ -92,9 +103,9 @@ interface UpcomingArtistRef {
 type ViewMode = "list" | "calendar";
 type TypeFilter = "all" | "releases" | "shows";
 
-function itemKey(item: UpcomingItem, index: number): string {
+function itemKey(item: UpcomingItem): string {
   return `${item.type}-${item.artist}-${
-    item.release_id ?? item.venue ?? index
+    item.release_id ?? item.url ?? item.venue ?? item.title
   }-${item.date}`;
 }
 
@@ -224,17 +235,6 @@ export function Upcoming() {
   const past = filtered.filter(
     (i) => !i.is_upcoming && (!i.date || i.date < today),
   );
-
-  function groupByMonth(list: UpcomingItem[]): [string, UpcomingItem[]][] {
-    const groups = new Map<string, UpcomingItem[]>();
-    for (const item of list) {
-      const month = (item.date || "").slice(0, 7) || "Unknown";
-      const existing = groups.get(month) || [];
-      existing.push(item);
-      groups.set(month, existing);
-    }
-    return [...groups.entries()];
-  }
 
   async function downloadRelease(id: number) {
     try {
@@ -495,9 +495,9 @@ export function Upcoming() {
           }
           onDownload={releaseDownload}
           onDismiss={releaseDismiss}
-          onShowClick={(item, idx) => {
+          onShowClick={(item) => {
             setView("list");
-            setExpandedId(itemKey(item, idx));
+            setExpandedId(itemKey(item));
           }}
         />
       )}
@@ -539,8 +539,8 @@ function MonthGroup({
         <CrateChip>{items.length} items</CrateChip>
       </div>
       <div className="space-y-2">
-        {items.map((item, i) => {
-          const key = itemKey(item, i);
+        {items.map((item) => {
+          const key = itemKey(item);
           const isExpanded = expandedId === key;
           return (
             <div key={key}>
@@ -588,6 +588,8 @@ function EventCard({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={cn(
         "group relative overflow-hidden rounded-md border p-3.5 transition-all duration-200",
         "bg-white/[0.04] shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur-xl hover:bg-white/[0.07]",
@@ -596,6 +598,13 @@ function EventCard({
           : "border-white/10 hover:border-white/20",
       )}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       <div
         className={cn(
@@ -732,7 +741,7 @@ function CalendarView({
   onMonthChange: (dir: number) => void;
   onDownload?: (id: number) => void;
   onDismiss?: (id: number) => void;
-  onShowClick: (item: UpcomingItem, index: number) => void;
+  onShowClick: (item: UpcomingItem) => void;
 }) {
   const year = month.getFullYear();
   const m = month.getMonth();
@@ -795,12 +804,14 @@ function CalendarView({
 
       {/* Calendar grid */}
       <div className="grid grid-cols-7 gap-px">
-        {Array.from({ length: startOffset }, (_, i) => (
-          <div
-            key={`empty-${i}`}
-            className="min-h-[92px] rounded-md border border-white/5 bg-white/[0.02]"
-          />
-        ))}
+        {Array.from({ length: startOffset }, (_, slot) => `empty-${slot}`).map(
+          (key) => (
+            <div
+              key={key}
+              className="min-h-[92px] rounded-md border border-white/5 bg-white/[0.02]"
+            />
+          ),
+        )}
         {Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1;
           const dayItems = byDay.get(day) || [];
@@ -825,13 +836,13 @@ function CalendarView({
                 {day}
               </div>
               <div className="space-y-0.5">
-                {dayItems.slice(0, 3).map((item, idx) => (
+                {dayItems.slice(0, 3).map((item) => (
                   <CalendarPill
-                    key={idx}
+                    key={itemKey(item)}
                     item={item}
                     onDownload={onDownload}
                     onDismiss={onDismiss}
-                    onShowClick={() => onShowClick(item, idx)}
+                    onShowClick={() => onShowClick(item)}
                   />
                 ))}
                 {dayItems.length > 3 && (

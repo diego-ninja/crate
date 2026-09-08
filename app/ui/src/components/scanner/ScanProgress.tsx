@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Check, Circle, Loader2 } from "lucide-react";
 import { Progress } from "@crate/ui/shadcn/progress";
 import { Badge } from "@crate/ui/shadcn/badge";
@@ -58,7 +58,7 @@ export function ScanProgress({ progress }: ScanProgressProps) {
       ? Math.round((progress.artists_done / progress.artists_total) * 100)
       : 0;
 
-  const startRef = useRef<number>(Date.now());
+  const [startedAt] = useState(Date.now);
   const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export function ScanProgress({ progress }: ScanProgressProps) {
     return () => clearInterval(id);
   }, []);
 
-  const elapsedSec = (now - startRef.current) / 1000;
+  const elapsedSec = (now - startedAt) / 1000;
   const rate = elapsedSec > 0 ? progress.artists_done / elapsedSec : 0;
   const remaining =
     rate > 0 ? (progress.artists_total - progress.artists_done) / rate : 0;

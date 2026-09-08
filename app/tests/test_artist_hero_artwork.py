@@ -163,9 +163,66 @@ def test_extend_composition_uses_cover_fit_like_the_editor_fill_mode():
 
     result = render_artist_hero_composition(source, recipe, (1680, 720))
 
-    assert result.getpixel((0, 360)) == (230, 50, 70)
-    assert result.getpixel((840, 360)) == (230, 50, 70)
-    assert result.getpixel((1679, 360)) == (230, 50, 70)
+    assert result.mode == "RGBA"
+    assert result.getpixel((0, 360))[:3] == (230, 50, 70)
+    assert result.getpixel((840, 360))[:3] == (230, 50, 70)
+    assert result.getpixel((1679, 360))[:3] == (230, 50, 70)
+
+
+@pytest.mark.parametrize(
+    "color",
+    [(0, 0, 0), (245, 245, 240)],
+    ids=["dark-photo-with-legitimate-black", "clear-photo"],
+)
+def test_extend_composition_keeps_subject_opaque_and_padding_transparent(color):
+    from crate.artist_hero_artwork import render_artist_hero_composition
+
+    source = Image.new("RGB", (100, 50), color=color)
+    recipe = {
+        **_crop_recipe(100, 50),
+        "mode": "extend",
+        "scale": 0.5,
+    }
+
+    result = render_artist_hero_composition(source, recipe, (100, 50))
+
+    assert result.mode == "RGBA"
+    assert result.getpixel((0, 0))[3] == 0
+    assert result.getpixel((50, 25)) == (*color, 255)
+
+
+def test_crop_composition_remains_opaque_rgb():
+    from crate.artist_hero_artwork import render_artist_hero_composition
+
+    result = render_artist_hero_composition(
+        Image.open(io.BytesIO(_image_bytes())),
+        _crop_recipe(1400, 600),
+        (100, 50),
+    )
+
+    assert result.mode == "RGB"
+
+
+def test_extended_hero_webp_round_trip_preserves_transparency(tmp_path):
+    from crate.artist_hero_artwork import render_artist_hero_composition
+    from crate.worker_handlers.artwork import _save_artist_hero_webp_atomic
+
+    source = Image.new("RGB", (100, 50), color=(0, 0, 0))
+    recipe = {
+        **_crop_recipe(100, 50),
+        "mode": "extend",
+        "scale": 0.5,
+    }
+    rendered = render_artist_hero_composition(source, recipe, (100, 50))
+    destination = tmp_path / "hero.webp"
+
+    _save_artist_hero_webp_atomic(rendered, destination)
+
+    with Image.open(destination) as reopened:
+        reopened.load()
+        assert reopened.mode == "RGBA"
+        assert reopened.getpixel((0, 0))[3] == 0
+        assert reopened.getpixel((50, 25)) == (0, 0, 0, 255)
 
 
 def test_shared_geometry_fixtures_match_the_backend_bounds():
@@ -279,10 +336,11 @@ def test_composition_applies_artist_image_treatment():
     }
 
     result = render_artist_hero_composition(source, recipe, (1000, 500))
-    red, green, blue = result.getpixel((500, 250))
+    red, green, blue, alpha = result.getpixel((500, 250))
 
     assert red == green == blue
     assert red < 80
+    assert alpha == 255
 
 
 def test_artist_hero_recipe_defaults_to_an_untreated_image():
@@ -300,6 +358,7 @@ def test_artist_hero_profile_round_trip(pg_db):
     from crate.db.repositories.artist_hero_artwork import (
         get_artist_hero_artwork,
         list_artist_hero_backfill_candidates,
+        list_artist_hero_render_revisions,
         update_artist_hero_review_status,
         upsert_artist_hero_artwork,
     )
@@ -328,6 +387,19 @@ def test_artist_hero_profile_round_trip(pg_db):
         desktop_recipe=_crop_recipe(1400, 600),
         mobile_recipe=_crop_recipe(800, 1000),
         revision="revision-1",
+        render_manifest={
+            "manifest_version": 1,
+            "editorial_revision": "revision-1",
+            "artifacts": {
+                "desktop": {
+                    "renderer_version": "cover-fit-v4",
+                    "render_revision": "artifact-desktop-1",
+                    "source_fingerprint": "sha256:desktop",
+                    "recipe_hash": "desktop-hash",
+                    "relative_path": "artist-hero/7/desktop/artifact.webp",
+                }
+            },
+        },
     )
 
     profile = get_artist_hero_artwork(artist_id)
@@ -337,6 +409,11 @@ def test_artist_hero_profile_round_trip(pg_db):
     assert profile["review_status"] == "approved"
     assert profile["desktop_recipe"]["mode"] == "crop"
     assert profile["revision"] == "revision-1"
+    assert profile["render_manifest"]["manifest_version"] == 1
+    history = list_artist_hero_render_revisions(artist_id)
+    assert len(history) == 1
+    assert history[0]["composition"] == "desktop"
+    assert history[0]["render_revision"] == "artifact-desktop-1"
     assert artist_id not in {
         row["id"]
         for row in list_artist_hero_backfill_candidates(
@@ -349,6 +426,49 @@ def test_artist_hero_profile_round_trip(pg_db):
     assert reviewed_profile is not None
     assert reviewed_profile["review_status"] == "rejected"
     assert reviewed_profile["revision"] != "revision-1"
+
+
+@pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
+def test_artist_hero_profile_update_uses_expected_revision_as_cas(pg_db):
+    from crate.db.repositories.artist_hero_artwork import (
+        get_artist_hero_artwork,
+        upsert_artist_hero_artwork,
+    )
+    from crate.db.tx import read_scope
+    from sqlalchemy import text
+
+    pg_db.upsert_artist({"name": "CAS Artwork Profile Artist"})
+    with read_scope() as session:
+        artist_id = session.execute(
+            text(
+                "SELECT id FROM library_artists "
+                "WHERE name = 'CAS Artwork Profile Artist'"
+            )
+        ).scalar_one()
+
+    common = {
+        "artist_id": artist_id,
+        "provenance": "manual",
+        "review_status": "approved",
+        "source_width": 1600,
+        "source_height": 1000,
+        "desktop_recipe": _crop_recipe(1400, 600),
+        "mobile_recipe": _crop_recipe(800, 1000),
+        "desktop_enabled": True,
+        "mobile_enabled": True,
+    }
+    assert upsert_artist_hero_artwork(**common, revision="revision-1") is True
+    assert (
+        upsert_artist_hero_artwork(
+            **common,
+            revision="revision-2",
+            expected_revision="stale-revision",
+        )
+        is False
+    )
+    profile = get_artist_hero_artwork(artist_id)
+    assert profile is not None
+    assert profile["revision"] == "revision-1"
 
 
 def test_artist_hero_upload_endpoint_enqueues_original_and_both_recipes(test_app):
@@ -636,6 +756,54 @@ def test_artist_hero_backfill_endpoint_queues_bounded_scan(test_app):
     )
 
 
+def test_artist_hero_migration_canary_endpoint_queues_dry_run(test_app):
+    with patch(
+        "crate.api.artwork.create_task", return_value="task-migration-canary"
+    ) as create:
+        response = test_app.post(
+            "/api/artwork/artist-heroes/migration-canary",
+            json={"after_artist_id": 12, "batch_size": 7},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "queued",
+        "task_id": "task-migration-canary",
+    }
+    create.assert_called_once_with(
+        "migrate_artist_heroes",
+        {"after_artist_id": 12, "batch_size": 7, "dry_run": True},
+    )
+
+
+def test_artist_hero_rollback_endpoint_captures_active_manifest_cas(test_app):
+    profile = {
+        "revision": "editorial-revision-1",
+        "render_manifest": {
+            "manifest_version": 1,
+            "editorial_revision": "editorial-revision-1",
+            "artifacts": {"desktop": {"render_revision": "artifact-a"}},
+        },
+    }
+    with (
+        patch("crate.api.artwork.artist_name_from_id", return_value="Converge"),
+        patch("crate.api.artwork.get_artist_hero_artwork", return_value=profile),
+        patch("crate.api.artwork.create_task", return_value="task-rollback") as create,
+    ):
+        response = test_app.post(
+            "/api/artwork/artists/7/hero-profile/rollback",
+            json={"target_manifest_id": "sha256:manifest-b"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued", "task_id": "task-rollback"}
+    payload = create.call_args.args[1]
+    assert payload["artist_id"] == 7
+    assert payload["expected_revision"] == "editorial-revision-1"
+    assert payload["target_manifest_id"] == "sha256:manifest-b"
+    assert payload["expected_active_manifest_id"].startswith("sha256:")
+
+
 def test_upload_handler_writes_hero_variants_and_profile(monkeypatch, tmp_path):
     from crate.worker_handlers.artwork import _handle_upload_image
 
@@ -693,6 +861,14 @@ def test_upload_handler_writes_hero_variants_and_profile(monkeypatch, tmp_path):
     assert Image.open(artist_dir / "artist-hero-mobile.webp").size == (2160, 2700)
     assert profiles[0]["provenance"] == "manual"
     assert profiles[0]["desktop_recipe"] == desktop_recipe
+    manifest = profiles[0]["render_manifest"]
+    assert manifest["manifest_version"] == 1
+    assert manifest["editorial_revision"] == profiles[0]["revision"]
+    assert set(manifest["artifacts"]) == {"desktop", "mobile"}
+    assert all(
+        artifact["render_revision"] == profiles[0]["revision"]
+        for artifact in manifest["artifacts"].values()
+    )
     assert queued == [
         ("artist-hero", "artist-entity:desktop"),
         ("artist-hero", "artist-entity:mobile"),
@@ -761,6 +937,8 @@ def test_upload_handler_normalizes_exif_orientation_before_persisting_hero_sourc
 def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp_path):
     from crate.worker_handlers.artwork import _handle_upload_image
 
+    desktop_recipe = _crop_recipe(1400, 600)
+    requested_desktop_recipe = {**desktop_recipe, "brightness": 0.6}
     artist_dir = tmp_path / "Converge"
     artist_dir.mkdir()
     Image.new("RGB", (1800, 900), color=(180, 40, 20)).save(
@@ -794,6 +972,26 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
             "mobile_recipe": _crop_recipe(800, 1000),
             "provenance": "manual",
             "review_status": "approved",
+            "render_manifest": {
+                "manifest_version": 1,
+                "editorial_revision": "legacy-profile",
+                "artifacts": {
+                    "desktop": {
+                        "renderer_version": "cover-fit-v4",
+                        "render_revision": "desktop-legacy",
+                        "source_fingerprint": "sha256:desktop",
+                        "recipe_hash": "desktop-hash",
+                        "relative_path": "artist-hero-publications/v1/artist-entity/desktop/desktop-legacy/artifact.webp",
+                    },
+                    "mobile": {
+                        "renderer_version": "cover-fit-v4",
+                        "render_revision": "mobile-legacy",
+                        "source_fingerprint": "sha256:mobile",
+                        "recipe_hash": "mobile-hash",
+                        "relative_path": "artist-hero-publications/v1/artist-entity/mobile/mobile-legacy/artifact.webp",
+                    },
+                },
+            },
         },
     )
     monkeypatch.setattr(
@@ -813,7 +1011,7 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
                 "artist": "Converge",
                 "composition": "mobile",
                 "data_b64": base64.b64encode(_image_bytes((1000, 1500))).decode(),
-                "desktop_recipe": _crop_recipe(1400, 600),
+                "desktop_recipe": requested_desktop_recipe,
                 "mobile_recipe": _crop_recipe(800, 1000),
             },
             {"library_path": str(tmp_path)},
@@ -825,6 +1023,10 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
     assert Image.open(artist_dir / "artist-hero-mobile.webp").size == (2160, 2700)
     assert profiles[0]["desktop_source_width"] == 1800
     assert profiles[0]["mobile_source_width"] == 1000
+    assert profiles[0]["desktop_recipe"] == desktop_recipe
+    manifest = profiles[0]["render_manifest"]
+    assert manifest["artifacts"]["desktop"]["render_revision"] == "desktop-legacy"
+    assert manifest["artifacts"]["mobile"]["render_revision"] == profiles[0]["revision"]
 
 
 def test_compose_handler_rerenders_the_persisted_hero_source(monkeypatch, tmp_path):
@@ -918,6 +1120,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
         "position_y": 0.77,
     }
     mobile_recipe = _crop_recipe(800, 1000)
+    requested_mobile_recipe = {**mobile_recipe, "brightness": 0.6}
     profiles: list[dict] = []
     queued: list[tuple[str, str]] = []
 
@@ -961,7 +1164,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
                 "artist": "Crossed",
                 "composition": "desktop",
                 "desktop_recipe": desktop_recipe,
-                "mobile_recipe": mobile_recipe,
+                "mobile_recipe": requested_mobile_recipe,
             },
             {"library_path": str(tmp_path)},
         )
@@ -970,6 +1173,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
     assert Image.open(artist_dir / "artist-hero-desktop.webp").size == (2960, 1200)
     assert (artist_dir / "artist-hero-mobile.webp").read_bytes() == mobile_before
     assert profiles[0]["desktop_recipe"] == desktop_recipe
+    assert profiles[0]["mobile_recipe"] == mobile_recipe
     assert queued == [("artist-hero", "artist-entity:desktop")]
 
 

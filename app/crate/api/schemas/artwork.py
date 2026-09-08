@@ -6,7 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from crate.api.schemas.common import TaskEnqueueResponse
-from crate.api.schemas.artist_hero import ArtistHeroCompositionView
+from crate.api.schemas.artist_hero import (
+    ArtistHeroCompositionView,
+    ArtistHeroRenderManifestView,
+)
 from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
 
 
@@ -43,6 +46,16 @@ class ArtworkExtractRequest(BaseModel):
 
 class ArtworkQueuedResponse(TaskEnqueueResponse):
     status: str | None = None
+
+
+class ArtistHeroMigrationRequest(BaseModel):
+    after_artist_id: int = Field(default=0, ge=0)
+    batch_size: int = Field(default=25, ge=1, le=100)
+    dry_run: bool = True
+
+
+class ArtistHeroRollbackRequest(BaseModel):
+    target_manifest_id: str = Field(min_length=8)
 
 
 class ArtworkExtractResponse(BaseModel):
@@ -96,6 +109,7 @@ class ArtistHeroArtworkResponse(BaseModel):
     schema_version: int = 1
     render_version: str = ARTIST_HERO_RENDER_VERSION
     compositions: dict[str, ArtistHeroCompositionView] = Field(default_factory=dict)
+    render_manifest: ArtistHeroRenderManifestView | None = None
 
 
 class ArtistHeroReviewRequest(BaseModel):

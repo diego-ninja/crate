@@ -24,21 +24,22 @@ import {
 } from "@/lib/player-playback-prefs";
 
 export function usePlayerRuntimeState() {
-  const stored = useRef(getStoredQueue());
-  const [queue, setQueueState] = useState<Track[]>(stored.current.queue);
-  const [currentIndex, setCurrentIndexState] = useState(
-    clampIndex(stored.current.currentIndex, stored.current.queue.length),
+  const [stored] = useState(getStoredQueue);
+  const [queue, setQueueState] = useState<Track[]>(stored.queue);
+  const [currentIndex, setCurrentIndexState] = useState(() =>
+    clampIndex(stored.currentIndex, stored.queue.length),
   );
   const [jamQueueLocked, setJamQueueLockedState] = useState(false);
   const [isPlaying, setIsPlayingState] = useState(false);
   const [isBuffering, setIsBufferingState] = useState(false);
   const [currentTime, setCurrentTimeState] = useState(0);
   const [duration, setDurationState] = useState(0);
-  const [volume, setVolumeState] = useState(getStoredVolume);
+  const [initialVolume] = useState(getStoredVolume);
+  const [volume, setVolumeState] = useState(initialVolume);
   const [analyserVersion, setAnalyserVersion] = useState(0);
   const [crossfadeTransition, setCrossfadeTransition] =
     useState<CrossfadeTransition | null>(null);
-  const [shuffle, setShuffleState] = useState(() => stored.current.shuffle);
+  const [shuffle, setShuffleState] = useState(() => stored.shuffle);
   const [playSource, setPlaySource] = useState<PlaySource | null>(null);
   const [repeat, setRepeatState] = useState<RepeatMode>("off");
   const [smartCrossfadeEnabled, setSmartCrossfadeEnabled] = useState(
@@ -77,16 +78,17 @@ export function usePlayerRuntimeState() {
   const currentTimeRef = useRef(currentTime);
   const durationRef = useRef(duration);
   const bufferingIntentRef = useRef(false);
-  const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
+  const lastNonZeroVolumeRef = useRef(
+    initialVolume < 0.5 ? 0.5 : initialVolume,
+  );
   const activatedTrackKeyRef = useRef<string | null>(null);
   const prevRestartTrackKeyRef = useRef<string | null>(null);
   const prevRestartedAtRef = useRef(0);
   const callbacksRef = useRef<GaplessPlayerCallbacks>({});
-  const engineInitRef = useRef(false);
+  const engineRef = useRef<ReturnType<typeof initGaplessPlayer> | null>(null);
 
-  if (!engineInitRef.current) {
-    engineInitRef.current = true;
-    initGaplessPlayer({
+  if (engineRef.current === null) {
+    engineRef.current = initGaplessPlayer({
       onTimeUpdate: (ms, idx) => callbacksRef.current.onTimeUpdate?.(ms, idx),
       onDurationChange: (ms) => callbacksRef.current.onDurationChange?.(ms),
       onLoad: (path, full, ms) => callbacksRef.current.onLoad?.(path, full, ms),
@@ -106,9 +108,7 @@ export function usePlayerRuntimeState() {
     });
   }
 
-  const unshuffledQueueRef = useRef<Track[] | null>(
-    stored.current.unshuffledQueue,
-  );
+  const unshuffledQueueRef = useRef<Track[] | null>(stored.unshuffledQueue);
   const engineTrackMapRef = useRef<Map<string, Track[]>>(new Map());
 
   const resetEngineTrackMap = useCallback(() => {

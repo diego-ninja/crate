@@ -32,16 +32,16 @@ export function PlaylistInvite() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, token]);
+  }, [navigate, t, token]);
 
   return (
     <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-      <Loader2 size={22} className="animate-spin text-primary" />
+      <Loader2 size={22} className="animate-spin text-accent-action" />
       <div>
-        <p className="text-lg font-medium text-foreground">
+        <p className="text-lg font-medium text-text-primary">
           {t("playlistInvite.title")}
         </p>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-text-muted">
           {t("playlistInvite.subtitle")}
         </p>
       </div>

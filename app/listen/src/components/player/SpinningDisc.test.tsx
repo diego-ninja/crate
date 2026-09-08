@@ -74,6 +74,23 @@ describe("SpinningDisc", () => {
     );
   });
 
+  it("uses semantic tokens for the disc surfaces and play control", () => {
+    const { surface } = renderDisc();
+    const playButton = screen.getByRole("button", { name: "Play" });
+    const discContainer = surface.parentElement;
+
+    expect(surface).toHaveClass("spinning-disc-surface");
+    expect(discContainer?.querySelector(".spinning-disc-ambient")).toBeTruthy();
+    expect(surface.querySelector(".spinning-disc-rotor")).toBeTruthy();
+    expect(surface.querySelector(".spinning-disc-overlay")).toBeTruthy();
+    expect(playButton).toHaveClass("spinning-disc-control");
+    expect(
+      playButton.querySelector(".spinning-disc-control-ring"),
+    ).toBeTruthy();
+    expect(surface.outerHTML).not.toContain("rgba(");
+    expect(surface.outerHTML).not.toContain("border-white");
+  });
+
   it("seeks while dragging in live jog mode", () => {
     const { onSeek, surface } = renderDisc({ jogSeekMode: "live" });
 

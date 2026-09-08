@@ -44,7 +44,7 @@ export function PlayerSurfaceModeSwitch({
       className={cn(
         "inline-flex items-center gap-1",
         variant === "boxed" &&
-          "rounded-full border border-white/10 bg-black/30 p-1 backdrop-blur-sm",
+          "rounded-full border border-border-subtle bg-surface-chrome p-1 backdrop-blur-sm",
         className,
       )}
       role="tablist"
@@ -66,10 +66,10 @@ export function PlayerSurfaceModeSwitch({
               "flex items-center justify-center rounded-full transition-colors",
               buttonClass,
               active
-                ? "bg-primary/18 text-primary"
+                ? "bg-accent-action/18 text-accent-action"
                 : variant === "boxed"
-                  ? "text-white/40 hover:bg-white/6 hover:text-white/70"
-                  : "text-white/40 hover:bg-black/30 hover:text-white/70",
+                  ? "text-text-muted hover:bg-surface-control hover:text-text-secondary"
+                  : "text-text-muted hover:bg-surface-chrome hover:text-text-secondary",
             )}
           >
             <Icon size={iconSize} />

@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useEffectEvent,
+  useRef,
+} from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
   AdminSelect,
@@ -127,37 +133,51 @@ export function Browse() {
   }
 
   async function batchEnrich() {
-    for (const artistId of selected) {
-      const artist = artists.find((item) => item.id === artistId);
-      const endpoint = artistActionApiPath(
-        { artistId, artistEntityUid: artist?.entity_uid },
-        "enrich",
-      );
-      if (!endpoint) continue;
-      try {
-        await api(endpoint, "POST");
-      } catch {
-        /* continue */
-      }
-    }
+    const artistsById = new Map(
+      artists.flatMap((artist) =>
+        artist.id == null ? [] : [[artist.id, artist] as const],
+      ),
+    );
+    await Promise.all(
+      Array.from(selected, async (artistId) => {
+        const artist = artistsById.get(artistId);
+        const endpoint = artistActionApiPath(
+          { artistId, artistEntityUid: artist?.entity_uid },
+          "enrich",
+        );
+        if (!endpoint) return;
+        try {
+          await api(endpoint, "POST");
+        } catch {
+          /* continue */
+        }
+      }),
+    );
     toast.success(`Enrichment started for ${selected.size} artists`);
     clearSelection();
   }
 
   async function batchAnalyze() {
-    for (const artistId of selected) {
-      const artist = artists.find((item) => item.id === artistId);
-      const endpoint = artistManagementApiPath(
-        { artistId, artistEntityUid: artist?.entity_uid },
-        "reanalyze",
-      );
-      if (!endpoint) continue;
-      try {
-        await api(endpoint, "POST");
-      } catch {
-        /* continue */
-      }
-    }
+    const artistsById = new Map(
+      artists.flatMap((artist) =>
+        artist.id == null ? [] : [[artist.id, artist] as const],
+      ),
+    );
+    await Promise.all(
+      Array.from(selected, async (artistId) => {
+        const artist = artistsById.get(artistId);
+        const endpoint = artistManagementApiPath(
+          { artistId, artistEntityUid: artist?.entity_uid },
+          "reanalyze",
+        );
+        if (!endpoint) return;
+        try {
+          await api(endpoint, "POST");
+        } catch {
+          /* continue */
+        }
+      }),
+    );
     toast.success(`Analysis started for ${selected.size} artists`);
     clearSelection();
   }
@@ -166,23 +186,29 @@ export function Browse() {
     let queued = 0;
     let failed = 0;
 
-    for (const artistId of selected) {
-      const artist = artists.find((item) => item.id === artistId);
-      const endpoint = artistManagementApiPath(
-        { artistId, artistEntityUid: artist?.entity_uid },
-        "delete",
-      );
-      if (!endpoint) {
-        failed += 1;
-        continue;
-      }
-      try {
-        await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
-        queued += 1;
-      } catch {
-        failed += 1;
-      }
-    }
+    const artistsById = new Map(
+      artists.flatMap((artist) =>
+        artist.id == null ? [] : [[artist.id, artist] as const],
+      ),
+    );
+    const outcomes = await Promise.all(
+      Array.from(selected, async (artistId) => {
+        const artist = artistsById.get(artistId);
+        const endpoint = artistManagementApiPath(
+          { artistId, artistEntityUid: artist?.entity_uid },
+          "delete",
+        );
+        if (!endpoint) return "failed" as const;
+        try {
+          await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
+          return "queued" as const;
+        } catch {
+          return "failed" as const;
+        }
+      }),
+    );
+    queued = outcomes.filter((outcome) => outcome === "queued").length;
+    failed = outcomes.length - queued;
 
     if (queued > 0) {
       toast.success(
@@ -237,14 +263,6 @@ export function Browse() {
       .catch(() => {});
   }, [country, decade, format, genre, setParam]);
 
-  // Reset and fetch page 1 when filters change
-  useEffect(() => {
-    pageRef.current = 1;
-    hasMoreRef.current = true;
-    setArtists([]);
-    fetchPage(1, true);
-  }, [genre, country, decade, format, sort, featured, view]);
-
   const [loadingMore, setLoadingMore] = useState(false);
 
   const fetchPage = useCallback(
@@ -277,6 +295,16 @@ export function Browse() {
     [genre, country, decade, format, sort, featured, view],
   );
 
+  const fetchPageEvent = useEffectEvent(fetchPage);
+
+  // Reset and fetch page 1 when filters change.
+  useEffect(() => {
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    setArtists([]);
+    fetchPageEvent(1, true);
+  }, [genre, country, decade, format, sort, featured, view]);
+
   // Infinite scroll: observe sentinel element
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -291,14 +319,14 @@ export function Browse() {
           hasMoreRef.current
         ) {
           pageRef.current += 1;
-          fetchPage(pageRef.current);
+          fetchPageEvent(pageRef.current);
         }
       },
       { rootMargin: "200px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loading, loadingMore, fetchPage]);
+  }, [loading, loadingMore]);
 
   const genreOptions: AdminSelectOption[] = (filters?.genres ?? []).map(
     (option) => ({
@@ -409,6 +437,7 @@ export function Browse() {
             variant={view === "grid" ? "secondary" : "ghost"}
             size="icon"
             className="h-9 w-9 rounded-none"
+            aria-label="Grid view"
             onClick={() => setView("grid")}
           >
             <LayoutGrid size={16} />
@@ -417,6 +446,7 @@ export function Browse() {
             variant={view === "list" ? "secondary" : "ghost"}
             size="icon"
             className="h-9 w-9 rounded-none"
+            aria-label="List view"
             onClick={() => setView("list")}
           >
             <List size={16} />
@@ -559,10 +589,14 @@ export function Browse() {
 }
 
 function GridSkeletonBlock() {
+  const skeletonKeys = Array.from(
+    { length: 24 },
+    (_, index) => `browse-grid-skeleton-${index}`,
+  );
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-      {Array.from({ length: 24 }, (_, i) => (
-        <div key={i} className="bg-card border border-border rounded-md p-3">
+      {skeletonKeys.map((key) => (
+        <div key={key} className="bg-card border border-border rounded-md p-3">
           <Skeleton className="w-full aspect-square rounded-md mb-2" />
           <Skeleton className="h-4 w-3/4 mb-1" />
           <Skeleton className="h-3 w-1/2" />
@@ -573,10 +607,14 @@ function GridSkeletonBlock() {
 }
 
 function ListSkeletonBlock() {
+  const skeletonKeys = Array.from(
+    { length: 20 },
+    (_, index) => `browse-list-skeleton-${index}`,
+  );
   return (
     <div className="flex flex-col divide-y divide-border">
-      {Array.from({ length: 20 }, (_, i) => (
-        <div key={i} className="flex items-center gap-3 px-3 py-2">
+      {skeletonKeys.map((key) => (
+        <div key={key} className="flex items-center gap-3 px-3 py-2">
           <Skeleton className="w-10 h-10 rounded-md" />
           <Skeleton className="h-4 w-40" />
           <Skeleton className="h-3 w-16 ml-auto" />

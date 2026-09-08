@@ -53,6 +53,16 @@ beforeEach(() => {
 });
 
 describe("AlbumCard", () => {
+  it("uses the themed foreground for the desktop play icon", () => {
+    const { container } = renderWithListenProviders(
+      <AlbumCard artist="Hum" album="Inlet" albumId={42} layout="grid" />,
+    );
+
+    expect(
+      container.querySelector("button.bg-accent-action svg"),
+    ).toHaveAttribute("fill", "currentColor");
+  });
+
   it("resolves API cover paths for configurable native servers", () => {
     renderWithListenProviders(
       <AlbumCard
@@ -81,14 +91,25 @@ describe("AlbumCard", () => {
       <AlbumCard artist="Hum" album="Inlet" albumId={42} layout="grid" />,
     );
 
+    expect(
+      screen.getByRole("button", { name: "Add to collection" }),
+    ).toHaveClass("shadow-icon-control");
     const image = screen.getByAltText("Inlet");
     expect(image).toHaveAttribute("sizes");
     expect(image.getAttribute("srcset")).toMatch(/size=160[^,]* 160w/);
     expect(image.getAttribute("srcset")).toMatch(/size=320[^,]* 320w/);
     expect(image.getAttribute("srcset")).toMatch(/format=webp/);
-    expect(image.closest('[role="button"]')).toHaveClass(
-      "listen-deferred-grid-item",
+    expect(image.closest("article")).toHaveClass("listen-deferred-grid-item");
+  });
+
+  it("keeps the save heart circular at desktop sizes", () => {
+    renderWithListenProviders(
+      <AlbumCard artist="Hum" album="Inlet" albumId={42} layout="grid" />,
     );
+
+    expect(
+      screen.getByRole("button", { name: "Add to collection" }),
+    ).toHaveClass("size-10", "rounded-full", "right-4", "top-4");
   });
 
   it("opens the desktop action menu when the album only has stable route identifiers", async () => {
@@ -101,7 +122,7 @@ describe("AlbumCard", () => {
       />,
     );
 
-    const card = screen.getByText("Inlet").closest('[role="button"]');
+    const card = screen.getByText("Inlet").closest("article");
     expect(card).not.toBeNull();
 
     fireEvent.contextMenu(card!, { clientX: 160, clientY: 120 });

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import type { MutableRefObject } from "react";
 
 import type { Track } from "@/contexts/player-types";
@@ -51,14 +51,14 @@ export function usePlaybackPersistence({
   shuffleRef,
   unshuffledQueueRef,
 }: UsePlaybackPersistenceOptions): void {
-  const persistNow = (playing: boolean) => {
+  const persistNow = useEffectEvent((playing: boolean) => {
     saveQueue(queueRef.current, currentIndexRef.current, {
       currentTime: currentTimeRef.current,
       wasPlaying: playing,
       shuffle: shuffleRef.current,
       unshuffledQueue: unshuffledQueueRef.current,
     });
-  };
+  });
 
   // Structural: immediate writes on queue / cursor / play-pause / shuffle changes.
   useEffect(() => {
@@ -73,7 +73,7 @@ export function usePlaybackPersistence({
       persistNow(isPlayingRef.current);
     }, CHECKPOINT_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, []);
+  }, [isPlayingRef, queueRef]);
 
   // Unload: final snapshot for resume on next session. Both events fire
   // to cover iOS Safari (pagehide) and desktop (beforeunload).
@@ -88,5 +88,5 @@ export function usePlaybackPersistence({
       window.removeEventListener("pagehide", handler);
       window.removeEventListener("beforeunload", handler);
     };
-  }, []);
+  }, [isPlayingRef, queueRef]);
 }

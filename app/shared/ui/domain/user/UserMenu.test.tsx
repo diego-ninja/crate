@@ -50,6 +50,9 @@ describe("UserMenu", () => {
     );
 
     expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveClass(
+      "shadow-icon-control",
+    );
   });
 
   it("renders the fallback User icon when no avatar or initial is provided", () => {

@@ -33,6 +33,12 @@ describe("ShareSheetHost", () => {
     expect(screen.getByText("WhatsApp")).toBeInTheDocument();
     expect(screen.getByText("Telegram")).toBeInTheDocument();
     expect(screen.queryByText("Instagram Story")).not.toBeInTheDocument();
+    expect(screen.getByText("C").parentElement).toHaveClass(
+      "shadow-share-preview",
+    );
+    expect(
+      screen.getByText("WhatsApp").closest("button")?.querySelector("span"),
+    ).toHaveClass("shadow-share-action-icon");
 
     await user.click(screen.getByText("Telegram"));
     expect(openExternalUrl).toHaveBeenCalledWith(

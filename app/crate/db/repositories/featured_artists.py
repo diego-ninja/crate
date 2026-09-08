@@ -27,7 +27,7 @@ def set_artist_featured(
                            hero.mobile_source_height,
                            hero.desktop_recipe, hero.mobile_recipe,
                            hero.desktop_enabled, hero.mobile_enabled,
-                           hero.revision
+                           hero.revision, hero.render_manifest
                     FROM library_artists artist
                     LEFT JOIN artist_hero_artwork hero
                       ON hero.artist_id = artist.id
@@ -115,7 +115,7 @@ def clear_featured_if_not_ready(artist_id: int, *, session=None) -> bool:
                            hero.mobile_source_height,
                            hero.desktop_recipe, hero.mobile_recipe,
                            hero.desktop_enabled, hero.mobile_enabled,
-                           hero.revision
+                           hero.revision, hero.render_manifest
                     FROM library_artists artist
                     LEFT JOIN artist_hero_artwork hero
                       ON hero.artist_id = artist.id

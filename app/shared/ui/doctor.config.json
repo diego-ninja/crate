@@ -1,0 +1,30 @@
+{
+  "ignore": {
+    "rules": [
+      "react-doctor/no-high-complexity-react-function",
+      "react-doctor/no-giant-component",
+      "react-doctor/prefer-useReducer",
+      "react-doctor/no-many-boolean-props",
+      "react-doctor/no-multi-component-file",
+      "react-doctor/only-export-components",
+      "react-doctor/duplicate-jsx-subtree"
+    ],
+    "overrides": [
+      {
+        "files": ["domain/media/MediaCover.tsx"],
+        "rules": [
+          "react-doctor/no-reset-all-state-on-prop-change",
+          "react-doctor/no-adjust-state-on-prop-change"
+        ]
+      },
+      {
+        "files": ["primitives/AppModal.tsx"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": ["domain/actions/MobileActionSheet.tsx"],
+        "rules": ["react-doctor/prefer-html-dialog"]
+      }
+    ]
+  }
+}

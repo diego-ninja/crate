@@ -36,12 +36,27 @@ export interface ArtistHeroCompositionView {
   asset_path: string;
 }
 
+export interface ArtistHeroArtifactView {
+  renderer_version: string;
+  render_revision: string;
+  source_fingerprint: string;
+  recipe_hash: string;
+  asset_path: string;
+}
+
+export interface ArtistHeroRenderManifestView {
+  manifest_version: 1;
+  editorial_revision: string;
+  artifacts: Partial<Record<ArtistHeroComposition, ArtistHeroArtifactView>>;
+}
+
 export interface ArtistHeroProfileView {
   schema_version: number;
   render_version: string;
   compositions: Partial<
     Record<ArtistHeroComposition, ArtistHeroCompositionView>
   >;
+  render_manifest?: ArtistHeroRenderManifestView;
 }
 
 export function artistHeroCompositionSize(

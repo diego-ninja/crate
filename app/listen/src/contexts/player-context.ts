@@ -41,6 +41,7 @@ export interface PlayerActionsValue {
   jamTransport: JamTransportControls | null;
   shuffle: boolean;
   repeat: RepeatMode;
+  smartCrossfadeEnabled: boolean;
   playSource: PlaySource | null;
   recentlyPlayed: Track[];
   currentTrack: Track | undefined;

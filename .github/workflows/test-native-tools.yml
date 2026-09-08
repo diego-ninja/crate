@@ -9,6 +9,7 @@ on:
       - "app/Dockerfile"
       - ".github/workflows/test-native-tools.yml"
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - "app/media-worker/**"
       - "tools/crate-cli/**"
@@ -17,6 +18,7 @@ on:
 
 jobs:
   crate-cli:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +44,7 @@ jobs:
           test -x /tmp/crate-cli-build/crate-cli
 
   media-worker:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,6 +73,7 @@ jobs:
           tags: crate-media-worker:ci
 
   coverage:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read

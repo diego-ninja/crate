@@ -62,8 +62,8 @@ export function RadioFeedback({
           onClick={handleLike}
           className={`flex ${buttonClass} touch-manipulation items-center justify-center rounded-full transition ${
             liked
-              ? "bg-primary/15 text-primary"
-              : "text-white/30 hover:bg-white/5 hover:text-white/60"
+              ? "bg-accent-action/15 text-accent-action"
+              : "text-text-primary/30 hover:bg-text-primary/5 hover:text-text-primary/60"
           }`}
           title={t("player.radio.moreLikeThis")}
           aria-label={t("player.radio.moreLikeThis")}
@@ -75,8 +75,8 @@ export function RadioFeedback({
         onClick={handleDislike}
         className={`flex ${buttonClass} touch-manipulation items-center justify-center rounded-full transition ${
           disliked
-            ? "bg-red-500/15 text-red-400"
-            : "text-white/30 hover:bg-white/5 hover:text-white/60"
+            ? "bg-state-danger/15 text-state-danger"
+            : "text-text-primary/30 hover:bg-text-primary/5 hover:text-text-primary/60"
         }`}
         title={t("player.radio.lessLikeThis")}
         aria-label={t("player.radio.lessLikeThis")}

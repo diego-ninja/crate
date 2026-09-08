@@ -19,8 +19,7 @@ MIN_IMAGE_TREATMENT = 0.5
 MAX_IMAGE_TREATMENT = 1.5
 MIN_FILL_POSITION = -1.0
 MAX_FILL_POSITION = 2.0
-ARTIST_HERO_SURFACE_COLOR = (10, 10, 15)
-ARTIST_HERO_RENDER_VERSION = "cover-fit-v4"
+ARTIST_HERO_RENDER_VERSION = "cover-fit-v5-neutral-alpha"
 
 
 def artist_hero_revision(*parts: bytes) -> str:
@@ -155,7 +154,7 @@ def _render_extended(
     left, top, width, height = _extended_subject_frame(source.size, recipe, output_size)
     subject_size = (width, height)
     subject = source.resize(subject_size, Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", output_size, ARTIST_HERO_SURFACE_COLOR)
+    canvas = Image.new("RGBA", output_size, (0, 0, 0, 0))
     canvas.paste(subject, (left, top))
     return canvas
 

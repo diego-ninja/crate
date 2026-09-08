@@ -25,16 +25,38 @@ describe("ActionIconButton", () => {
     const { container } = render(
       <ActionIconButton active>Icon</ActionIconButton>,
     );
-    expect(container.querySelector("button")).toHaveClass("text-primary");
+    expect(container.querySelector("button")).toHaveClass("text-accent-action");
   });
 
   it("uses glow-only hover without framed hover backgrounds", () => {
     const { container } = render(<ActionIconButton>Icon</ActionIconButton>);
     const button = container.querySelector("button");
 
-    expect(button?.className).toContain("hover:text-primary");
-    expect(button?.className).toContain("hover:drop-shadow");
+    expect(button?.className).toContain("hover:text-accent-action");
+    expect(button?.className).toContain("hover:drop-shadow-accent-action");
     expect(button?.className).not.toContain("hover:bg-");
+    expect(button?.className).not.toContain("rgba(");
+  });
+
+  it("uses semantic glow tokens for each action tone", () => {
+    const { container } = render(
+      <>
+        <ActionIconButton aria-label="Primary" tone="primary">
+          Primary
+        </ActionIconButton>
+        <ActionIconButton aria-label="Danger" tone="danger">
+          Danger
+        </ActionIconButton>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Primary" })).toHaveClass(
+      "hover:drop-shadow-accent-action-active",
+    );
+    expect(screen.getByRole("button", { name: "Danger" })).toHaveClass(
+      "hover:drop-shadow-state-danger",
+    );
+    expect(container.innerHTML).not.toContain("rgba(");
   });
 
   it("adds a subtle pulse for active icon states", () => {

@@ -186,7 +186,7 @@ export function MobileActionSheet({
       event.stopPropagation();
       suppressAndRequestClose();
     },
-    [suppressAndRequestClose],
+    [isPanelTarget, suppressAndRequestClose],
   );
 
   const beginDrag = useCallback(
@@ -373,12 +373,19 @@ export function MobileActionSheet({
     <div
       role="dialog"
       aria-modal="true"
+      aria-label="Action sheet"
+      tabIndex={-1}
       className={cn(
-        "fixed inset-0 flex items-end justify-center bg-black/58 p-0 backdrop-blur-md z-app-modal",
+        "fixed inset-0 flex items-end justify-center bg-surface-canvas/58 p-0 backdrop-blur-md z-app-modal",
         isClosing ? "animate-fade-out" : "animate-fade-in",
       )}
       onClickCapture={handleOverlayClick}
       onPointerDownCapture={handlePointerDown}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        suppressAndRequestClose();
+      }}
       onTouchEnd={(event) => {
         if (isPanelTarget(event.target)) return;
         setIsDragging(false);
@@ -389,7 +396,7 @@ export function MobileActionSheet({
       <div
         ref={resolvedPanelRef}
         className={cn(
-          "listen-glass-panel fixed inset-x-0 overflow-hidden overscroll-contain rounded-t-3xl border border-white/10 shadow-2xl",
+          "listen-glass-panel fixed inset-x-0 overflow-hidden overscroll-contain rounded-t-3xl border border-border-quiet shadow-2xl",
           isClosing && swipeY === 0
             ? "animate-sheet-down"
             : isEntering && !isDragging
@@ -423,7 +430,7 @@ export function MobileActionSheet({
           onPointerUp={handlePanelPointerEnd}
           onPointerCancel={handleContentTouchCancel}
         >
-          <div className="mx-auto h-1.25 w-14 rounded-full bg-white/22 transition-opacity duration-150 group-hover:opacity-90" />
+          <div className="mx-auto h-1.25 w-14 rounded-full bg-text-primary/22 transition-opacity duration-150 group-hover:opacity-90" />
         </div>
         <div className="max-h-[inherit] overflow-y-auto overscroll-contain">
           {children}

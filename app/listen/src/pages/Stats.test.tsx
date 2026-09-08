@@ -40,6 +40,30 @@ describe("Stats page", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses semantic tokens for the stats shell and hero", () => {
+    const { container } = renderWithListenProviders(<Stats />, {
+      route: "/stats",
+      path: "/stats",
+      locale: "es",
+    });
+
+    expect(
+      container.querySelector(".stats-page-atmosphere"),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".stats-page-grid")).toBeInTheDocument();
+
+    const hero = container.querySelector(".stats-hero-surface");
+    expect(hero).toBeInTheDocument();
+    expect(hero).not.toHaveClass("bg-[#101116]");
+    expect(hero).not.toHaveClass("shadow-black/35");
+    expect(hero?.querySelector(".stats-hero-overlay")).toBeInTheDocument();
+
+    const heroTitle = container.querySelector(".stats-hero-title");
+    expect(heroTitle).toBeInTheDocument();
+    expect(heroTitle).not.toHaveClass("text-white");
+    expect(container.querySelectorAll(".stats-hero-metric")).toHaveLength(3);
+  });
+
   it("localizes data-backed stats panels", () => {
     const dashboard: StatsDashboard = {
       window: "30d",

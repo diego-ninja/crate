@@ -143,12 +143,14 @@ function Sidebar({
 
   return (
     <>
-      <div
+      <button
+        type="button"
         className={cn(
-          "fixed inset-0 z-20 bg-black/68 transition-opacity lg:hidden",
+          "fixed inset-0 z-20 border-0 bg-black/68 p-0 transition-opacity lg:hidden",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={onClose}
+        aria-label="Close navigation"
       />
       <aside
         className={cn(
@@ -165,8 +167,12 @@ function Sidebar({
               size={16}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-cyan-200/42"
             />
+            <label htmlFor="docs-search" className="sr-only">
+              Search documentation
+            </label>
             <input
               ref={searchRef}
+              id="docs-search"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder="Search docs"
@@ -557,8 +563,8 @@ function Breadcrumbs() {
   return (
     <div className="mb-5 flex flex-wrap items-center gap-2 font-mono text-[12px] uppercase text-white/32">
       <Home size={14} />
-      {labels.map((label, index) => (
-        <div key={`${label}-${index}`} className="flex items-center gap-2">
+      {labels.map((label) => (
+        <div key={label} className="flex items-center gap-2">
           <ChevronRight size={12} />
           <span>{label}</span>
         </div>

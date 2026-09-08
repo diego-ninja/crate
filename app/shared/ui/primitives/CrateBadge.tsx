@@ -17,10 +17,10 @@ export const CratePill = memo(function CratePill({
   icon: Icon,
   className = "",
 }: CratePillProps) {
-  const base = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition ${className}`;
+  const base = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-badge transition ${className}`;
   const color = active
     ? "border-[var(--pill-active-border)] bg-[var(--pill-active-bg)] text-[var(--active-text)]"
-    : "border-[var(--pill-border)] bg-[var(--pill-bg)] text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:text-foreground";
+    : "border-[var(--pill-border)] bg-[var(--pill-bg)] text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:text-text-primary";
   const dis = disabled
     ? "cursor-not-allowed opacity-[var(--disabled-opacity)]"
     : "";
@@ -64,7 +64,7 @@ export const CrateChip = memo(function CrateChip({
     : "border-[var(--chip-border)] bg-[var(--chip-bg)] text-[var(--idle-text-muted)]";
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${color} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-badge ${color} ${className}`}
     >
       {Icon && <Icon size={10} />}
       {children}

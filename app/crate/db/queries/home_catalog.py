@@ -248,6 +248,83 @@ def get_artist_genres_map(artist_names: list[str]) -> dict[str, list[str]]:
     return genre_map
 
 
+def get_artist_genre_profiles_map(
+    artist_names: list[str], limit: int = 4
+) -> dict[str, list[dict]]:
+    """Return the top weighted genres for each artist in one read query."""
+
+    if not artist_names:
+        return {}
+
+    profile_limit = max(limit, 1)
+    with read_scope() as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    WITH ranked AS (
+                        SELECT
+                            ag.artist_name,
+                            g.name,
+                            g.slug,
+                            ag.weight,
+                            ag.source,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY ag.artist_name
+                                ORDER BY ag.weight DESC NULLS LAST, g.name ASC
+                            ) AS genre_rank
+                        FROM artist_genres ag
+                        JOIN genres g ON g.id = ag.genre_id
+                        WHERE ag.artist_name = ANY(:names)
+                    )
+                    SELECT artist_name, name, slug, weight, source
+                    FROM ranked
+                    WHERE genre_rank <= :limit
+                    ORDER BY artist_name, weight DESC NULLS LAST, name ASC
+                    """
+                ),
+                {"names": artist_names, "limit": profile_limit},
+            )
+            .mappings()
+            .all()
+        )
+
+    rows_by_artist: dict[str, list[dict]] = {}
+    for row in rows:
+        rows_by_artist.setdefault(row["artist_name"], []).append(dict(row))
+
+    profiles: dict[str, list[dict]] = {}
+    for artist_name, artist_rows in rows_by_artist.items():
+        weights = [
+            float(row["weight"])
+            for row in artist_rows
+            if row.get("weight") is not None and float(row["weight"]) > 0
+        ]
+        total_weight = sum(weights)
+        max_weight = max(weights, default=0.0)
+        artist_profiles: list[dict] = []
+        for row in artist_rows:
+            weight = row.get("weight")
+            numeric_weight = float(weight) if weight is not None else 0.0
+            share = numeric_weight / total_weight if total_weight else 0.0
+            percent = round(numeric_weight / max_weight * 100) if max_weight else None
+            if percent is not None and numeric_weight > 0:
+                percent = max(percent, 1)
+            artist_profiles.append(
+                {
+                    "name": row["name"],
+                    "slug": row.get("slug"),
+                    "source": row.get("source"),
+                    "weight": round(numeric_weight, 4),
+                    "share": round(share, 4),
+                    "percent": percent,
+                }
+            )
+        profiles[artist_name] = artist_profiles
+
+    return profiles
+
+
 def get_library_artist_by_id(artist_id: int) -> dict | None:
     with read_scope() as session:
         row = (
@@ -288,6 +365,7 @@ def get_followed_artist_genre_names(names: list[str], limit: int) -> list[str]:
 
 __all__ = [
     "get_artist_genres_map",
+    "get_artist_genre_profiles_map",
     "get_followed_artist_genre_names",
     "get_home_hero_rows",
     "get_library_artist_by_id",

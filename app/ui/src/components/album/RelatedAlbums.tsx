@@ -46,9 +46,9 @@ export function RelatedAlbums({ albumId }: { albumId?: number }) {
         </span>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {data.map((album, index) => (
+        {data.map((album) => (
           <button
-            key={`${album.artist}-${album.name}-${index}`}
+            key={`${album.id}-${album.artist}-${album.name}`}
             onClick={() =>
               navigate(
                 albumPagePath({

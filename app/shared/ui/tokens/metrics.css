@@ -1,0 +1,28 @@
+/* Content density changes bounded content spacing only; controls keep their hit targets. */
+:root {
+  --content-card-gap: 0.5rem;
+  --content-card-padding: 0.5rem;
+  --content-grid-gap: 1rem;
+  --content-list-gap: 0.25rem;
+  --content-rail-gap: 1rem;
+  --content-row-gap: 0.75rem;
+  --content-row-inline-gap: 0.5rem;
+  --content-row-padding-y: 0.625rem;
+  --content-rail-column-2: calc((100% - var(--content-rail-gap)) / 2);
+  --content-rail-column-3: calc((100% - (var(--content-rail-gap) * 2)) / 3);
+  --content-rail-column-4: calc((100% - (var(--content-rail-gap) * 3)) / 4);
+  --content-rail-column-5: calc((100% - (var(--content-rail-gap) * 4)) / 5);
+  --content-rail-column-6: calc((100% - (var(--content-rail-gap) * 5)) / 6);
+  --content-rail-column-7: calc((100% - (var(--content-rail-gap) * 6)) / 7);
+}
+
+[data-crate-density="compact"] {
+  --content-card-gap: 0.25rem;
+  --content-card-padding: 0.25rem;
+  --content-grid-gap: 0.75rem;
+  --content-list-gap: 0.125rem;
+  --content-rail-gap: 0.75rem;
+  --content-row-gap: 0.5rem;
+  --content-row-inline-gap: 0.375rem;
+  --content-row-padding-y: 0.375rem;
+}

@@ -149,7 +149,10 @@ export function MergeArtistDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label
+            htmlFor="merge-artist-target"
+            className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
             Target artist
           </label>
           <div className="relative">
@@ -158,6 +161,7 @@ export function MergeArtistDialog({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
             />
             <Input
+              id="merge-artist-target"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="pl-9"

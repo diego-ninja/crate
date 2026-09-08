@@ -46,9 +46,9 @@ export function IssueList({ issues }: IssueListProps) {
           <h3 className="font-semibold mb-3">
             {type.replace(/_/g, " ")} ({items.length})
           </h3>
-          {items.map((issue, i) => (
+          {items.map((issue) => (
             <div
-              key={i}
+              key={`${issue.description}-${issue.suggestion}`}
               className="bg-card border border-border rounded-md p-4 mb-2"
             >
               <div className="flex justify-between items-start">

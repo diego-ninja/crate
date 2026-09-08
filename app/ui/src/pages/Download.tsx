@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useSearchParams } from "react-router";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { Button } from "@crate/ui/shadcn/button";
@@ -100,6 +107,23 @@ interface SoulseekResult {
   totalSize: number;
 }
 
+async function downloadFromSoulseek(result: SoulseekResult): Promise<void> {
+  try {
+    await api("/api/acquisition/download", "POST", {
+      source: "soulseek",
+      username: result.username,
+      artist: result.artist,
+      album: result.album,
+      files: result.files,
+    });
+    toast.success(
+      `Downloading from Soulseek: ${result.artist} - ${result.album}`,
+    );
+  } catch {
+    toast.error("Failed to start download");
+  }
+}
+
 interface QueueItem {
   id: number;
   tidal_url: string;
@@ -161,40 +185,80 @@ interface ArtistSuggestionsPayload {
 
 // Cover lookup cache — fetches from Last.fm public API (no auth needed)
 const _coverCache = new Map<string, string | null>();
-function useAlbumCover(artist: string, album: string): string | null {
-  const key = `${artist}|||${album}`.toLowerCase();
-  const [cover, setCover] = useState<string | null>(
-    _coverCache.get(key) ?? null,
-  );
+const _coverListeners = new Map<string, Set<() => void>>();
+const _coverRequests = new Set<string>();
+const _coverLookups = new Map<string, { artist: string; album: string }>();
 
-  useEffect(() => {
-    if (_coverCache.has(key)) {
-      setCover(_coverCache.get(key) ?? null);
-      return;
-    }
-    if (!artist || !album) return;
-    const apiKey = "ef3a8db881b15b6ef062eed7781a5a22"; // public Last.fm key
-    fetch(
-      `https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=${apiKey}&artist=${encodeURIComponent(
-        artist,
-      )}&album=${encodeURIComponent(album)}&format=json`,
-    )
-      .then((r) => r.json())
+function getCachedAlbumCover(key: string): string | null {
+  return _coverCache.get(key) ?? null;
+}
+
+function notifyAlbumCover(key: string): void {
+  _coverListeners.get(key)?.forEach((listener) => listener());
+}
+
+function subscribeToAlbumCover(key: string, listener: () => void): () => void {
+  const listeners = _coverListeners.get(key) ?? new Set<() => void>();
+  listeners.add(listener);
+  _coverListeners.set(key, listeners);
+  if (!_coverCache.has(key) && !_coverRequests.has(key)) {
+    _coverRequests.add(key);
+    const lookup = _coverLookups.get(key);
+    if (!lookup) return () => undefined;
+    void loadLastFmAlbumCover(lookup.artist, lookup.album)
       .then((d) => {
         const images = d?.album?.image ?? [];
         const large =
-          images.find((i: { size: string }) => i.size === "extralarge") ??
+          images.find((i) => i.size === "extralarge") ??
           images[images.length - 1];
-        const url = large?.["#text"] || null;
-        _coverCache.set(key, url);
-        setCover(url);
+        _coverCache.set(key, large?.["#text"] || null);
       })
       .catch(() => {
         _coverCache.set(key, null);
+      })
+      .finally(() => {
+        _coverRequests.delete(key);
+        notifyAlbumCover(key);
       });
-  }, [key, artist, album]);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) _coverListeners.delete(key);
+  };
+}
 
-  return cover;
+function useAlbumCover(artist: string, album: string): string | null {
+  const key = `${artist}|||${album}`.toLowerCase();
+  _coverLookups.set(key, { artist, album });
+  return useSyncExternalStore(
+    (listener) => {
+      if (!artist || !album) return () => undefined;
+      return subscribeToAlbumCover(key, listener);
+    },
+    () => getCachedAlbumCover(key),
+    () => null,
+  );
+}
+
+async function loadLastFmAlbumCover(
+  artist: string,
+  album: string,
+): Promise<{
+  album?: { image?: Array<{ size?: string; "#text"?: string }> };
+} | null> {
+  const { api_key: apiKey } = await api<{ api_key?: string }>(
+    "/api/auth/scrobble/lastfm/auth-url",
+  );
+  if (!apiKey) return null;
+  const response = await fetch(
+    `https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=${apiKey}&artist=${encodeURIComponent(
+      artist,
+    )}&album=${encodeURIComponent(album)}&format=json`,
+  );
+  if (!response.ok) {
+    throw new Error(`Last.fm request failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 // ── Quality helpers ─────────────────────────────────────────────
@@ -444,6 +508,8 @@ export function DownloadPage() {
     [query],
   );
 
+  const doSearchEvent = useEffectEvent(doSearch);
+
   async function searchArtistSuggestion(suggestion: ArtistSuggestion) {
     const term = suggestion.artist_name.trim();
     if (!term) return;
@@ -489,12 +555,12 @@ export function DownloadPage() {
 
   // Auto-search on mount if URL has ?q=
   useEffect(() => {
-    if (initialQ) doSearch(initialQ);
+    if (initialQ) doSearchEvent(initialQ);
     return () => {
       slskStreamRef.current?.close();
       slskStreamRef.current = null;
     };
-  }, []);
+  }, [initialQ]);
 
   async function startDownload(
     url: string,
@@ -550,23 +616,6 @@ export function DownloadPage() {
     );
     toast.success("Moved to download queue");
     refetchQueue();
-  }
-
-  async function downloadFromSoulseek(result: SoulseekResult) {
-    try {
-      await api("/api/acquisition/download", "POST", {
-        source: "soulseek",
-        username: result.username,
-        artist: result.artist,
-        album: result.album,
-        files: result.files,
-      });
-      toast.success(
-        `Downloading from Soulseek: ${result.artist} - ${result.album}`,
-      );
-    } catch {
-      toast.error("Failed to start download");
-    }
   }
 
   async function submitUpload() {
@@ -858,6 +907,8 @@ export function DownloadPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {results.artists!.map((artist) => (
                       <div
+                        role="button"
+                        tabIndex={0}
                         key={artist.id}
                         className="bg-card border border-border rounded-md p-4 text-center cursor-pointer hover:border-primary/40 transition-colors"
                         onClick={() =>
@@ -867,6 +918,16 @@ export function DownloadPage() {
                             picture: artist.picture,
                           })
                         }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setBrowsingArtist({
+                              id: artist.id,
+                              name: artist.name,
+                              picture: artist.picture,
+                            });
+                          }
+                        }}
                       >
                         <div className="w-full aspect-square rounded-md mb-3 overflow-hidden bg-secondary mx-auto">
                           {artist.picture ? (
@@ -961,6 +1022,7 @@ export function DownloadPage() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                          aria-label={`Add ${track.title} to wishlist`}
                           onClick={() =>
                             addToWishlist({
                               url: track.url,
@@ -977,6 +1039,7 @@ export function DownloadPage() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          aria-label={`Download ${track.title}`}
                           onClick={() =>
                             startDownload(
                               track.url,
@@ -1011,9 +1074,9 @@ export function DownloadPage() {
             <div>
               {soulseekResults && soulseekResults.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {soulseekResults.map((r, i) => (
+                  {soulseekResults.map((r) => (
                     <SlskResultCard
-                      key={i}
+                      key={`${r.username}-${r.artist}-${r.album}-${r.totalSize}`}
                       result={r}
                       onDownload={() => downloadFromSoulseek(r)}
                     />
@@ -1184,9 +1247,9 @@ export function DownloadPage() {
                     onRemove={removeQueueItem}
                   />
                 ))}
-                {slskDownloads.map((d, i) => (
+                {slskDownloads.map((d) => (
                   <div
-                    key={`slsk-${i}`}
+                    key={`slsk-${d.username}-${d.artist}-${d.album}-${d.filename}`}
                     className="flex items-center gap-3 p-3 bg-card border border-border rounded-md"
                   >
                     <div className="w-10 h-10 rounded bg-secondary flex items-center justify-center flex-shrink-0">
@@ -1209,7 +1272,7 @@ export function DownloadPage() {
                       {d.progress > 0 && d.progress < 100 && (
                         <div className="h-1 bg-secondary rounded-md mt-1 overflow-hidden">
                           <div
-                            className="h-full bg-purple-500 rounded-md transition-all"
+                            className="h-full bg-purple-500 rounded-md transition-[width,background-color]"
                             style={{ width: `${d.progress}%` }}
                           />
                         </div>
@@ -1381,6 +1444,7 @@ function QueueRow({
           variant="ghost"
           size="icon"
           className="h-7 w-7"
+          aria-label="Download now"
           onClick={() => onPromote(item.id)}
           title="Download now"
         >
@@ -1391,6 +1455,7 @@ function QueueRow({
         variant="ghost"
         size="icon"
         className="h-7 w-7 text-muted-foreground hover:text-destructive"
+        aria-label="Remove download"
         onClick={() => onRemove(item.id)}
       >
         <Trash2 size={12} />
@@ -1484,9 +1549,11 @@ function TidalArtistBrowser({
             size="sm"
             className="ml-auto"
             onClick={() => {
-              albums
-                .filter((a) => a.status === "available")
-                .forEach((a) => onDownload(a.url, `${a.artist} - ${a.title}`));
+              for (const album of albums) {
+                if (album.status === "available") {
+                  onDownload(album.url, `${album.artist} - ${album.title}`);
+                }
+              }
             }}
           >
             <Download size={12} className="mr-1" /> Download all missing (
@@ -1930,7 +1997,7 @@ function SlskResultCard({
                 f.filename.replace(/\\/g, "/").split("/").pop() ?? f.filename;
               return (
                 <div
-                  key={i}
+                  key={`${f.filename}-${f.size}-${f.length}`}
                   className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50"
                 >
                   <span className="text-[11px] text-muted-foreground w-5 text-right font-mono">

@@ -53,43 +53,61 @@ export function formatShowDateParts(date: string, time: string) {
   };
 }
 
-export const GENRE_COLORS: Record<string, string> = {
-  metal: "#1f2937",
-  "heavy metal": "#1f2937",
-  "death metal": "#1f2937",
-  "black metal": "#1f2937",
-  "doom metal": "#374151",
-  punk: "#dc2626",
-  hardcore: "#dc2626",
-  "hardcore punk": "#dc2626",
-  "post-hardcore": "#ea580c",
-  grindcore: "#991b1b",
-  rock: "#2563eb",
-  "alternative rock": "#3b82f6",
-  "indie rock": "#6366f1",
-  grunge: "#4b5563",
-  "post-punk": "#7c3aed",
-  shoegaze: "#a78bfa",
-  electronic: "#06b6d4",
-  ambient: "#0e7490",
-  noise: "#78716c",
-  experimental: "#a855f7",
-  "math rock": "#14b8a6",
-  emo: "#f43f5e",
-  screamo: "#e11d48",
-  "hip hop": "#eab308",
-  jazz: "#f59e0b",
-  folk: "#65a30d",
+const DEFAULT_GENRE_COLOR = "var(--genre-tone-default)";
+
+export const GENRE_COLOR_TOKENS: Record<string, string> = {
+  metal: "--genre-tone-ink",
+  "heavy metal": "--genre-tone-ink",
+  "death metal": "--genre-tone-ink",
+  "black metal": "--genre-tone-ink",
+  "doom metal": "--genre-tone-ink-strong",
+  punk: "--genre-tone-warm-strong",
+  hardcore: "--genre-tone-warm-strong",
+  "hardcore punk": "--genre-tone-warm-strong",
+  "post-hardcore": "--genre-tone-warm",
+  grindcore: "--genre-tone-warm-strong",
+  rock: "--genre-tone-cool",
+  "alternative rock": "--genre-tone-cool",
+  "indie rock": "--genre-tone-cool-accent",
+  grunge: "--genre-tone-muted",
+  "post-punk": "--genre-tone-cool-accent",
+  shoegaze: "--genre-tone-cool-accent",
+  electronic: "--genre-tone-default",
+  ambient: "--genre-tone-cool-accent",
+  noise: "--genre-tone-muted",
+  experimental: "--genre-tone-cool-accent",
+  "math rock": "--genre-tone-success",
+  emo: "--genre-tone-warm-strong",
+  screamo: "--genre-tone-warm-strong",
+  "hip hop": "--genre-tone-warm",
+  jazz: "--genre-tone-warm",
+  folk: "--genre-tone-success",
 };
 
+const GENRE_COLOR_ENTRIES = Object.entries(GENRE_COLOR_TOKENS).sort(
+  ([left], [right]) => right.length - left.length,
+);
+
+function asGenreColor(tokenName: string): string {
+  return `var(${tokenName})`;
+}
+
 export function getGenreColor(genres?: string[]): string {
-  if (!genres || genres.length === 0) return "#06b6d4";
+  if (!genres || genres.length === 0) return DEFAULT_GENRE_COLOR;
+
   for (const genre of genres) {
-    const lower = genre.toLowerCase();
-    if (GENRE_COLORS[lower]) return GENRE_COLORS[lower]!;
-    for (const [key, color] of Object.entries(GENRE_COLORS)) {
-      if (lower.includes(key) || key.includes(lower)) return color;
+    const lower = genre.trim().toLowerCase();
+    if (!lower) continue;
+
+    const exactToken = GENRE_COLOR_TOKENS[lower];
+    if (exactToken) return asGenreColor(exactToken);
+
+    for (const [key, tokenName] of GENRE_COLOR_ENTRIES) {
+      if (lower.includes(key) || key.includes(lower)) {
+        return asGenreColor(tokenName);
+      }
     }
   }
-  return "#06b6d4";
+
+  return DEFAULT_GENRE_COLOR;
 }

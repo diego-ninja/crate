@@ -1,0 +1,53 @@
+name: React Doctor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/react-doctor.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "app/shared/ui/**"
+      - "app/shared/web/**"
+      - "app/ui/**"
+      - "app/listen/**"
+      - "app/listen-desktop/**"
+      - "app/docs/**"
+      - "app/site/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/react-doctor.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "app/shared/ui/**"
+      - "app/shared/web/**"
+      - "app/ui/**"
+      - "app/listen/**"
+      - "app/listen-desktop/**"
+      - "app/docs/**"
+      - "app/site/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: millionco/react-doctor@v2
+        with:
+          directory: "."
+          project: "app/shared/ui,app/ui,app/listen,app/listen-desktop,app/docs,app/site"
+          scope: changed

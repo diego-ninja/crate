@@ -203,11 +203,11 @@ async function refreshNativeArtworkTickets(tracks: Track[]): Promise<void> {
   }
 
   const pending = Array.from(targets.values());
-  for (let index = 0; index < pending.length; index += 128) {
-    await refreshMediaAccessTickets(pending.slice(index, index + 128)).catch(
-      () => false,
-    );
-  }
+  await Promise.all(
+    Array.from({ length: Math.ceil(pending.length / 128) }, (_, index) =>
+      refreshMediaAccessTickets(pending.slice(index * 128, index * 128 + 128)),
+    ).map((request) => request.catch(() => false)),
+  );
 }
 
 function hasFreshRemoteStream(track: Track): boolean {

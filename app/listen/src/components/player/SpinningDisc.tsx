@@ -1,39 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Disc3, Loader2, Pause, Play } from "@crate/ui/icons";
 
 import { cn } from "@crate/ui/lib/cn";
-import { CrateImage } from "@/components/artwork/CrateImage";
-
-const DISC_DEGREES_PER_SECOND = 120;
-const JOG_SECONDS_PER_ROTATION = 2.5;
-const JOG_SEEK_INTERVAL_MS = 110;
-const JOG_RATE_UPDATE_INTERVAL_MS = 70;
-const PLAYING_FORWARD_SYNC_TOLERANCE_SECONDS = 0.65;
-const PLAYING_BACKWARD_SYNC_TOLERANCE_SECONDS = 1.6;
+import { SpinningDiscArtwork } from "@/components/player/SpinningDiscArtwork";
+import { SpinningDiscControl } from "@/components/player/SpinningDiscControl";
+import {
+  DISC_DEGREES_PER_SECOND,
+  JOG_RATE_UPDATE_INTERVAL_MS,
+  JOG_SEEK_INTERVAL_MS,
+  clamp,
+  getJogTime,
+  getPointerAngle,
+  normalizeDeltaDegrees,
+} from "@/components/player/spinning-disc-math";
+import { useSpinningDiscPlayback } from "@/components/player/use-spinning-disc-playback";
 
 type JogSeekMode = "live" | "commit";
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function getPointerAngle(
-  event: Pick<PointerEvent, "clientX" | "clientY">,
-  bounds: DOMRect,
-): number {
-  const centerX = bounds.left + bounds.width / 2;
-  const centerY = bounds.top + bounds.height / 2;
-  return (
-    Math.atan2(event.clientY - centerY, event.clientX - centerX) *
-    (180 / Math.PI)
-  );
-}
-
-function normalizeDeltaDegrees(delta: number): number {
-  if (delta > 180) return delta - 360;
-  if (delta < -180) return delta + 360;
-  return delta;
-}
 
 interface SpinningDiscProps {
   albumCover?: string | null;
@@ -72,10 +53,6 @@ export function SpinningDisc({
   onTogglePlay,
   disabled = false,
 }: SpinningDiscProps) {
-  const discRef = useRef<HTMLDivElement>(null);
-  const rotorRef = useRef<HTMLDivElement>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const playbackAnchorRef = useRef({ time: currentTime, timestamp: 0 });
   const seekTimerRef = useRef<number | null>(null);
   const lastSeekFlushAtRef = useRef(0);
   const lastRateUpdateAtRef = useRef(0);
@@ -92,8 +69,15 @@ export function SpinningDisc({
 
   const [isJogging, setIsJogging] = useState(false);
   const [dragRotation, setDragRotation] = useState<number | null>(null);
-
-  const showCrossfade = !!crossfadeOutgoingCover && !!crossfadeIncomingCover;
+  const { rotorRef, setPlaybackAnchor, setRotorRotation } =
+    useSpinningDiscPlayback({
+      currentTime,
+      dragRotation,
+      duration,
+      isBuffering,
+      isJogging,
+      isPlaying,
+    });
 
   const setJogPlaybackRate = useCallback(
     (rate: number, immediate = false) => {
@@ -113,22 +97,6 @@ export function SpinningDisc({
       onPlaybackRateChange(safeRate);
     },
     [onPlaybackRateChange],
-  );
-
-  const setRotorRotation = useCallback((rotation: number) => {
-    if (!rotorRef.current) return;
-    rotorRef.current.style.transform = `rotate(${rotation}deg)`;
-  }, []);
-
-  const projectedPlaybackTime = useCallback(
-    (timestamp: number) => {
-      const anchor = playbackAnchorRef.current;
-      if (!isPlaying || isBuffering) return anchor.time;
-      const elapsedSeconds = Math.max(0, (timestamp - anchor.timestamp) / 1000);
-      const projected = anchor.time + elapsedSeconds;
-      return duration > 0 ? Math.min(projected, duration) : projected;
-    },
-    [duration, isBuffering, isPlaying],
   );
 
   const clearSeekTimer = useCallback(() => {
@@ -188,81 +156,8 @@ export function SpinningDisc({
     return () => {
       clearSeekTimer();
       onPlaybackRateChange?.(1);
-      if (animationFrameRef.current != null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-      }
     };
   }, [clearSeekTimer, onPlaybackRateChange]);
-
-  useEffect(() => {
-    if (isJogging || dragRotation != null) return;
-
-    const timestamp =
-      typeof performance !== "undefined" ? performance.now() : Date.now();
-    const projected = projectedPlaybackTime(timestamp);
-    const drift = currentTime - projected;
-    const shouldHardSync =
-      !isPlaying ||
-      isBuffering ||
-      drift > PLAYING_FORWARD_SYNC_TOLERANCE_SECONDS ||
-      drift < -PLAYING_BACKWARD_SYNC_TOLERANCE_SECONDS;
-
-    if (shouldHardSync) {
-      playbackAnchorRef.current = { time: currentTime, timestamp };
-      if (!isPlaying || isBuffering) {
-        setRotorRotation(currentTime * DISC_DEGREES_PER_SECOND);
-      }
-    }
-  }, [
-    currentTime,
-    dragRotation,
-    isBuffering,
-    isJogging,
-    isPlaying,
-    projectedPlaybackTime,
-    setRotorRotation,
-  ]);
-
-  useEffect(() => {
-    if (dragRotation != null) {
-      setRotorRotation(dragRotation);
-      return;
-    }
-
-    if (animationFrameRef.current != null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (!isPlaying || isBuffering) {
-      const timestamp =
-        typeof performance !== "undefined" ? performance.now() : Date.now();
-      playbackAnchorRef.current = { time: currentTime, timestamp };
-      setRotorRotation(currentTime * DISC_DEGREES_PER_SECOND);
-      return;
-    }
-
-    const tick = (timestamp: number) => {
-      const displayTime = projectedPlaybackTime(timestamp);
-      setRotorRotation(displayTime * DISC_DEGREES_PER_SECOND);
-      animationFrameRef.current = window.requestAnimationFrame(tick);
-    };
-
-    animationFrameRef.current = window.requestAnimationFrame(tick);
-
-    return () => {
-      if (animationFrameRef.current != null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-    };
-  }, [
-    dragRotation,
-    isBuffering,
-    isPlaying,
-    projectedPlaybackTime,
-    setRotorRotation,
-  ]);
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -308,12 +203,11 @@ export function SpinningDisc({
       dragState.previousMoveAt = now;
       dragState.accumDegrees += delta;
 
-      const nextTime = clamp(
-        dragState.startTime +
-          (dragState.accumDegrees / 360) * JOG_SECONDS_PER_ROTATION,
-        0,
+      const nextTime = getJogTime({
+        accumDegrees: dragState.accumDegrees,
         duration,
-      );
+        startTime: dragState.startTime,
+      });
 
       setDragRotation(dragState.baseRotation + dragState.accumDegrees);
       const degreesPerSecond = (delta / elapsedMs) * 1000;
@@ -344,17 +238,19 @@ export function SpinningDisc({
       setIsJogging(false);
       setDragRotation(null);
       setJogPlaybackRate(1, true);
-      playbackAnchorRef.current = {
-        time: finalTime,
-        timestamp:
-          typeof performance !== "undefined" ? performance.now() : Date.now(),
-      };
+      setPlaybackAnchor(finalTime);
       setRotorRotation(finalTime * DISC_DEGREES_PER_SECOND);
       if (currentTarget.hasPointerCapture(pointerId)) {
         currentTarget.releasePointerCapture(pointerId);
       }
     },
-    [currentTime, flushPendingSeek, setJogPlaybackRate, setRotorRotation],
+    [
+      currentTime,
+      flushPendingSeek,
+      setJogPlaybackRate,
+      setPlaybackAnchor,
+      setRotorRotation,
+    ],
   );
 
   const handlePointerUp = useCallback(
@@ -379,11 +275,10 @@ export function SpinningDisc({
         disabled && "pointer-events-none grayscale opacity-60",
       )}
     >
-      <div className="absolute inset-[7%] rounded-full bg-primary/12 blur-3xl opacity-80" />
+      <div className="spinning-disc-ambient absolute inset-[7%] rounded-full blur-3xl opacity-80" />
       <div
-        ref={discRef}
         className={cn(
-          "relative aspect-square w-full rounded-full border border-white/12 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.14),rgba(255,255,255,0.02)_26%,rgba(0,0,0,0.88)_68%,rgba(0,0,0,1))] shadow-[0_32px_90px_rgba(0,0,0,0.6),0_12px_32px_rgba(0,0,0,0.42)]",
+          "spinning-disc-surface relative aspect-square w-full rounded-full",
           jogEnabled && onSeek
             ? "cursor-grab touch-none active:cursor-grabbing"
             : "",
@@ -398,7 +293,7 @@ export function SpinningDisc({
         <div
           ref={rotorRef}
           className={cn(
-            "absolute inset-[5.5%] overflow-hidden rounded-full border border-white/10 bg-black/90 transition-transform duration-150",
+            "spinning-disc-rotor absolute inset-[5.5%] overflow-hidden rounded-full transition-transform duration-150",
             isJogging ? "" : "will-change-transform",
           )}
           style={{
@@ -408,56 +303,22 @@ export function SpinningDisc({
                 : "transform 140ms linear",
           }}
         >
-          {showCrossfade ? (
-            <>
-              <CrateImage
-                src={crossfadeOutgoingCover!}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{ opacity: 1 - crossfadeProgress }}
-              />
-              <CrateImage
-                src={crossfadeIncomingCover!}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{ opacity: crossfadeProgress }}
-              />
-            </>
-          ) : albumCover ? (
-            <CrateImage
-              src={albumCover}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/5">
-              <Disc3 size={88} className="text-white/12" />
-            </div>
-          )}
+          <SpinningDiscArtwork
+            albumCover={albumCover}
+            crossfadeIncomingCover={crossfadeIncomingCover}
+            crossfadeOutgoingCover={crossfadeOutgoingCover}
+            crossfadeProgress={crossfadeProgress}
+          />
         </div>
 
-        <div className="pointer-events-none absolute inset-[2%] rounded-full border border-white/8 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" />
+        <div className="spinning-disc-overlay pointer-events-none absolute inset-[2%] rounded-full" />
 
-        <button
-          type="button"
-          onClick={onTogglePlay}
+        <SpinningDiscControl
           disabled={disabled}
-          onPointerDown={(event) => event.stopPropagation()}
-          className="absolute left-1/2 top-1/2 z-10 flex h-[26%] w-[26%] min-h-[72px] min-w-[72px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/14 bg-[radial-gradient(circle,rgba(15,23,42,0.96),rgba(2,6,12,0.98))] text-white shadow-[0_14px_34px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-transform duration-200 hover:scale-[1.03] active:scale-[0.97]"
-          aria-label={isPlaying ? "Pause" : "Play"}
-        >
-          <span className="absolute inset-[10%] rounded-full border border-primary/18" />
-          {isBuffering ? (
-            <Loader2 size={22} className="animate-spin text-primary" />
-          ) : isPlaying ? (
-            <Pause size={22} className="text-white" />
-          ) : (
-            <Play
-              size={22}
-              className="translate-x-[2px] fill-white text-white"
-            />
-          )}
-        </button>
+          isBuffering={isBuffering}
+          isPlaying={isPlaying}
+          onTogglePlay={onTogglePlay}
+        />
       </div>
     </div>
   );

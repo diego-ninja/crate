@@ -38,7 +38,7 @@ export function UpcomingMonthGroup({
 
   return (
     <div className="space-y-2">
-      <div className="border-b border-white/5 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
+      <div className="border-b border-text-primary/5 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-text-primary/40">
         {formatMonthLabel(month)}
       </div>
       <div className="space-y-2">

@@ -187,10 +187,12 @@
 @keyframes pulse-subtle {
   0%,
   100% {
-    box-shadow: 0 0 8px rgba(6, 182, 212, 0.1);
+    box-shadow: 0 0 8px
+      color-mix(in srgb, var(--accent-action) 10%, transparent);
   }
   50% {
-    box-shadow: 0 0 16px rgba(6, 182, 212, 0.25);
+    box-shadow: 0 0 16px
+      color-mix(in srgb, var(--accent-action) 25%, transparent);
   }
 }
 .animate-pulse-subtle {
@@ -201,11 +203,17 @@
 @keyframes crateIconActivePulse {
   0%,
   100% {
-    filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.3));
+    filter: drop-shadow(
+      0 0 5px color-mix(in srgb, var(--accent-action) 30%, transparent)
+    );
   }
   48% {
-    filter: drop-shadow(0 0 7px rgba(34, 211, 238, 0.48))
-      drop-shadow(0 0 14px rgba(39, 215, 255, 0.18));
+    filter: drop-shadow(
+        0 0 7px color-mix(in srgb, var(--accent-action) 48%, transparent)
+      )
+      drop-shadow(
+        0 0 14px color-mix(in srgb, var(--accent-action) 18%, transparent)
+      );
   }
 }
 
@@ -442,23 +450,23 @@
   100% {
     transform: scale(1);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-      inset 0 -10px 24px rgba(0, 0, 0, 0.48),
-      0 0 0 rgba(39, 215, 255, 0);
+      inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 8%, transparent),
+      inset 0 -10px 24px var(--surface-glass-shadow),
+      0 0 0 transparent;
   }
   44% {
     transform: scale(0.965);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      inset 0 -8px 22px rgba(0, 0, 0, 0.4),
-      0 0 18px rgba(39, 215, 255, 0.22);
+      inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent),
+      inset 0 -8px 22px color-mix(in srgb, var(--surface-glass-shadow) 83%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent-action) 22%, transparent);
   }
   68% {
     transform: scale(1.018);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-      inset 0 -12px 26px rgba(0, 0, 0, 0.5),
-      0 0 10px rgba(39, 215, 255, 0.16);
+      inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 10%, transparent),
+      inset 0 -12px 26px var(--surface-glass-shadow),
+      0 0 10px color-mix(in srgb, var(--accent-action) 16%, transparent);
   }
 }
 
@@ -504,6 +512,15 @@
   .animate-crate-loader-dot-bounce {
     animation: none;
   }
+}
+
+[data-crate-motion="reduced"] *,
+[data-crate-motion="reduced"] *::before,
+[data-crate-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
 }
 
 /* View Transitions API */

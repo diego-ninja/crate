@@ -33,6 +33,8 @@ export function useAuthSession() {
     } finally {
       if (authRequestRef.current === controller) {
         authRequestRef.current = null;
+        // The identity guard prevents an older request from clearing a newer one.
+        // react-doctor-disable-next-line no-loading-flag-reset-outside-finally
         setLoading(false);
       }
     }

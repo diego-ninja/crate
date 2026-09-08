@@ -46,14 +46,14 @@ export function SearchBar({
   return (
     <div
       className={cn(
-        "relative flex items-center rounded-xl border border-white/8 bg-black/25 shadow-sm transition-[background-color,border-color,box-shadow]",
-        "focus-within:border-cyan-400/25 focus-within:bg-black/40 focus-within:shadow-[0_0_0_1px_rgba(34,211,238,0.08)]",
+        "relative flex items-center rounded-xl border border-text-primary/8 bg-surface-canvas/25 shadow-sm transition-[background-color,border-color,box-shadow]",
+        "focus-within:border-accent-action/25 focus-within:bg-surface-canvas/40 focus-within:shadow-focus",
         className,
       )}
     >
       <Search
         size={CRATE_ICON_SIZE.md}
-        className="pointer-events-none absolute left-4 shrink-0 text-white/40"
+        className="pointer-events-none absolute left-4 shrink-0 text-text-primary/40"
         aria-hidden="true"
       />
       <input
@@ -69,8 +69,8 @@ export function SearchBar({
         autoFocus={autoFocus}
         aria-label="Search"
         className={cn(
-          "h-12 w-full rounded-xl border-0 bg-transparent py-0 pl-12 pr-11 text-[15px] text-white outline-none",
-          "placeholder:text-white/40",
+          "h-12 w-full rounded-xl border-0 bg-transparent py-0 pl-12 pr-11 text-[0.9375rem] text-text-primary outline-none",
+          "placeholder:text-text-primary/40",
           disabled && "cursor-not-allowed opacity-60",
           inputClassName,
         )}
@@ -79,7 +79,7 @@ export function SearchBar({
         {loading ? (
           <Loader2
             size={CRATE_ICON_SIZE.sm}
-            className="pointer-events-auto animate-spin text-white/40"
+            className="pointer-events-auto animate-spin text-text-primary/40"
             aria-hidden="true"
           />
         ) : value ? (
@@ -88,7 +88,7 @@ export function SearchBar({
             onClick={handleClear}
             disabled={disabled}
             aria-label="Clear search"
-            className="pointer-events-auto flex size-9 items-center justify-center text-white/30 transition-colors hover:text-white/65 disabled:cursor-not-allowed disabled:opacity-60"
+            className="pointer-events-auto flex size-9 items-center justify-center text-text-primary/30 transition-colors hover:text-text-primary/65 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X size={CRATE_ICON_SIZE.lg} />
           </button>

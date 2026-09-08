@@ -84,13 +84,17 @@ export function preparePlaybackDelivery(
   );
   if (tracks.length === 0) return;
 
-  const localRefs = tracks
-    .filter((t) => t.origin !== "remote")
-    .map(trackRef)
-    .filter(
-      (ref) =>
-        ref.global_track_uid || ref.entity_uid || ref.track_id || ref.path,
-    );
+  const localRefs = tracks.reduce<ReturnType<typeof trackRef>[]>(
+    (refs, track) => {
+      if (track.origin === "remote") return refs;
+      const ref = trackRef(track);
+      if (ref.global_track_uid || ref.entity_uid || ref.track_id || ref.path) {
+        refs.push(ref);
+      }
+      return refs;
+    },
+    [],
+  );
   const remoteRefs = upcomingRemoteDeliveryTracks(queue, currentIndex).map(
     trackRef,
   );

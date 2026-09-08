@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
 
 type LayerRef = RefObject<HTMLElement | null>;
 
@@ -19,10 +19,10 @@ export function useDismissibleLayer({
   closeOnPointerDownOutside = true,
   closeOnScroll = false,
 }: UseDismissibleLayerOptions) {
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
-  const refsRef = useRef(refs);
-  refsRef.current = refs;
+  const dismiss = useEffectEvent(onDismiss);
+  const isInside = useEffectEvent((target: Node | null) =>
+    refs.some((ref) => ref.current && target && ref.current.contains(target)),
+  );
   const suppressClickRef = useRef(false);
   const suppressClickTimerRef = useRef<number | undefined>(undefined);
 
@@ -53,11 +53,6 @@ export function useDismissibleLayer({
   useEffect(() => {
     if (!active) return;
 
-    const isInside = (target: Node | null) =>
-      refsRef.current.some(
-        (ref) => ref.current && target && ref.current.contains(target),
-      );
-
     const stopOutsideEvent = (event: Event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -76,20 +71,20 @@ export function useDismissibleLayer({
         suppressClickTimerRef.current = undefined;
       }, 400);
       stopOutsideEvent(event);
-      onDismissRef.current();
+      dismiss();
     };
 
     const handleScroll = (event: Event) => {
       if (!closeOnScroll) return;
       if (isInside(event.target as Node | null)) return;
-      onDismissRef.current();
+      dismiss();
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!closeOnEscape || event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      onDismissRef.current();
+      dismiss();
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);

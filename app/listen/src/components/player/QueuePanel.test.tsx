@@ -93,4 +93,29 @@ describe("QueuePanel", () => {
     expect(screen.getByAltText("")).toHaveClass("grayscale");
     expect(screen.getByText("Next").closest('[role="button"]')).toBeNull();
   });
+
+  it("uses semantic tokens for queue surfaces and track states", () => {
+    isDesktop = true;
+
+    renderWithListenProviders(<QueuePanel open onClose={vi.fn()} />, {
+      playerActions: {
+        currentTrack,
+        queue: [currentTrack, nextTrack],
+        currentIndex: 0,
+      },
+    });
+
+    const panel = screen.getByText("Queue").closest(".listen-glass-panel");
+    const nextRow = screen.getByText("Next").closest('[role="button"]');
+
+    expect(panel).toHaveClass("border-l", "border-border-quiet");
+    expect(screen.getByText("Queue")).toHaveClass("text-text-primary");
+    expect(nextRow).toHaveClass(
+      "hover:bg-surface-control",
+      "focus-visible:bg-surface-control",
+      "focus-visible:ring-focus-ring/40",
+    );
+    expect(screen.getByText("Next")).toHaveClass("text-text-primary");
+    expect(nextRow?.className).not.toContain("white/");
+  });
 });

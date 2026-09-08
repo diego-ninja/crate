@@ -1,10 +1,14 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { CRATE_ICON_SIZE, MonitorSpeaker, X } from "@crate/ui/icons";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { PlayerActionsContext } from "@/contexts/player-context";
+import {
+  PlayerActionsContext,
+  type PlayerActionsValue,
+  type PlayerConnectValue,
+} from "@/contexts/player-context";
 import { getStoredQueue } from "@/contexts/player-utils";
 import { useCrateConnectEnabled } from "@/hooks/use-crate-connect-enabled";
 import { transferPlaybackToDevice } from "@/lib/crate-connect";
@@ -24,25 +28,70 @@ function formatPosition(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export function ContinuePlaybackPrompt() {
-  const { user } = useAuth();
-  const { t } = useTranslation();
-  const playerActions = useContext(PlayerActionsContext);
-  if (!playerActions)
-    throw new Error(
-      "ContinuePlaybackPrompt must be used within PlayerProvider",
-    );
-  const { connect, playAll, seek } = playerActions;
-  const connectEnabled = useCrateConnectEnabled();
-  const [candidate, setCandidate] = useState<RemotePlaybackState | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [transferring, setTransferring] = useState(false);
-  const activeInstance =
-    connect.transport === "ws"
-      ? connect.connectedInstances.find(
-          (instance) => instance.instance_id === connect.activeInstanceId,
-        )
-      : null;
+function useLegacyResumeCandidate({
+  connectEnabled,
+  dismissed,
+  transport,
+  userId,
+}: {
+  connectEnabled: boolean;
+  dismissed: boolean;
+  transport: PlayerConnectValue["transport"];
+  userId?: number;
+}) {
+  const [entry, setEntry] = useState<{
+    userId: number;
+    candidate: RemotePlaybackState | null;
+  } | null>(null);
+  const eligible = Boolean(
+    userId && connectEnabled && !dismissed && transport !== "ws",
+  );
+
+  useEffect(() => {
+    if (!eligible || userId == null) return;
+    let cancelled = false;
+    const localSavedAt = getStoredQueue().savedAt;
+    fetchResumeCandidate()
+      .then(({ candidate: next }) => {
+        if (cancelled) return;
+        setEntry({
+          userId,
+          candidate: shouldPromptForRemoteResume(next, { localSavedAt })
+            ? next
+            : null,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [eligible, userId]);
+
+  if (!eligible || !entry || entry.userId !== userId) return null;
+  return entry.candidate;
+}
+
+function activeConnectInstance(connect: PlayerConnectValue) {
+  if (connect.transport !== "ws") return null;
+  return (
+    connect.connectedInstances.find(
+      (instance) => instance.instance_id === connect.activeInstanceId,
+    ) ?? null
+  );
+}
+
+function buildContinuePlaybackModel({
+  candidate,
+  connect,
+  connectEnabled,
+  dismissed,
+}: {
+  candidate: RemotePlaybackState | null;
+  connect: PlayerConnectValue;
+  connectEnabled: boolean;
+  dismissed: boolean;
+}) {
+  const activeInstance = activeConnectInstance(connect);
   const isV2RemoteActive =
     connect.transport === "ws" &&
     Boolean(connect.activeInstanceId) &&
@@ -51,45 +100,12 @@ export function ContinuePlaybackPrompt() {
     connect.activeInstanceId !== connect.playbackInstanceId;
   const v2Candidate =
     isV2RemoteActive && connect.isRemoteActive ? connect.remoteState : null;
-
-  useEffect(() => {
-    setCandidate(null);
-    setDismissed(false);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user || !connectEnabled || dismissed || connect.transport === "ws") {
-      setCandidate(null);
-      return;
-    }
-    let cancelled = false;
-    const localSavedAt = getStoredQueue().savedAt;
-    fetchResumeCandidate()
-      .then(({ candidate: next }) => {
-        if (cancelled) return;
-        setCandidate(
-          shouldPromptForRemoteResume(next, { localSavedAt }) ? next : null,
-        );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [connect.transport, connectEnabled, dismissed, user?.id]);
-
-  const queue = useMemo(
-    () =>
-      v2Candidate
-        ? remotePlaybackQueue(v2Candidate)
-        : candidate
-          ? remotePlaybackQueue(candidate)
-          : [],
-    [candidate, v2Candidate],
-  );
-
   const promptState = v2Candidate ?? candidate;
-  if (!connectEnabled || !promptState || dismissed || queue.length === 0)
+  const queue = promptState ? remotePlaybackQueue(promptState) : [];
+
+  if (!connectEnabled || !promptState || dismissed || queue.length === 0) {
     return null;
+  }
 
   const activeRemote =
     connect.transport === "ws"
@@ -101,10 +117,28 @@ export function ContinuePlaybackPrompt() {
     device_type: activeInstance?.device_type ?? promptState.device_type,
   });
 
-  const continueHere = async () => {
+  return { activeRemote, label, promptState, queue };
+}
+
+function useContinuePlaybackAction({
+  model,
+  playerActions,
+  setDismissed,
+  t,
+}: {
+  model: ReturnType<typeof buildContinuePlaybackModel>;
+  playerActions: PlayerActionsValue;
+  setDismissed: (value: boolean) => void;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const [transferring, setTransferring] = useState(false);
+  const { connect, playAll, seek } = playerActions;
+
+  const continueHere = useCallback(async () => {
+    if (!model) return;
     const startIndex = Math.max(
       0,
-      Math.min(promptState.current_index || 0, queue.length - 1),
+      Math.min(model.promptState.current_index || 0, model.queue.length - 1),
     );
     if (connect.transport === "ws") {
       if (!connect.playbackInstanceId) {
@@ -121,11 +155,11 @@ export function ContinuePlaybackPrompt() {
       setDismissed(true);
       return;
     }
-    if (activeRemote) {
+    if (model.activeRemote) {
       setTransferring(true);
       try {
         await transferPlaybackToDevice(getListenDeviceId(), {
-          sourceDeviceId: promptState.device_id,
+          sourceDeviceId: model.promptState.device_id,
           startPlaying: true,
         });
         setDismissed(true);
@@ -137,28 +171,49 @@ export function ContinuePlaybackPrompt() {
       return;
     }
 
-    playAll(queue, startIndex, promptState.play_source || undefined);
+    playAll(
+      model.queue,
+      startIndex,
+      model.promptState.play_source || undefined,
+    );
     window.setTimeout(() => {
-      if (promptState.position_ms > 0) {
-        seek(promptState.position_ms / 1000);
+      if (model.promptState.position_ms > 0) {
+        seek(model.promptState.position_ms / 1000);
       }
     }, 250);
     setDismissed(true);
-  };
+  }, [connect, model, playAll, seek, setDismissed, t]);
+
+  return { continueHere, transferring };
+}
+
+function ContinuePlaybackBanner({
+  model,
+  transferring,
+  onContinue,
+  onDismiss,
+}: {
+  model: NonNullable<ReturnType<typeof buildContinuePlaybackModel>>;
+  transferring: boolean;
+  onContinue: () => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
+  const { activeRemote, label, promptState } = model;
 
   return (
     <div className="listen-glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] z-app-modal mx-auto max-w-xl rounded-xl p-3 sm:bottom-24">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 rounded-lg border border-cyan-400/25 bg-cyan-400/10 p-2 text-cyan-200">
+        <div className="mt-0.5 rounded-lg border border-accent-action/25 bg-accent-action/10 p-2 text-text-accent">
           <MonitorSpeaker size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground">
+          <div className="text-sm font-semibold text-text-primary">
             {activeRemote
               ? t("player.continue.playingOn", { device: label })
               : t("player.continue.fromDevice", { device: label })}
           </div>
-          <div className="mt-1 truncate text-xs text-muted-foreground">
+          <div className="mt-1 truncate text-xs text-text-muted">
             {promptState.artist ? `${promptState.artist} - ` : ""}
             {promptState.title || t("player.continue.unknownTrack")} -{" "}
             {formatPosition(promptState.position_ms)}
@@ -166,9 +221,9 @@ export function ContinuePlaybackPrompt() {
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void continueHere()}
+              onClick={onContinue}
               disabled={transferring}
-              className="rounded-lg bg-cyan-400 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-cyan-300"
+              className="rounded-lg bg-accent-action px-3 py-1.5 text-xs font-semibold text-accent-action-foreground transition-colors hover:bg-accent-action-hover"
             >
               {transferring
                 ? t("player.continue.transferring")
@@ -178,8 +233,8 @@ export function ContinuePlaybackPrompt() {
             </button>
             <button
               type="button"
-              onClick={() => setDismissed(true)}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              onClick={onDismiss}
+              className="rounded-lg border border-border-quiet px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-text-primary/10 hover:text-text-primary"
             >
               {t("player.continue.notNow")}
             </button>
@@ -188,12 +243,58 @@ export function ContinuePlaybackPrompt() {
         <button
           type="button"
           aria-label={t("player.continue.dismiss")}
-          onClick={() => setDismissed(true)}
-          className="flex size-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          onClick={onDismiss}
+          className="flex size-9 items-center justify-center text-text-muted transition-colors hover:text-text-primary"
         >
           <X size={CRATE_ICON_SIZE.lg} />
         </button>
       </div>
     </div>
+  );
+}
+
+export function ContinuePlaybackPrompt() {
+  const { user } = useAuth();
+  const { t } = useTranslation();
+  const playerActions = useContext(PlayerActionsContext);
+  if (!playerActions) {
+    throw new Error(
+      "ContinuePlaybackPrompt must be used within PlayerProvider",
+    );
+  }
+  const connectEnabled = useCrateConnectEnabled();
+  const [dismissed, setDismissed] = useState(false);
+  const candidate = useLegacyResumeCandidate({
+    connectEnabled,
+    dismissed,
+    transport: playerActions.connect.transport,
+    userId: user?.id,
+  });
+  const model = useMemo(
+    () =>
+      buildContinuePlaybackModel({
+        candidate,
+        connect: playerActions.connect,
+        connectEnabled,
+        dismissed,
+      }),
+    [candidate, connectEnabled, dismissed, playerActions.connect],
+  );
+  const action = useContinuePlaybackAction({
+    model,
+    playerActions,
+    setDismissed,
+    t,
+  });
+
+  if (!model) return null;
+
+  return (
+    <ContinuePlaybackBanner
+      model={model}
+      transferring={action.transferring}
+      onContinue={() => void action.continueHere()}
+      onDismiss={() => setDismissed(true)}
+    />
   );
 }

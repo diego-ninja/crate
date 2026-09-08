@@ -14,7 +14,7 @@
  */
 import { apiFetch } from "@/lib/api";
 
-const QUEUE_KEY = "listen-pending-play-events";
+export const PENDING_PLAY_EVENTS_STORAGE_KEY = "listen-pending-play-events:v1";
 const MAX_QUEUE_SIZE = 500;
 const MAX_ATTEMPTS = 5;
 const RETRY_BASE_MS = 2000;
@@ -37,7 +37,7 @@ function generateId(): string {
 
 function readQueue(): QueuedEvent[] {
   try {
-    const raw = localStorage.getItem(QUEUE_KEY);
+    const raw = localStorage.getItem(PENDING_PLAY_EVENTS_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -48,7 +48,10 @@ function readQueue(): QueuedEvent[] {
 
 function writeQueue(events: QueuedEvent[]): void {
   try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(events));
+    localStorage.setItem(
+      PENDING_PLAY_EVENTS_STORAGE_KEY,
+      JSON.stringify(events),
+    );
   } catch {
     /* quota exceeded or storage disabled — drop silently */
   }
@@ -117,6 +120,8 @@ export async function flushQueue(): Promise<{
       }
 
       try {
+        // Replay order is part of the queue contract; requests are retried in order.
+        // react-doctor-disable-next-line async-await-in-loop
         const response = await apiFetch(event.endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -177,7 +182,7 @@ export function queueSize(): number {
  */
 export function clearQueue(): void {
   try {
-    localStorage.removeItem(QUEUE_KEY);
+    localStorage.removeItem(PENDING_PLAY_EVENTS_STORAGE_KEY);
   } catch {
     /* ignore */
   }

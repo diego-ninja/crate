@@ -94,6 +94,14 @@ describe("PlaylistHeroSection", () => {
     );
 
     expect(container.querySelector('[class*="blur-"]')).not.toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="playlist-hero-mobile-gradient"]'),
+    ).toHaveStyle({ background: "var(--hero-artwork-gradient-mobile)" });
+    expect(
+      container.querySelector('[data-testid="playlist-hero-desktop-gradient"]'),
+    ).toHaveStyle({
+      background: "var(--hero-artwork-gradient-desktop-strong)",
+    });
   });
 
   it("uses an explicit mobile hero height so copy sits directly above CTAs", () => {
@@ -166,12 +174,17 @@ describe("PlaylistHeroSection", () => {
     const primary = screen.getByRole("group", {
       name: "Primary playlist actions",
     });
-    expect(
-      within(primary).getByRole("button", { name: "Play" }),
-    ).toHaveTextContent("Play");
-    expect(
-      within(primary).getByRole("button", { name: "Shuffle" }),
-    ).toHaveTextContent("Shuffle");
+    const playButton = within(primary).getByRole("button", { name: "Play" });
+    expect(playButton).toHaveTextContent("Play");
+    expect(playButton).toHaveClass(
+      "shadow-action-solid",
+      "hover:shadow-action-solid-hover",
+    );
+    const shuffleButton = within(primary).getByRole("button", {
+      name: "Shuffle",
+    });
+    expect(shuffleButton).toHaveTextContent("Shuffle");
+    expect(shuffleButton).toHaveClass("shadow-control-inset");
 
     const secondary = screen.getByRole("group", {
       name: "Secondary playlist actions",

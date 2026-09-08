@@ -54,7 +54,16 @@ export function ArtistRow({
 
   return (
     <div
+      role="link"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleClick();
+        }
+      }}
       className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-white/5 ${
         isSelected ? "bg-white/[0.06]" : ""
       }`}

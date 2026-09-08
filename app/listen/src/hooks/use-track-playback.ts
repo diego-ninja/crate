@@ -32,15 +32,7 @@ export function useTrackPlayback(
   const { enabled = true } = options;
   const url = useMemo(
     () => (enabled && track ? resolveTrackPlaybackUrl(track, policy) : null),
-    [
-      enabled,
-      policy,
-      track?.id,
-      track?.globalTrackUid,
-      track?.entityUid,
-      track?.libraryTrackId,
-      track?.path,
-    ],
+    [enabled, policy, track],
   );
 
   const [resolution, setResolution] = useState<PlaybackResolution | null>(() =>
@@ -90,7 +82,7 @@ export function useTrackPlayback(
     return () => {
       cancelled = true;
     };
-  }, [enabled, url]);
+  }, [enabled, policy, track, url]);
 
   return { resolution, loading };
 }

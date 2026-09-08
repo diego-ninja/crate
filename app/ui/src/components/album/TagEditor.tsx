@@ -97,7 +97,6 @@ export function TagEditor({
       );
       toast.success("Saving tags...");
       const task = await waitForTask(task_id, 60000);
-      setSaving(false);
       if (task.status === "completed") {
         toast.success(
           `Tags saved (${Number(task.result?.updated ?? 0)} tracks)`,
@@ -108,17 +107,23 @@ export function TagEditor({
       }
     } catch (e) {
       toast.error(`Failed: ${e instanceof Error ? e.message : "Unknown"}`);
+    } finally {
       setSaving(false);
     }
   }
 
   function field(label: string, key: keyof typeof values) {
+    const inputId = `album-tag-${key}`;
     return (
       <div className="flex gap-3 items-center mb-3">
-        <label className="w-[100px] text-sm text-muted-foreground text-right flex-shrink-0">
+        <label
+          htmlFor={inputId}
+          className="w-[100px] text-sm text-muted-foreground text-right flex-shrink-0"
+        >
           {label}
         </label>
         <Input
+          id={inputId}
           value={values[key]}
           onChange={(e) => setValues({ ...values, [key]: e.target.value })}
           className="bg-input border-border"
@@ -127,8 +132,9 @@ export function TagEditor({
     );
   }
 
+  const currentGenreSet = new Set(currentGenres);
   const suggestedGenres = availableGenres.filter(
-    (g) => !currentGenres.includes(g.toLowerCase()),
+    (g) => !currentGenreSet.has(g.toLowerCase()),
   );
 
   return (
@@ -146,15 +152,17 @@ export function TagEditor({
 
       {/* Genre with badges */}
       <div className="flex gap-3 items-start mb-3">
-        <label className="w-[100px] text-sm text-muted-foreground text-right flex-shrink-0 pt-2">
+        <span className="w-[100px] text-sm text-muted-foreground text-right flex-shrink-0 pt-2">
           Genres
-        </label>
+        </span>
         <div className="flex-1">
           <div className="flex gap-1.5 flex-wrap mb-2">
             {currentGenres.map((g) => (
               <Badge key={g} variant="default" className="text-xs gap-1 pr-1">
                 {g}
                 <button
+                  type="button"
+                  aria-label={`Remove genre ${g}`}
                   onClick={() => removeGenre(g)}
                   className="hover:text-destructive"
                 >

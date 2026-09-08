@@ -5,21 +5,21 @@ import { Slot } from "radix-ui";
 import { cn } from "@crate/ui/lib/cn";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-medium transition-all outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:border-white/15 focus-visible:shadow-[0_0_0_1px_rgba(255,255,255,0.08)] aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-medium transition-all outline-none disabled:pointer-events-none disabled:opacity-50 focus-visible:border-border-focus focus-visible:shadow-focus aria-invalid:border-state-danger [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
   {
     variants: {
       variant: {
         default:
-          "rounded-md bg-primary text-primary-foreground shadow-[0_14px_28px_rgba(6,182,212,0.22)] hover:bg-primary/90",
+          "rounded-md bg-accent-action text-accent-action-foreground shadow-action hover:bg-accent-action-hover",
         destructive:
-          "rounded-md bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60",
+          "rounded-md bg-state-danger text-state-danger-foreground hover:bg-state-danger/90 dark:bg-state-danger/60",
         outline:
-          "rounded-md border border-white/12 bg-white/5 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:bg-white/10 hover:text-accent-foreground",
+          "rounded-md border border-border-subtle bg-surface-control text-text-primary shadow-control-inset hover:bg-surface-control-hover hover:text-text-primary",
         secondary:
-          "rounded-md bg-white/7 text-secondary-foreground hover:bg-white/10",
+          "rounded-md bg-surface-control text-text-primary hover:bg-surface-control-hover",
         ghost:
-          "rounded-md text-white/70 hover:bg-white/5 hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "rounded-md text-text-secondary hover:bg-surface-control hover:text-text-primary dark:hover:bg-surface-control-hover",
+        link: "text-accent-action underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2 text-sm has-[>svg]:px-3",

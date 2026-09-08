@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@crate/ui/shadcn/button";
 import { Input } from "@crate/ui/shadcn/input";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -75,7 +76,7 @@ export function Setup() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-lg">
-        <img src="/assets/logo.svg" alt="Crate" className="w-16 mx-auto mb-6" />
+        <CrateLogo title="Crate" className="mx-auto mb-6 w-16" />
 
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
@@ -200,7 +201,12 @@ export function Setup() {
                 ].map(({ key, label, desc, url }) => (
                   <div key={key}>
                     <div className="flex items-center gap-2 mb-1">
-                      <label className="text-xs font-medium">{label}</label>
+                      <label
+                        htmlFor={`setup-${key}`}
+                        className="text-xs font-medium"
+                      >
+                        {label}
+                      </label>
                       {desc && (
                         <span className="text-[10px] text-muted-foreground">
                           {desc}
@@ -218,6 +224,7 @@ export function Setup() {
                       )}
                     </div>
                     <Input
+                      id={`setup-${key}`}
                       placeholder={`Enter ${label}...`}
                       value={(keys as any)[key]}
                       onChange={(e) =>

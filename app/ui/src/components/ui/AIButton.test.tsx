@@ -1,7 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AIButton } from "./AIButton";
+
+const { useLLMStatusMock } = vi.hoisted(() => ({
+  useLLMStatusMock: vi.fn(),
+}));
+
+vi.mock("@/hooks/use-llm", () => ({
+  useLLMStatus: useLLMStatusMock,
+}));
+
+beforeEach(() => {
+  useLLMStatusMock.mockReturnValue({
+    available: true,
+    model: "test-model",
+    provider: "test",
+  });
+});
 
 describe("AIButton", () => {
   it("renders children", () => {
@@ -9,6 +25,21 @@ describe("AIButton", () => {
     expect(
       screen.getByRole("button", { name: /Generate/i }),
     ).toBeInTheDocument();
+  });
+
+  it("does not render when the LLM is unavailable", () => {
+    useLLMStatusMock.mockReturnValue({
+      available: false,
+      model: "",
+      provider: "",
+      error: "LLM provider is not configured",
+    });
+
+    render(<AIButton>Generate</AIButton>);
+
+    expect(
+      screen.queryByRole("button", { name: /Generate/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the standard admin button sizing", () => {

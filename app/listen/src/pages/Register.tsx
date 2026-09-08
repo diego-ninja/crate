@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { CrateLoader } from "@/components/ui/CrateLoader";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { api, ApiError, setAuthTokens } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { waitForPendingSecureSessionWrites } from "@/lib/server-store";
@@ -12,6 +13,9 @@ export function Register() {
   const { t } = useTranslation();
   const { user, loading: authLoading, refetch } = useAuth();
   const [searchParams] = useSearchParams();
+  // Invite links are intentionally prefilled; the API validates the token
+  // before creating an account.
+  // react-doctor-disable-next-line url-prefilled-privileged-action
   const inviteToken = searchParams.get("invite") || undefined;
   const returnTo = searchParams.get("return_to") || "/";
   const [name, setName] = useState("");
@@ -81,22 +85,24 @@ export function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
         <div className="flex flex-col items-center pb-4">
-          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16 mb-2" />
-          <h1 className="text-2xl font-bold text-white">
+          <CrateLogo title="Crate" className="mb-2 size-16" />
+          <h1 className="text-2xl font-bold text-text-primary">
             {t("auth.register.title")}
           </h1>
-          <p className="text-sm text-white/40 -mt-0.5">{t("auth.tagline")}</p>
+          <p className="text-sm text-text-primary/40 -mt-0.5">
+            {t("auth.tagline")}
+          </p>
         </div>
 
         {inviteOnly ? (
           <div
             className={`rounded-xl px-4 py-3 text-sm ${
               inviteToken
-                ? "border border-cyan-400/20 bg-cyan-400/10 text-cyan-100"
-                : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                ? "border border-accent-action/20 bg-accent-action/10 text-text-accent"
+                : "border border-state-warning/20 bg-state-warning/10 text-state-warning-text"
             }`}
           >
             {inviteToken
@@ -105,12 +111,14 @@ export function Register() {
           </div>
         ) : null}
 
-        {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+        {error && (
+          <p className="text-sm text-state-danger text-center">{error}</p>
+        )}
 
         <div>
           <label
             htmlFor="reg-name"
-            className="block text-sm text-white/60 mb-1"
+            className="block text-sm text-text-primary/60 mb-1"
           >
             {t("common.name")}
           </label>
@@ -120,14 +128,14 @@ export function Register() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder={t("auth.register.namePlaceholder")}
           />
         </div>
         <div>
           <label
             htmlFor="reg-email"
-            className="block text-sm text-white/60 mb-1"
+            className="block text-sm text-text-primary/60 mb-1"
           >
             {t("common.email")}
           </label>
@@ -137,14 +145,14 @@ export function Register() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder="you@example.com"
           />
         </div>
         <div>
           <label
             htmlFor="reg-password"
-            className="block text-sm text-white/60 mb-1"
+            className="block text-sm text-text-primary/60 mb-1"
           >
             {t("common.password")}
           </label>
@@ -155,7 +163,7 @@ export function Register() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
             placeholder={t("auth.register.passwordPlaceholder")}
           />
         </div>
@@ -163,18 +171,18 @@ export function Register() {
         <button
           type="submit"
           disabled={loading || (inviteOnly && !inviteToken)}
-          className="w-full h-10 rounded-lg bg-cyan-400 text-black font-medium text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"
+          className="w-full h-10 rounded-lg bg-accent-action text-accent-action-foreground font-medium text-sm hover:bg-accent-action-hover transition-colors disabled:opacity-50"
         >
           {loading ? t("auth.register.submitting") : t("auth.register.submit")}
         </button>
 
         <OAuthButtons returnTo={returnTo} inviteToken={inviteToken} />
 
-        <p className="text-center text-sm text-white/40">
+        <p className="text-center text-sm text-text-primary/40">
           {t("auth.register.hasAccount")}{" "}
           <Link
             to={`/login?return_to=${encodeURIComponent(returnTo)}`}
-            className="text-primary hover:underline"
+            className="text-accent-action hover:underline"
           >
             {t("auth.login.submit")}
           </Link>

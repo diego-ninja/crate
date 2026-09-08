@@ -75,6 +75,8 @@ export function useItemActionMenu(
   const { open, position, measured, close, openAtPoint } = controller;
 
   useEffect(() => {
+    // Consumers need the controller's open state to coordinate their trigger.
+    // react-doctor-disable-next-line no-pass-data-to-parent
     onOpenChange?.(open);
   }, [onOpenChange, open]);
 

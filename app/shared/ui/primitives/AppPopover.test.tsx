@@ -13,6 +13,11 @@ describe("AppPopover", () => {
     expect(container.firstChild).toHaveClass("z-app-dropdown");
   });
 
+  it("uses the semantic popover shadow", () => {
+    const { container } = render(<AppPopover>Content</AppPopover>);
+    expect(container.firstChild).toHaveClass("shadow-popover");
+  });
+
   it("applies popover layer when specified", () => {
     const { container } = render(
       <AppPopover layer="popover">Content</AppPopover>,

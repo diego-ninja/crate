@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router";
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
@@ -311,28 +317,39 @@ export function Health() {
     }
   }
 
-  async function fetchIssues(fresh = false) {
-    try {
-      const query = new URLSearchParams();
-      if (filter) query.set("check_type", filter);
-      if (fresh) query.set("fresh", "1");
-      const suffix = query.toString() ? `?${query.toString()}` : "";
-      const data = await api<HealthSnapshotData>(
-        `/api/admin/health-snapshot${suffix}`,
-      );
-      setIssues(data.issues);
-      setCounts(data.counts);
-      setError(null);
-    } catch {
-      setError("Failed to load health issues");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const fetchIssues = useCallback(
+    async (fresh = false, signal?: AbortSignal) => {
+      try {
+        const query = new URLSearchParams();
+        if (filter) query.set("check_type", filter);
+        if (fresh) query.set("fresh", "1");
+        const suffix = query.toString() ? `?${query.toString()}` : "";
+        const data = await api<HealthSnapshotData>(
+          `/api/admin/health-snapshot${suffix}`,
+          "GET",
+          undefined,
+          { signal },
+        );
+        if (signal?.aborted) return;
+        setIssues(data.issues);
+        setCounts(data.counts);
+        setError(null);
+      } catch {
+        setError("Failed to load health issues");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filter],
+  );
+
+  const fetchIssuesEvent = useEffectEvent(fetchIssues);
 
   useEffect(() => {
-    void fetchIssues();
-  }, [filter]);
+    const controller = new AbortController();
+    void fetchIssues(false, controller.signal);
+    return () => controller.abort();
+  }, [fetchIssues]);
 
   useEffect(() => {
     void fetchRepairCatalog();
@@ -434,7 +451,7 @@ export function Health() {
       } else {
         toast.success(scanning ? "Scan complete" : "Repair complete");
       }
-      void fetchIssues(true);
+      void fetchIssuesEvent(true);
       void fetchLatestRepairTask(true);
     } else if (activeTaskDone.status === "failed") {
       toast.error(scanning ? "Scan failed" : "Repair failed");

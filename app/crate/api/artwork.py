@@ -39,6 +39,8 @@ from crate.api.schemas.artwork import (
     ArtistHeroCandidateAnalysisRequest,
     ArtistHeroRecipe,
     ArtistHeroReviewRequest,
+    ArtistHeroMigrationRequest,
+    ArtistHeroRollbackRequest,
 )
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
@@ -58,6 +60,7 @@ from crate.db.repositories.artist_artwork_assets import (
     list_artist_artwork_assets,
 )
 from crate.db.repositories.artist_hero_artwork import (
+    artist_hero_manifest_id,
     get_artist_hero_artwork,
     update_artist_hero_review_status,
 )
@@ -501,12 +504,14 @@ def api_artist_hero_profile(request: Request, artist_id: int):
     if not profile:
         return JSONResponse({"error": "Artist hero not found"}, status_code=404)
     featured_state = get_artist_featured_state(artist_id) or {}
-    payload = {
-        **profile,
-        "is_featured": bool(featured_state.get("is_featured")),
-        "featured_devices": list(artist_hero_profile_ready_compositions(profile)),
-        **artist_hero_profile_contract(artist_id=artist_id, profile=profile),
-    }
+    payload = {key: value for key, value in profile.items() if key != "render_manifest"}
+    payload.update(
+        {
+            "is_featured": bool(featured_state.get("is_featured")),
+            "featured_devices": list(artist_hero_profile_ready_compositions(profile)),
+        }
+    )
+    payload.update(artist_hero_profile_contract(artist_id=artist_id, profile=profile))
     return JSONResponse(
         jsonable_encoder(payload), headers={"Cache-Control": "no-store"}
     )
@@ -975,13 +980,16 @@ def api_delete_artist_hero_composition(
         return JSONResponse(
             {"error": "Artist hero composition not found"}, status_code=404
         )
+    params = {
+        "artist": artist_name,
+        "artist_id": artist_id,
+        "composition": composition,
+    }
+    if profile.get("revision"):
+        params["expected_revision"] = str(profile["revision"])
     task_id = create_task(
         "delete_artist_hero_composition",
-        {
-            "artist": artist_name,
-            "artist_id": artist_id,
-            "composition": composition,
-        },
+        params,
     )
     return {"status": "queued", "task_id": task_id}
 
@@ -1013,5 +1021,61 @@ def api_backfill_artist_heroes(request: Request):
     _require_artwork_editor(request)
     task_id = create_task(
         "backfill_artist_heroes", {"after_artist_id": 0, "batch_size": 25}
+    )
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post(
+    "/api/artwork/artist-heroes/migration-canary",
+    response_model=ArtworkQueuedResponse,
+    response_model_exclude_none=True,
+    responses=_ARTWORK_RESPONSES,
+    summary="Run a dry-run artist-hero publication migration canary",
+)
+def api_migrate_artist_heroes(
+    request: Request, body: ArtistHeroMigrationRequest | None = None
+):
+    _require_artwork_editor(request)
+    payload = body or ArtistHeroMigrationRequest()
+    task_id = create_task(
+        "migrate_artist_heroes",
+        {
+            "after_artist_id": payload.after_artist_id,
+            "batch_size": payload.batch_size,
+            "dry_run": payload.dry_run,
+        },
+    )
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post(
+    "/api/artwork/artists/{artist_id}/hero-profile/rollback",
+    response_model=ArtworkQueuedResponse,
+    response_model_exclude_none=True,
+    responses=_ARTWORK_RESPONSES,
+    summary="Queue rollback to a retained artist-hero manifest",
+)
+def api_rollback_artist_hero(
+    request: Request, artist_id: int, body: ArtistHeroRollbackRequest
+):
+    _require_artwork_editor(request)
+    if not artist_name_from_id(artist_id):
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    profile = get_artist_hero_artwork(artist_id)
+    if not profile:
+        return JSONResponse({"error": "Artist hero not found"}, status_code=404)
+    active_manifest = profile.get("render_manifest")
+    if not isinstance(active_manifest, dict):
+        return JSONResponse(
+            {"error": "Artist hero has no versioned manifest"}, status_code=409
+        )
+    task_id = create_task(
+        "rollback_artist_hero",
+        {
+            "artist_id": artist_id,
+            "expected_revision": str(profile.get("revision") or ""),
+            "expected_active_manifest_id": artist_hero_manifest_id(active_manifest),
+            "target_manifest_id": body.target_manifest_id,
+        },
     )
     return {"status": "queued", "task_id": task_id}

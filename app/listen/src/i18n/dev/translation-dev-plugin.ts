@@ -190,9 +190,12 @@ async function listCatalogLocales(catalogsDir: string): Promise<string[]> {
   const entries = await readdir(catalogsDir, { withFileTypes: true });
 
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => entry.name.slice(0, -".json".length))
-    .filter(isSafeLocale)
+    .reduce<string[]>((locales, entry) => {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) return locales;
+      const locale = entry.name.slice(0, -".json".length);
+      if (isSafeLocale(locale)) locales.push(locale);
+      return locales;
+    }, [])
     .sort((a, b) => a.localeCompare(b));
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -89,6 +89,14 @@ interface ActiveTaskState {
 interface ItemRunState {
   state: "idle" | "running" | "success" | "error";
   message?: string | null;
+}
+
+function runStateTone(runState: ItemRunState["state"]): string {
+  if (runState === "success")
+    return "border-emerald-500/20 bg-emerald-500/[0.08]";
+  if (runState === "error") return "border-red-500/20 bg-red-500/[0.08]";
+  if (runState === "running") return "border-cyan-500/20 bg-cyan-500/[0.06]";
+  return "border-white/8 bg-panel-surface/80";
 }
 
 interface PendingRepairRun {
@@ -228,35 +236,48 @@ export function ArtistRepairDialog({
   );
   const { events, done } = useTaskEvents(activeTask?.id ?? null);
 
-  async function loadPlan() {
-    if (!endpoint) return;
-    setLoading(true);
-    try {
-      const data = await api<ArtistRepairPlanResponse>(endpoint);
-      setPlan(data);
-      const nextExecutableKeys = data.items
-        .filter((item) => item.executable)
-        .map((item) => repairPlanItemId(item));
-      setSelectedItemKeys((prev) => {
-        const preserved = prev.filter((itemKey) =>
-          nextExecutableKeys.includes(itemKey),
+  const loadPlan = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!endpoint) return;
+      setLoading(true);
+      try {
+        const data = await api<ArtistRepairPlanResponse>(
+          endpoint,
+          "GET",
+          undefined,
+          { signal },
         );
-        return preserved.length > 0 ? preserved : nextExecutableKeys;
-      });
-      onIssueCountChange?.(data.total);
-      return data;
-    } catch {
-      toast.error("Failed to load repair plan");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }
+        if (signal?.aborted) return null;
+        setPlan(data);
+        const nextExecutableKeys = data.items.reduce<string[]>((keys, item) => {
+          if (item.executable) keys.push(repairPlanItemId(item));
+          return keys;
+        }, []);
+        const nextExecutableKeySet = new Set(nextExecutableKeys);
+        setSelectedItemKeys((prev) => {
+          const preserved = prev.filter((itemKey) =>
+            nextExecutableKeySet.has(itemKey),
+          );
+          return preserved.length > 0 ? preserved : nextExecutableKeys;
+        });
+        onIssueCountChange?.(data.total);
+        return data;
+      } catch {
+        toast.error("Failed to load repair plan");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [endpoint, onIssueCountChange],
+  );
 
   useEffect(() => {
     if (!open) return;
-    void loadPlan();
-  }, [open, endpoint]);
+    const controller = new AbortController();
+    void loadPlan(controller.signal);
+    return () => controller.abort();
+  }, [loadPlan, open]);
 
   useEffect(() => {
     if (!open && !activeTask) {
@@ -403,11 +424,13 @@ export function ArtistRepairDialog({
       return next;
     });
 
+    const controller = new AbortController();
     const finish = async () => {
       let nextPlan: ArtistRepairPlanResponse | null = null;
       if (success) {
-        nextPlan = (await loadPlan()) ?? null;
+        nextPlan = (await loadPlan(controller.signal)) ?? null;
       }
+      if (controller.signal.aborted) return;
       if (success && nextPlan?.total === 0) {
         setItemStates({});
       }
@@ -417,7 +440,8 @@ export function ArtistRepairDialog({
     };
 
     void finish();
-  }, [activeTask, done, latestEventMessage]);
+    return () => controller.abort();
+  }, [activeTask, done, latestEventMessage, loadPlan]);
 
   const executableItems = useMemo(
     () =>
@@ -427,24 +451,20 @@ export function ArtistRepairDialog({
       ),
     [plan?.items],
   );
+  const selectedItemKeySet = useMemo(
+    () => new Set(selectedItemKeys),
+    [selectedItemKeys],
+  );
   const selectedExecutableItems = useMemo(
     () =>
       executableItems.filter((item) =>
-        selectedItemKeys.includes(repairPlanItemId(item)),
+        selectedItemKeySet.has(repairPlanItemId(item)),
       ),
-    [executableItems, selectedItemKeys],
+    [executableItems, selectedItemKeySet],
   );
 
   function repairStateForItem(item: RepairPlanItem): ItemRunState {
     return itemStates[repairItemKey(item)] ?? { state: "idle", message: null };
-  }
-
-  function runStateTone(runState: ItemRunState["state"]) {
-    if (runState === "success")
-      return "border-emerald-500/20 bg-emerald-500/[0.08]";
-    if (runState === "error") return "border-red-500/20 bg-red-500/[0.08]";
-    if (runState === "running") return "border-cyan-500/20 bg-cyan-500/[0.06]";
-    return "border-white/8 bg-panel-surface/80";
   }
 
   function toggleSelected(item: RepairPlanItem) {
@@ -457,9 +477,14 @@ export function ArtistRepairDialog({
   }
 
   async function executeRepair(items: RepairPlanItem[], mode: "one" | "all") {
-    const issues = items
-      .map((item) => item.issue)
-      .filter((issue) => issue && Object.keys(issue).length > 0);
+    const issues = items.reduce<Array<NonNullable<RepairPlanItem["issue"]>>>(
+      (issues, item) => {
+        const issue = item.issue;
+        if (issue && Object.keys(issue).length > 0) issues.push(issue);
+        return issues;
+      },
+      [],
+    );
     if (issues.length === 0) {
       toast.error("No executable fixes in this selection");
       return;
@@ -645,7 +670,7 @@ export function ArtistRepairDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              {(plan?.items ?? []).map((item, index) => {
+              {(plan?.items ?? []).map((item) => {
                 const severityTone =
                   SEVERITY_TONES[item.severity || "low"] || SEVERITY_TONES.low;
                 const detailsSummary = issueDetailsSummary(item.details);
@@ -654,10 +679,10 @@ export function ArtistRepairDialog({
                 const isRunning =
                   runningItemKey != null && runningItemKey === itemKey;
                 const runState = repairStateForItem(item);
-                const isSelected = selectedItemKeys.includes(planItemId);
+                const isSelected = selectedItemKeySet.has(planItemId);
                 return (
                   <div
-                    key={`${item.check_type}-${item.issue_id ?? index}`}
+                    key={itemKey}
                     className={`rounded-md border p-4 ${runStateTone(
                       runState.state,
                     )}`}
@@ -665,15 +690,18 @@ export function ArtistRepairDialog({
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex min-w-0 flex-1 items-start gap-3">
                         {item.executable ? (
-                          <label className="mt-1 flex shrink-0 cursor-pointer items-center">
+                          <div className="mt-1 flex shrink-0 cursor-pointer items-center">
                             <input
                               type="checkbox"
+                              aria-label={`Select ${checkLabel(
+                                item.check_type,
+                              )}`}
                               className="h-4 w-4 rounded border-white/20 bg-black/25 accent-cyan-400"
                               checked={isSelected}
                               disabled={runningAll || runningItemKey != null}
                               onChange={() => toggleSelected(item)}
                             />
-                          </label>
+                          </div>
                         ) : null}
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">

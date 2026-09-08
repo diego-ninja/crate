@@ -62,7 +62,7 @@ export function useTrackInfo(
   const { enabled = true } = options;
   const url = useMemo(
     () => (enabled && track ? resolveTrackInfoUrl(track) : null),
-    [enabled, track?.id, track?.entityUid, track?.libraryTrackId, track?.path],
+    [enabled, track],
   );
 
   const [info, setInfo] = useState<TrackInfo | null>(() =>

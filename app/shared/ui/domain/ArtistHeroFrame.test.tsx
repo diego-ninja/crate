@@ -1,15 +1,45 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { ArtistHeroFrame } from "./ArtistHeroFrame";
+import {
+  ArtistHeroFrame,
+  artistHeroArtworkFitClassName,
+} from "./ArtistHeroFrame";
 import { ArtistHeroPresentation } from "./ArtistHeroPresentation";
 
 describe("ArtistHeroFrame", () => {
+  it("uses a shared fit rule for bounded and legacy artwork", () => {
+    expect(
+      artistHeroArtworkFitClassName({
+        left: 0,
+        top: 0,
+        right: 1,
+        bottom: 1,
+      }),
+    ).toBe("object-cover object-center");
+    expect(
+      artistHeroArtworkFitClassName({
+        left: 0.1,
+        top: 0,
+        right: 0.9,
+        bottom: 1,
+      }),
+    ).toBe("object-fill");
+    expect(artistHeroArtworkFitClassName()).toBe("object-cover object-center");
+  });
+
   it("integrates desktop artwork at the real image edges", () => {
     render(
       <ArtistHeroFrame
         composition="desktop"
-        artwork={<img alt="Converge hero" src="/converge.webp" />}
+        artwork={
+          <img
+            alt="Converge hero"
+            src="/converge.webp"
+            width="1480"
+            height="600"
+          />
+        }
         artworkBounds={{ left: 0.3, top: 0, right: 0.8, bottom: 0.9 }}
       >
         <span>Converge</span>
@@ -20,7 +50,7 @@ describe("ArtistHeroFrame", () => {
       aspectRatio: "1480 / 600",
     });
     expect(screen.getByTestId("desktop-artist-hero-frame")).toHaveClass(
-      "bg-app-surface",
+      "bg-surface-canvas",
     );
     expect(screen.getByTestId("desktop-hero-base")).toHaveStyle({
       background: "var(--surface-app)",
@@ -59,7 +89,14 @@ describe("ArtistHeroFrame", () => {
     render(
       <ArtistHeroFrame
         composition="mobile"
-        artwork={<img alt="Converge mobile hero" src="/converge-mobile.webp" />}
+        artwork={
+          <img
+            alt="Converge mobile hero"
+            src="/converge-mobile.webp"
+            width="800"
+            height="1000"
+          />
+        }
       />,
     );
 
@@ -79,6 +116,20 @@ describe("ArtistHeroFrame", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("desktop-hero-left-scrim")).toBeNull();
     expect(screen.queryByTestId("desktop-hero-right-scrim")).toBeNull();
+  });
+
+  it("allows presentation consumers to use their measured container ratio", () => {
+    render(
+      <ArtistHeroFrame
+        composition="desktop"
+        aspectRatio="auto"
+        artwork={<span>Artwork</span>}
+      />,
+    );
+
+    expect(screen.getByTestId("desktop-artist-hero-frame")).toHaveStyle({
+      aspectRatio: "auto",
+    });
   });
 });
 

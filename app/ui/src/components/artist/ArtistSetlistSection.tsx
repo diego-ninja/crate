@@ -137,7 +137,7 @@ export function ArtistSetlistSection({
             const isPlayable = !!libraryMatch;
             return (
               <button
-                key={i}
+                key={song.title}
                 className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-md hover:bg-white/5 transition-colors text-left group ${
                   !isPlayable ? "opacity-50" : ""
                 }`}

@@ -12,23 +12,23 @@ type ActionVariant = "row" | "card";
 
 function actionToneClassName(tone: ActionTone, disabled: boolean) {
   if (disabled) {
-    return "pointer-events-none text-[var(--idle-text-subtle)]";
+    return "pointer-events-none text-text-subtle";
   }
 
   if (tone === "primary") {
-    return "text-primary hover:text-primary hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]";
+    return "text-accent-action hover:text-accent-action hover:drop-shadow-accent-action-active";
   }
 
   if (tone === "danger") {
-    return "text-[var(--status-danger-text)] hover:text-[var(--status-danger-text)] hover:drop-shadow-[0_0_8px_rgba(248,113,113,0.35)]";
+    return "text-state-danger hover:text-state-danger hover:drop-shadow-state-danger";
   }
 
-  return "text-[var(--idle-text-muted)] hover:text-primary hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.32)]";
+  return "text-text-muted hover:text-accent-action hover:drop-shadow-accent-action";
 }
 
 function actionVariantClassName(variant: ActionVariant) {
   if (variant === "card") {
-    return "h-9 min-h-11 w-9 min-w-11 border border-[var(--idle-border)] bg-black/55 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md md:min-h-0 md:min-w-0";
+    return "h-9 min-h-11 w-9 min-w-11 border border-border-subtle bg-surface-icon-control shadow-icon-control backdrop-blur-md md:min-h-0 md:min-w-0";
   }
 
   return "h-10 min-h-11 w-10 min-w-11 md:min-h-0 md:min-w-0";

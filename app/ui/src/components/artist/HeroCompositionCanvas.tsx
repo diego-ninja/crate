@@ -29,8 +29,15 @@ import {
 import {
   ARTIST_HERO_DESKTOP_SIZE,
   ArtistHeroFrame,
+  artistHeroArtworkFitClassName,
   type ArtistHeroArtworkBounds,
 } from "@crate/ui/domain/ArtistHeroFrame";
+import { ThemeScope } from "@crate/ui/primitives/ThemeScope";
+import {
+  DEFAULT_APPEARANCE_PREFERENCES,
+  resolveAppearance,
+  type AppearanceResolution,
+} from "@crate/ui/lib/appearance-resolver";
 
 import { cn } from "@/lib/utils";
 
@@ -63,11 +70,16 @@ interface HeroCompositionCanvasProps {
   editable?: boolean;
   previewOnly?: boolean;
   previewArtworkBounds?: ArtistHeroArtworkBounds;
+  appearance?: AppearanceResolution;
   children?: ReactNode;
   onRecipeChange: (recipe: HeroRecipe) => void;
 }
 
 const MOBILE_PRESENTATION_VIEWPORT = { width: 430, height: 537.5 } as const;
+const DEFAULT_HERO_PREVIEW_APPEARANCE = resolveAppearance(
+  DEFAULT_APPEARANCE_PREFERENCES,
+  { prefersColorSchemeDark: true, prefersReducedMotion: false },
+);
 
 function useLoadedImage(sourceUrl: string | null): HTMLImageElement | null {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -175,6 +187,7 @@ export function HeroCompositionCanvas({
   editable = true,
   previewOnly = false,
   previewArtworkBounds,
+  appearance = DEFAULT_HERO_PREVIEW_APPEARANCE,
   children,
   onRecipeChange,
 }: HeroCompositionCanvasProps) {
@@ -225,6 +238,8 @@ export function HeroCompositionCanvas({
       crop.y + crop.height <= imageSize.height + 1 &&
       Math.abs(cropAspect - aspect) < 0.02;
     if (!cropIsValid) {
+      // The canvas owns validation but the parent owns the persisted recipe.
+      // react-doctor-disable-next-line no-pass-data-to-parent, no-pass-live-state-to-parent
       setRecipe({ crop: centeredCropForAspect(imageSize, aspect) });
     }
   }, [aspect, imageSize, recipe.crop, recipe.mode, setRecipe]);
@@ -347,12 +362,18 @@ export function HeroCompositionCanvas({
   const presentationScale = canvas.width / presentationViewport.width;
 
   return (
-    <div>
+    <ThemeScope
+      appearance={appearance}
+      data-testid="hero-composition-theme-scope"
+      className="min-w-0"
+    >
       <div
         ref={containerRef}
         data-testid="hero-composition-canvas"
+        data-canvas-width={canvas.width}
+        data-canvas-height={canvas.height}
         className={cn(
-          "relative mx-auto w-full overflow-hidden bg-app-surface",
+          "relative mx-auto w-full overflow-hidden bg-transparent",
           previewOnly
             ? "border border-white/8"
             : "rounded-md border border-border shadow-[0_20px_60px_rgba(0,0,0,0.28)]",
@@ -381,12 +402,6 @@ export function HeroCompositionCanvas({
                   }
                 >
                   <Layer listening={!previewOnly}>
-                    <Rect
-                      width={canvas.width}
-                      height={canvas.height}
-                      fill="#0a0a0f"
-                      listening={false}
-                    />
                     {recipe.mode === "crop" && cropFrame ? (
                       <KonvaImage
                         ref={subjectRef}
@@ -507,7 +522,10 @@ export function HeroCompositionCanvas({
                 <img
                   src={previewUrl}
                   alt={`${artistName} ${composition} hero`}
-                  className="h-full w-full object-cover"
+                  className={cn(
+                    "h-full w-full",
+                    artistHeroArtworkFitClassName(previewArtworkBounds),
+                  )}
                 />
               ) : (
                 <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-white/40">
@@ -533,7 +551,7 @@ export function HeroCompositionCanvas({
           ) : null}
         </ArtistHeroFrame>
         {!previewOnly ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-30 rounded-md border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70 backdrop-blur-md">
+          <div className="pointer-events-none absolute right-3 top-3 z-30 rounded-md border border-border-quiet bg-surface-overlay px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted backdrop-blur-md">
             {recipe.mode === "crop" ? "Crop" : "Fill preview"} · {composition}
           </div>
         ) : null}
@@ -617,7 +635,7 @@ export function HeroCompositionCanvas({
           </p>
         </>
       ) : null}
-    </div>
+    </ThemeScope>
   );
 }
 

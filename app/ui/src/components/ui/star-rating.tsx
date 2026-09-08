@@ -25,6 +25,7 @@ export function StarRating({
           <button
             key={star}
             type="button"
+            aria-label={`Set rating to ${star} stars`}
             disabled={readonly}
             className={cn(
               "transition-colors",

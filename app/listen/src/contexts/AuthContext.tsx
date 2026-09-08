@@ -1,4 +1,10 @@
-import { useCallback, useContext, useEffect, type ReactNode } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "react-router";
 
 import { api, setAuthToken } from "@/lib/api";
@@ -42,11 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(null);
     setUser(null);
     navigate("/login");
-  }, [navigate]);
+  }, [navigate, setUser]);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, refetch, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, refetch, logout }),
+    [user, loading, refetch, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

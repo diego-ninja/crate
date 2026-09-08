@@ -71,8 +71,10 @@ export function MatchCard({ match, onApply }: MatchCardProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {match.tag_preview.map((p, i) => (
-              <TableRow key={i}>
+            {match.tag_preview.map((p) => (
+              <TableRow
+                key={`${p.new_track}-${p.current_title}-${p.new_title}`}
+              >
                 <TableCell className="text-muted-foreground">
                   {p.new_track || "?"}
                 </TableCell>

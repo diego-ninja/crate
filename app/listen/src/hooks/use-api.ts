@@ -69,6 +69,11 @@ function scheduleIdleRevalidate(
   return () => window.clearTimeout(handle);
 }
 
+function scheduleTimeout(callback: () => void, timeoutMs: number): () => void {
+  const handle = window.setTimeout(callback, timeoutMs);
+  return () => window.clearTimeout(handle);
+}
+
 /**
  * SWR-enabled API hook.
  * - Returns cached data immediately (no skeleton flash)
@@ -89,23 +94,26 @@ export function useApi<T>(
     revalidateIfCached = "immediate",
     idleRevalidateMs = 8_000,
   } = options;
-  const initialStateRef = useRef<{ data: T | null; loading: boolean } | null>(
-    null,
-  );
-  if (initialStateRef.current == null) {
+  const [initialState] = useState<{ data: T | null; loading: boolean }>(() => {
     const initialData = url ? cacheGet<T>(url) : null;
-    initialStateRef.current = {
+    return {
       data: initialData,
       loading: !initialData && !!url,
     };
-  }
-  const [data, setData] = useState<T | null>(initialStateRef.current.data);
-  const [loading, setLoading] = useState(initialStateRef.current.loading);
+  });
+  const [data, setData] = useState<T | null>(initialState.data);
+  const [loading, setLoading] = useState(initialState.loading);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<number | null>(null);
   const [trigger, setTrigger] = useState(0);
   const urlRef = useRef(url);
   const dataUrlRef = useRef(url);
+  const dataRef = useRef(data);
+  const bodyRef = useRef(body);
+  useEffect(() => {
+    dataRef.current = data;
+    bodyRef.current = body;
+  }, [body, data]);
 
   const refetch = useCallback(() => setTrigger((t) => t + 1), []);
 
@@ -129,20 +137,20 @@ export function useApi<T>(
     const controller = new AbortController();
     let cancelled = false;
     let cancelScheduledFetch: (() => void) | null = null;
-    let warmingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelWarmingRetry: (() => void) | null = null;
     let transientRetryAttempt = 0;
     const hasCachedPayload =
       method === "GET" ? cacheGet<T>(requestUrl) !== null : false;
 
     // Only show loading if no cached data
-    if (!data) setLoading(true);
+    if (!dataRef.current) setLoading(true);
     setError(null);
     setStatus(null);
 
     const runFetch = () => {
       if (cancelled || controller.signal.aborted) return;
-      warmingRetryTimer = null;
-      api<T>(requestUrl, method, body, { signal: controller.signal })
+      cancelWarmingRetry = null;
+      api<T>(requestUrl, method, bodyRef.current, { signal: controller.signal })
         .then((freshData) => {
           transientRetryAttempt = 0;
           cacheSet(requestUrl, freshData);
@@ -163,7 +171,11 @@ export function useApi<T>(
           const retryDelay = warmingRetryDelay ?? transientRetryDelay;
           if (!cancelled && !controller.signal.aborted && retryDelay != null) {
             if (transientRetryDelay != null) transientRetryAttempt += 1;
-            warmingRetryTimer = setTimeout(runFetch, retryDelay);
+            cancelWarmingRetry?.();
+            cancelWarmingRetry = scheduleTimeout(() => {
+              cancelWarmingRetry = null;
+              runFetch();
+            }, retryDelay);
             return;
           }
           if (!cancelled && !controller.signal.aborted) {
@@ -174,7 +186,7 @@ export function useApi<T>(
           }
         })
         .finally(() => {
-          if (!cancelled && warmingRetryTimer == null) setLoading(false);
+          if (!cancelled && cancelWarmingRetry == null) setLoading(false);
         });
     };
 
@@ -192,7 +204,7 @@ export function useApi<T>(
     return () => {
       cancelled = true;
       cancelScheduledFetch?.();
-      if (warmingRetryTimer != null) clearTimeout(warmingRetryTimer);
+      cancelWarmingRetry?.();
       controller.abort();
     };
   }, [url, method, trigger, revalidateIfCached, idleRevalidateMs]);

@@ -64,6 +64,35 @@ beforeEach(() => {
 });
 
 describe("ArtistCard", () => {
+  it("keeps hover actions anchored to the circular artwork", () => {
+    mockPointerEnvironment(true);
+
+    renderWithListenProviders(
+      <ArtistCard name="Dredg" artistId={1} artistSlug="dredg" />,
+    );
+
+    const followButton = screen.getByRole("button", { name: "Follow Dredg" });
+
+    expect(followButton.closest("[data-artwork-state]")).toBeInTheDocument();
+  });
+
+  it("does not add inline actions to external artist links", () => {
+    mockPointerEnvironment(true);
+
+    renderWithListenProviders(
+      <ArtistCard
+        name="Dredg"
+        artistId={1}
+        href="https://www.last.fm/music/Dredg"
+        external
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Follow Dredg" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders responsive WebP candidates for generated artist photos", () => {
     renderWithListenProviders(
       <ArtistCard name="High Vis" artistId={9} layout="grid" />,
@@ -74,7 +103,7 @@ describe("ArtistCard", () => {
     expect(image.getAttribute("srcset")).toMatch(/size=160[^,]* 160w/);
     expect(image.getAttribute("srcset")).toMatch(/size=320[^,]* 320w/);
     expect(image.getAttribute("srcset")).toMatch(/format=webp/);
-    expect(screen.getByText("High Vis").closest('[role="button"]')).toHaveClass(
+    expect(screen.getByText("High Vis").closest("article")).toHaveClass(
       "listen-deferred-grid-item",
     );
   });
@@ -370,7 +399,7 @@ describe("ArtistCard", () => {
       />,
     );
 
-    const card = screen.getByText("Dredg").closest('[role="button"]');
+    const card = screen.getByText("Dredg").closest("article");
     expect(card).not.toBeNull();
 
     fireEvent.contextMenu(card!, { clientX: 160, clientY: 120 });
@@ -396,7 +425,7 @@ describe("ArtistCard", () => {
       screen.queryByRole("button", { name: "Follow Dredg" }),
     ).not.toBeInTheDocument();
 
-    const card = screen.getByText("Dredg").closest('[role="button"]');
+    const card = screen.getByText("Dredg").closest("article");
     expect(card).not.toBeNull();
 
     fireEvent.contextMenu(card!, { clientX: 160, clientY: 120 });

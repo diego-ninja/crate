@@ -15,7 +15,9 @@ export function MediaRail({ children, className }: MediaRailProps) {
       )}
       data-testid="media-rail"
     >
-      <div className="flex gap-4 [&>*]:shrink-0">{children}</div>
+      <div className="flex gap-[var(--content-rail-gap)] [&>*]:shrink-0">
+        {children}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { CrateLoader } from "@/components/ui/CrateLoader";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { api, ApiError, setAuthTokens } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { isTauriRuntime } from "@/lib/platform";
@@ -98,24 +99,31 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
         <div className="flex flex-col items-center pb-4">
-          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16 mb-2" />
-          <h1 className="text-2xl font-bold text-white">Crate</h1>
-          <p className="text-sm text-white/40 -mt-0.5">{t("auth.tagline")}</p>
+          <CrateLogo title="Crate" className="mb-2 size-16" />
+          <h1 className="text-2xl font-bold text-text-primary">Crate</h1>
+          <p className="text-sm text-text-primary/40 -mt-0.5">
+            {t("auth.tagline")}
+          </p>
         </div>
 
         {authConfig.invite_only ? (
-          <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+          <div className="rounded-xl border border-accent-action/20 bg-accent-action/10 px-4 py-3 text-sm text-text-accent">
             {t("auth.login.inviteOnly")}
           </div>
         ) : null}
 
-        {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+        {error && (
+          <p className="text-sm text-state-danger text-center">{error}</p>
+        )}
 
         <div>
-          <label htmlFor="email" className="block text-sm text-white/60 mb-1">
+          <label
+            htmlFor="email"
+            className="block text-sm text-text-primary/60 mb-1"
+          >
             {t("common.email")}
           </label>
           <input
@@ -124,14 +132,14 @@ export function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
           />
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="block text-sm text-white/60 mb-1"
+            className="block text-sm text-text-primary/60 mb-1"
           >
             {t("common.password")}
           </label>
@@ -141,14 +149,14 @@ export function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
+            className="h-10 w-full rounded-lg border border-border-quiet bg-text-primary/5 px-3 text-base text-text-primary focus:border-accent-action/50 focus:outline-none"
           />
         </div>
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full h-10 rounded-lg bg-cyan-400 text-black font-medium text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"
+          className="w-full h-10 rounded-lg bg-accent-action text-accent-action-foreground font-medium text-sm hover:bg-accent-action-hover transition-colors disabled:opacity-50"
         >
           {submitting ? t("auth.login.submitting") : t("auth.login.submit")}
         </button>
@@ -156,8 +164,8 @@ export function Login() {
         <OAuthButtons returnTo={returnTo} />
 
         {tauriAuthDiagnostic ? (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/45">
-            <span className="text-white/65">Desktop OAuth:</span>{" "}
+          <div className="rounded-lg border border-border-quiet bg-text-primary/[0.03] px-3 py-2 text-xs text-text-primary/45">
+            <span className="text-text-primary/65">Desktop OAuth:</span>{" "}
             {tauriAuthDiagnostic.status}
             {tauriAuthDiagnostic.detail
               ? ` · ${tauriAuthDiagnostic.detail}`
@@ -165,11 +173,11 @@ export function Login() {
           </div>
         ) : null}
 
-        <p className="text-center text-sm text-white/40">
+        <p className="text-center text-sm text-text-primary/40">
           {t("auth.login.noAccount")}{" "}
           <Link
             to={`/register?return_to=${encodeURIComponent(returnTo)}`}
-            className="text-primary hover:underline"
+            className="text-accent-action hover:underline"
           >
             {t("auth.login.createOne")}
           </Link>

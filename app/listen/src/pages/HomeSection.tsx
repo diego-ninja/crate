@@ -59,6 +59,12 @@ function homePlaylistPath(playlistId: string): string {
   return `/home/playlist/${encodeURIComponent(playlistId)}`;
 }
 
+async function loadHomePlaylist(playlistId: string) {
+  return api<HomeGeneratedPlaylistDetail>(
+    `/api/me/home/playlists/${encodeURIComponent(playlistId)}`,
+  );
+}
+
 export function HomeSection() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -78,12 +84,6 @@ export function HomeSection() {
         : [],
     [data],
   );
-
-  async function loadHomePlaylist(playlistId: string) {
-    return api<HomeGeneratedPlaylistDetail>(
-      `/api/me/home/playlists/${encodeURIComponent(playlistId)}`,
-    );
-  }
 
   async function playHomePlaylist(item: HomeGeneratedPlaylistSummary) {
     try {
@@ -184,9 +184,7 @@ export function HomeSection() {
   if (!data) {
     return (
       <div className="space-y-4 py-16 text-center">
-        <p className="text-sm text-muted-foreground">
-          {t("home.section.notFound")}
-        </p>
+        <p className="text-sm text-text-muted">{t("home.section.notFound")}</p>
       </div>
     );
   }
@@ -195,23 +193,23 @@ export function HomeSection() {
     <div className="space-y-6">
       <button
         onClick={() => navigate(-1)}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-2 text-sm text-text-muted transition-colors hover:text-text-primary"
       >
         <ArrowLeft size={16} />
         {t("common.back")}
       </button>
 
       <div>
-        <h1 className="text-3xl font-bold text-foreground">{data.title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{data.subtitle}</p>
+        <h1 className="text-3xl font-bold text-text-primary">{data.title}</h1>
+        <p className="mt-2 text-sm text-text-muted">{data.subtitle}</p>
       </div>
 
       {!data.items.length ? (
-        <div className="rounded-[12px] border border-white/10 bg-white/[0.03] px-5 py-12 text-center">
-          <p className="text-sm font-medium text-foreground">
+        <div className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] px-5 py-12 text-center">
+          <p className="text-sm font-medium text-text-primary">
             {t("home.section.empty.title")}
           </p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          <p className="mx-auto mt-2 max-w-md text-sm text-text-muted">
             {t("home.section.empty.description")}
           </p>
         </div>
@@ -219,9 +217,13 @@ export function HomeSection() {
 
       {data.id === "recently-played" ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.items.map((item, index) => (
+          {data.items.map((item) => (
             <RecentEntityRow
-              key={`${item.type}-${index}`}
+              key={[
+                item.type,
+                openRecentItemPath(item),
+                item.played_at ?? "",
+              ].join(":")}
               item={item}
               onClick={() => navigate(openRecentItemPath(item))}
             />
@@ -273,9 +275,15 @@ export function HomeSection() {
 
       {data.id === "recommended-tracks" ? (
         <div className="space-y-2">
-          {recommendedTracks.map((track, index) => (
+          {recommendedTracks.map((track) => (
             <TrackRow
-              key={track.id ?? `${track.path}-${index}`}
+              key={
+                track.id ??
+                track.global_track_uid ??
+                track.entity_uid ??
+                track.path ??
+                [track.artist, track.album, track.title].join(":")
+              }
               track={track}
               showArtist
               showAlbum

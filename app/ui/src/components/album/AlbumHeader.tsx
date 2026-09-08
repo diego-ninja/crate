@@ -306,7 +306,7 @@ export function AlbumHeader({
                   setCoverLoaded(false);
                   setCoverCacheBust(String(Date.now()));
                 }}
-                className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/60 px-2 py-1.5 text-xs font-medium text-white/75 opacity-0 shadow-lg shadow-black/30 transition-all duration-200 group-hover/cover:translate-y-0 group-hover/cover:opacity-100 hover:bg-black/80 hover:text-white"
+                className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/60 px-2 py-1.5 text-xs font-medium text-white/75 opacity-0 shadow-lg shadow-black/30 transition-[background-color,opacity,transform,color] duration-200 group-hover/cover:translate-y-0 group-hover/cover:opacity-100 hover:bg-black/80 hover:text-white"
               />
             ) : null}
           </div>

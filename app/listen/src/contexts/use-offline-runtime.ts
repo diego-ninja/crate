@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { AuthUser } from "@/contexts/auth-context";
 import type {
@@ -7,28 +14,22 @@ import type {
   OfflinePlaylistInput,
   OfflineTrackInput,
 } from "@/contexts/offline-context";
-import { api } from "@/lib/api";
-import { onAppResume, isNative } from "@/lib/capacitor";
+import { isNative } from "@/lib/capacitor";
 import { getCurrentServer } from "@/lib/server-store";
 import {
   type OfflineItemKind,
   type OfflineItemRecord,
   type OfflineItemState,
-  type OfflineManifest,
   type OfflineSnapshot,
   type OfflineSummary,
   buildAssetUsage,
-  cacheTrackAsset,
   clearOfflineAssets,
   deleteCachedTrackAsset,
   deriveOfflineProfileKey,
-  ensureOfflineStorageBudget,
   getOfflineItemKey,
   getOfflineTrackAssetKey,
   getOfflineTrackManifestPaths,
-  hasCachedTrackAssets,
   hydrateOfflineProfileState,
-  isOfflineBusy,
   isOfflineSupported,
   saveOfflineSnapshot,
   setActiveOfflineProfileKey,
@@ -37,10 +38,10 @@ import {
 } from "@/lib/offline";
 import {
   createCoalescedOfflineWriter,
-  runBoundedOfflineTasks,
-  waitForOfflineTransferPermission,
   type CoalescedOfflineWriter,
 } from "@/lib/offline-scheduler";
+import { useOfflineManifestSync } from "@/contexts/use-offline-manifest-sync";
+import { useOfflineSynchronization } from "@/contexts/use-offline-synchronization";
 
 const EMPTY_SNAPSHOT: OfflineSnapshot = { items: {} };
 const EMPTY_SUMMARY: OfflineSummary = {
@@ -113,10 +114,9 @@ function findTrackOfflineItem(
 export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
   const supported = isOfflineSupported();
   const [snapshot, setSnapshot] = useState<OfflineSnapshot>(EMPTY_SNAPSHOT);
-  const [syncing, setSyncing] = useState(false);
   const snapshotRef = useRef<OfflineSnapshot>(EMPTY_SNAPSHOT);
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
-  const resumedProfileRef = useRef<string | null>(null);
+  const queue = useMemo(() => Promise.resolve(), []);
+  const queueRef = useRef(queue);
   const persistenceRef = useRef<{
     profileKey: string | null;
     writer: CoalescedOfflineWriter<OfflineSnapshot>;
@@ -131,7 +131,9 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     return deriveOfflineProfileKey(user.id, origin);
   }, [supported, user?.id]);
   const activeProfileRef = useRef(profileKey);
-  activeProfileRef.current = profileKey;
+  useLayoutEffect(() => {
+    activeProfileRef.current = profileKey;
+  }, [profileKey]);
 
   const commitSnapshot = useCallback(
     (next: OfflineSnapshot, flush = false) => {
@@ -153,8 +155,11 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     [profileKey],
   );
 
+  // Profile teardown must abort whichever transfer is active at cleanup time;
+  // a transfer may start after this effect is mounted, so reading the ref in
+  // cleanup is intentional rather than a stale-closure bug.
+  // react-doctor-disable-next-line exhaustive-deps
   useEffect(() => {
-    resumedProfileRef.current = null;
     let cancelled = false;
     setActiveOfflineProfileKey(profileKey);
     void syncOfflineProfileToServiceWorker(profileKey);
@@ -183,213 +188,23 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
     return nextRun;
   }, []);
 
-  const syncManifestIntoItem = useCallback(
-    async (
-      kind: OfflineItemKind,
-      entityId: string | number,
-      manifestPath: string,
-    ) => {
-      if (!supported || !profileKey) {
-        throw new Error(
-          "Offline playback is not supported in this environment",
-        );
-      }
+  const syncManifestIntoItem = useOfflineManifestSync({
+    commitSnapshot,
+    profileKey,
+    snapshotRef,
+    supported,
+    transferAbortRef,
+  });
 
-      const itemKey = getOfflineItemKey(kind, entityId);
-      const existing = snapshotRef.current.items[itemKey];
-      const provisional: OfflineItemRecord = {
-        key: itemKey,
-        kind,
-        entityId: String(entityId),
-        title: existing?.title || "Offline item",
-        state: existing ? "syncing" : "queued",
-        trackCount: existing?.trackCount || 0,
-        readyTrackCount: existing?.readyTrackCount || 0,
-        contentVersion: existing?.contentVersion || null,
-        updatedAt: existing?.updatedAt || null,
-        lastSyncedAt: existing?.lastSyncedAt || null,
-        totalBytes: existing?.totalBytes || 0,
-        errorMessage: null,
-        readyAssetKeys: existing?.readyAssetKeys || [],
-        tracks: existing?.tracks || [],
-      };
-      commitSnapshot({
-        items: {
-          ...snapshotRef.current.items,
-          [itemKey]: provisional,
-        },
-      });
-
-      let manifest: OfflineManifest;
-      try {
-        manifest = await api<OfflineManifest>(manifestPath);
-      } catch (error) {
-        const failedItem: OfflineItemRecord = {
-          ...provisional,
-          state: "error",
-          errorMessage:
-            (error as Error).message || "Failed to fetch offline manifest",
-        };
-        commitSnapshot({
-          items: {
-            ...snapshotRef.current.items,
-            [itemKey]: failedItem,
-          },
-        });
-        throw error;
-      }
-
-      let readyCount = 0;
-      let failureCount = 0;
-      let failureMessage: string | null = null;
-      const manifestTracks = manifest.tracks || [];
-      const cachedAssetKeys = await hasCachedTrackAssets(
-        profileKey,
-        manifestTracks,
-      );
-      const readyAssetKeys = Array.from(cachedAssetKeys);
-      readyCount = readyAssetKeys.length;
-      let midItem: OfflineItemRecord = {
-        ...provisional,
-        title: manifest.title,
-        state:
-          manifestTracks.length > 0
-            ? readyCount === manifestTracks.length
-              ? "ready"
-              : "downloading"
-            : "error",
-        trackCount: manifest.track_count || manifestTracks.length,
-        readyTrackCount: readyCount,
-        contentVersion: manifest.content_version,
-        updatedAt: manifest.updated_at ?? null,
-        totalBytes: manifest.total_bytes ?? 0,
-        tracks: manifestTracks,
-        readyAssetKeys,
-        errorMessage: manifestTracks.length
-          ? null
-          : "Item has no playable tracks",
-      };
-      commitSnapshot({
-        items: {
-          ...snapshotRef.current.items,
-          [itemKey]: midItem,
-        },
-      });
-
-      const pendingTracks = manifestTracks.filter((track) => {
-        const assetKey = getOfflineTrackAssetKey(track);
-        if (!assetKey) {
-          failureCount += 1;
-          failureMessage = "One or more tracks are missing entity identifiers";
-          return false;
-        }
-        return !midItem.readyAssetKeys?.includes(assetKey);
-      });
-      const readyKeys = new Set(midItem.readyAssetKeys || []);
-      transferAbortRef.current?.abort();
-      const transferController = new AbortController();
-      transferAbortRef.current = transferController;
-      try {
-        const runResult = await runBoundedOfflineTasks(
-          pendingTracks,
-          async (track) => {
-            const assetKey = getOfflineTrackAssetKey(track);
-            if (!assetKey) return;
-            try {
-              await waitForOfflineTransferPermission(transferController.signal);
-              if (transferController.signal.aborted) return;
-              await ensureOfflineStorageBudget(profileKey, [track], {
-                assumeMissing: true,
-              });
-              await cacheTrackAsset(profileKey, track);
-            } catch (error) {
-              if (transferController.signal.aborted) return;
-              failureCount += 1;
-              failureMessage =
-                (error as Error).message ||
-                "Failed to cache one or more tracks";
-              midItem = {
-                ...midItem,
-                state: "error",
-                errorMessage: failureMessage,
-              };
-              commitSnapshot({
-                items: {
-                  ...snapshotRef.current.items,
-                  [itemKey]: midItem,
-                },
-              });
-              return;
-            }
-            readyKeys.add(assetKey);
-            readyCount = readyKeys.size;
-            midItem = {
-              ...midItem,
-              readyTrackCount: readyCount,
-              readyAssetKeys: Array.from(readyKeys),
-            };
-            commitSnapshot({
-              items: {
-                ...snapshotRef.current.items,
-                [itemKey]: midItem,
-              },
-            });
-          },
-          { concurrency: 2, signal: transferController.signal },
-        );
-        if (runResult.cancelled) return;
-      } finally {
-        if (transferAbortRef.current === transferController) {
-          transferAbortRef.current = null;
-        }
-      }
-
-      const nextItem: OfflineItemRecord = {
-        ...midItem,
-        state:
-          readyCount === manifestTracks.length && failureCount === 0
-            ? "ready"
-            : "error",
-        readyTrackCount: readyCount,
-        lastSyncedAt: new Date().toISOString(),
-        totalBytes: manifest.total_bytes ?? 0,
-        errorMessage:
-          readyCount === manifestTracks.length && failureCount === 0
-            ? null
-            : failureMessage || "Some tracks failed to cache",
-        readyAssetKeys: midItem.readyAssetKeys || [],
-      };
-
-      const nextSnapshot: OfflineSnapshot = {
-        items: {
-          ...snapshotRef.current.items,
-          [itemKey]: nextItem,
-        },
-      };
-      commitSnapshot(nextSnapshot, true);
-
-      const oldAssetKeys = new Set(
-        (existing?.tracks || [])
-          .map((track) => getOfflineTrackAssetKey(track))
-          .filter((value): value is string => Boolean(value)),
-      );
-      for (const track of manifestTracks) {
-        const assetKey = getOfflineTrackAssetKey(track);
-        if (assetKey) {
-          oldAssetKeys.delete(assetKey);
-        }
-      }
-      if (oldAssetKeys.size) {
-        const usage = buildAssetUsage(nextSnapshot);
-        for (const assetKey of oldAssetKeys) {
-          if ((usage.get(assetKey) || 0) === 0) {
-            await deleteCachedTrackAsset(profileKey, assetKey);
-          }
-        }
-      }
-    },
-    [commitSnapshot, profileKey, supported],
-  );
+  const { syncing, syncAll } = useOfflineSynchronization({
+    enqueue,
+    profileKey,
+    snapshot,
+    snapshotRef,
+    supported,
+    syncManifestIntoItem,
+    transferAbortRef,
+  });
 
   const removeOfflineItem = useCallback(
     async (kind: OfflineItemKind, entityId: string | number) => {
@@ -403,118 +218,19 @@ export function useOfflineRuntime(user: AuthUser | null): OfflineContextValue {
       delete nextSnapshot.items[itemKey];
       commitSnapshot(nextSnapshot);
       const usage = buildAssetUsage(nextSnapshot);
-      for (const track of existing.tracks) {
-        const assetKey = getOfflineTrackAssetKey(track);
-        if (assetKey && (usage.get(assetKey) || 0) === 0) {
-          await deleteCachedTrackAsset(profileKey, track);
-        }
-      }
+      await Promise.all(
+        existing.tracks
+          .reduce<OfflineTrackInput[]>((tracks, track) => {
+            const assetKey = getOfflineTrackAssetKey(track);
+            if (assetKey && (usage.get(assetKey) || 0) === 0)
+              tracks.push(track);
+            return tracks;
+          }, [])
+          .map((track) => deleteCachedTrackAsset(profileKey, track)),
+      );
     },
     [commitSnapshot, profileKey, supported],
   );
-
-  const syncAll = useCallback(async () => {
-    if (!profileKey || !supported) return;
-    const items = Object.values(snapshotRef.current.items);
-    if (!items.length) return;
-    setSyncing(true);
-    try {
-      for (const item of items) {
-        if (item.kind === "track") {
-          const firstTrack = item.tracks[0];
-          const trackRef = getOfflineTrackAssetKey(firstTrack) || item.entityId;
-          const manifestPaths = getOfflineTrackManifestPaths(
-            firstTrack ?? item.entityId,
-          );
-          let synced = false;
-          let lastError: unknown = null;
-          for (const manifestPath of manifestPaths) {
-            try {
-              await syncManifestIntoItem("track", trackRef, manifestPath);
-              synced = true;
-              break;
-            } catch (error) {
-              lastError = error;
-            }
-          }
-          if (!synced) {
-            throw lastError instanceof Error
-              ? lastError
-              : new Error("Failed to fetch offline track manifest");
-          }
-        } else if (item.kind === "album") {
-          await syncManifestIntoItem(
-            "album",
-            item.entityId,
-            `/api/offline/albums/${item.entityId}/manifest`,
-          );
-        } else if (item.kind === "playlist") {
-          await syncManifestIntoItem(
-            "playlist",
-            item.entityId,
-            `/api/offline/playlists/${item.entityId}/manifest`,
-          );
-        }
-      }
-    } finally {
-      setSyncing(false);
-    }
-  }, [profileKey, supported, syncManifestIntoItem]);
-
-  useEffect(() => {
-    if (!profileKey || !supported) return;
-    if (resumedProfileRef.current === profileKey) return;
-    const hasPendingItems = Object.values(snapshot.items).some((item) =>
-      isOfflineBusy(item.state),
-    );
-    if (!hasPendingItems) return;
-    resumedProfileRef.current = profileKey;
-    void enqueue(async () => {
-      setSyncing(true);
-      try {
-        await syncAll();
-      } finally {
-        setSyncing(false);
-      }
-    });
-  }, [enqueue, profileKey, snapshot.items, supported, syncAll]);
-
-  useEffect(() => {
-    if (!profileKey || !supported) return;
-    const handleOnline = () => {
-      void enqueue(async () => {
-        setSyncing(true);
-        try {
-          await syncAll();
-        } finally {
-          setSyncing(false);
-        }
-      });
-    };
-    window.addEventListener("online", handleOnline);
-    window.addEventListener(
-      "crate:network-restored",
-      handleOnline as EventListener,
-    );
-    const disposeResume = onAppResume(handleOnline);
-    const handleVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        transferAbortRef.current?.abort();
-      } else {
-        handleOnline();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener(
-        "crate:network-restored",
-        handleOnline as EventListener,
-      );
-      document.removeEventListener("visibilitychange", handleVisibility);
-      disposeResume();
-    };
-  }, [enqueue, profileKey, supported, syncAll]);
 
   const toggleTrackOffline = useCallback(
     (input: OfflineTrackInput) =>

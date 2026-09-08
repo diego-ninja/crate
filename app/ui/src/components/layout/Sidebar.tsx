@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 
 import { BandcampLogo } from "@crate/ui/domain/brand/BandcampLogo";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { VtNavLink as NavLink } from "@crate/ui/primitives/VtNavLink";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
@@ -259,6 +260,12 @@ function emitSidebarExpanded(expanded: boolean) {
   }
 }
 
+function navClass(isActive: boolean): string {
+  return isActive
+    ? "bg-white/10 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+    : "text-white/42 hover:bg-white/5 hover:text-white";
+}
+
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(getStoredSidebarExpanded);
   const auth = useAuth();
@@ -302,12 +309,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     emitSidebarExpanded(next);
   }
 
-  function navClass(isActive: boolean) {
-    return isActive
-      ? "bg-white/10 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-      : "text-white/42 hover:bg-white/5 hover:text-white";
-  }
-
   const asideWidth = expanded ? "w-60" : "w-[4.5rem]";
 
   return (
@@ -327,11 +328,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           {expanded ? (
             <>
               <Link to="/" className="flex items-center gap-3 min-w-0">
-                <img
-                  src="/assets/logo.svg"
-                  alt="Crate"
-                  className="h-8 w-8 shrink-0"
-                />
+                <CrateLogo title="Crate" className="h-8 w-8 shrink-0" />
                 <div className="min-w-0 leading-tight">
                   <div className="text-sm font-bold text-white">Crate</div>
                   <div className="text-[11px] text-white/35">Admin console</div>
@@ -353,25 +350,25 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               aria-label="Expand sidebar"
               className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 transition-colors hover:bg-white/10"
             >
-              <img src="/assets/logo.svg" alt="Crate" className="h-6 w-6" />
+              <CrateLogo className="h-6 w-6" />
             </button>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-3">
-        {visibleNavItems.map((item, index) => {
+        {visibleNavItems.map((item) => {
           if ("section" in item) {
             return expanded ? (
               <div
-                key={`${item.section}-${index}`}
+                key={`section-${item.section}`}
                 className="px-4 pb-2 pt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25"
               >
                 {item.section}
               </div>
             ) : (
               <div
-                key={`${item.section}-${index}`}
+                key={`divider-${item.section}`}
                 className="mx-4 my-3 border-t border-white/5"
               />
             );

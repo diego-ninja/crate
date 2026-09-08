@@ -45,7 +45,7 @@ export function ArtistAvatar({
     return (
       <Link
         to={artistPagePath({ artistId, artistSlug, artistName: name })}
-        className="hover:ring-primary/50 rounded-md transition-all"
+        className="hover:ring-primary/50 rounded-md transition-[box-shadow]"
       >
         {wrapper}
       </Link>

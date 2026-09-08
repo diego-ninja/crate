@@ -392,7 +392,7 @@ function ProgressBar({
       ) : null}
       <div className="h-1.5 overflow-hidden rounded-full bg-white/8">
         <div
-          className={`h-full rounded-full transition-all ${color}`}
+          className={`h-full rounded-full transition-[width,background-color] ${color}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -1463,7 +1463,7 @@ export function SystemHealth() {
                     <div className="flex w-32 items-center gap-2">
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
                         <div
-                          className="h-full rounded-full bg-primary transition-all"
+                          className="h-full rounded-full bg-primary transition-[width,background-color]"
                           style={{ width: `${pct}%` }}
                         />
                       </div>

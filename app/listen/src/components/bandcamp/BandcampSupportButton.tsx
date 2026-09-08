@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CRATE_ICON_SIZE, Loader2 } from "@crate/ui/icons";
 import { toast } from "sonner";
@@ -32,6 +32,20 @@ interface ResolvedBandcampLink {
   entityType: "artist" | "album";
   link: BandcampLinkState;
 }
+
+interface BandcampActionState {
+  link: BandcampLinkState;
+  resolvedEntityType: ResolvedBandcampLink["entityType"];
+  url: string;
+  ownedAlbum: boolean;
+  canImport: boolean;
+  label: string;
+  ownedLabel: string;
+  ownedShortLabel: string;
+}
+
+const SECONDARY_ACTION_CLASS =
+  "inline-flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-xs font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
 function linkUrlForType(
   entityType: "artist" | "album",
@@ -69,6 +83,242 @@ async function fetchBandcampLink(
   return resolveBandcampLink(entityType, payload);
 }
 
+function useBandcampLink(
+  entityType: "artist" | "album",
+  entityUid?: string | null,
+  fallbackArtistEntityUid?: string | null,
+) {
+  const [resolved, setResolved] = useState<ResolvedBandcampLink | null>(null);
+
+  useEffect(() => {
+    if (!entityUid && !(entityType === "album" && fallbackArtistEntityUid)) {
+      setResolved(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function load() {
+      const primary = entityUid
+        ? await fetchBandcampLink(entityType, entityUid)
+        : null;
+      if (cancelled) return;
+      if (primary) {
+        setResolved(primary);
+        return;
+      }
+
+      if (entityType === "album" && fallbackArtistEntityUid) {
+        const fallback = await fetchBandcampLink(
+          "artist",
+          fallbackArtistEntityUid,
+        );
+        if (!cancelled) setResolved(fallback);
+        return;
+      }
+
+      setResolved(null);
+    }
+
+    void load().catch(() => {
+      if (!cancelled) setResolved(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entityType, entityUid, fallbackArtistEntityUid]);
+
+  return resolved;
+}
+
+function buildBandcampActionState(
+  resolved: ResolvedBandcampLink,
+  t: ReturnType<typeof useTranslation>["t"],
+): BandcampActionState | null {
+  const { entityType: resolvedEntityType, link } = resolved;
+  const url = linkUrlForType(resolvedEntityType, link);
+  if (!url) return null;
+
+  const latestImportStatus = link.latest_import_status || "";
+  const importInProgress = ["queued", "downloading", "importing"].includes(
+    latestImportStatus,
+  );
+  const ownedAlbum = resolvedEntityType === "album" && Boolean(link.user_owned);
+  const canImport = Boolean(
+    ownedAlbum &&
+      link.bandcamp_item_id &&
+      link.user_downloadable &&
+      latestImportStatus !== "completed" &&
+      !importInProgress,
+  );
+  const ownedLabel = importInProgress
+    ? t("bandcamp.support.importing")
+    : t("bandcamp.support.owned");
+  const ownedShortLabel = t("bandcamp.support.ownedShort");
+  const label =
+    resolvedEntityType === "artist"
+      ? t("bandcamp.support.artist")
+      : canImport
+        ? t("bandcamp.support.import")
+        : t("bandcamp.support.album");
+
+  return {
+    link,
+    resolvedEntityType,
+    url,
+    ownedAlbum,
+    canImport,
+    label,
+    ownedLabel,
+    ownedShortLabel,
+  };
+}
+
+function useBandcampActivation(
+  state: BandcampActionState | null,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  const [busy, setBusy] = useState(false);
+
+  const activate = useCallback(async () => {
+    if (!state) return;
+    if (!state.canImport || !state.link.bandcamp_item_id) {
+      await openExternalUrl(state.url);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const result = await api<{ task_id: string }>(
+        "/api/bandcamp/me/imports",
+        "POST",
+        { bandcamp_item_id: state.link.bandcamp_item_id, format: "flac" },
+      );
+      toast.success(
+        t("bandcamp.toasts.importQueued", { taskId: result.task_id }),
+      );
+    } catch (error) {
+      toast.error(
+        (error as Error).message || t("bandcamp.toasts.importFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [state, t]);
+
+  return { activate, busy };
+}
+
+function BandcampSecondaryAction({
+  state,
+  busy,
+  className,
+  onActivate,
+}: {
+  state: BandcampActionState;
+  busy: boolean;
+  className: string;
+  onActivate: () => void;
+}) {
+  const ariaLabel =
+    state.ownedAlbum && !state.canImport ? state.ownedLabel : state.label;
+
+  if (state.ownedAlbum && !state.canImport) {
+    return (
+      <span
+        className={`${SECONDARY_ACTION_CLASS} text-accent-action drop-shadow-accent-action ${className}`}
+        aria-label={ariaLabel}
+      >
+        <BandcampLogo size={CRATE_ICON_SIZE.lg} />
+        <span>Bandcamp</span>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onActivate}
+      disabled={busy}
+      className={`${SECONDARY_ACTION_CLASS} ${className}`}
+      aria-label={ariaLabel}
+    >
+      {busy ? (
+        <Loader2 size={CRATE_ICON_SIZE.lg} className="animate-spin" />
+      ) : (
+        <BandcampLogo size={CRATE_ICON_SIZE.lg} />
+      )}
+      <span>Bandcamp</span>
+    </button>
+  );
+}
+
+function BandcampDefaultAction({
+  state,
+  busy,
+  className,
+  iconOnly,
+  onActivate,
+}: {
+  state: BandcampActionState;
+  busy: boolean;
+  className: string;
+  iconOnly: boolean;
+  onActivate: () => void;
+}) {
+  if (state.ownedAlbum && !state.canImport) {
+    return (
+      <span
+        className={`bandcamp-support-owned inline-flex h-10 items-center rounded-full text-sm font-medium ${
+          iconOnly ? "w-10 justify-center px-0" : "gap-2 px-4"
+        } ${className}`}
+        aria-label={state.ownedLabel}
+      >
+        <BandcampLogo size={15} />
+        {iconOnly ? (
+          <span className="sr-only">{state.ownedLabel}</span>
+        ) : (
+          <>
+            <span className="hidden sm:inline">{state.ownedLabel}</span>
+            <span className="sm:hidden">{state.ownedShortLabel}</span>
+          </>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onActivate}
+      disabled={busy}
+      className={`bandcamp-support-action inline-flex h-10 items-center ${
+        iconOnly ? "w-10 justify-center px-0" : "gap-2 px-4"
+      } rounded-full text-sm font-medium disabled:opacity-50 ${className}`}
+      aria-label={
+        state.ownedAlbum && !state.canImport ? state.ownedLabel : state.label
+      }
+    >
+      {busy ? (
+        <Loader2 size={15} className="animate-spin" />
+      ) : (
+        <BandcampLogo size={15} />
+      )}
+      {iconOnly ? (
+        <span className="sr-only">
+          {state.ownedAlbum && !state.canImport
+            ? state.ownedLabel
+            : state.label}
+        </span>
+      ) : (
+        <>
+          <span className="hidden sm:inline">{state.label}</span>
+          <span className="sm:hidden">Bandcamp</span>
+        </>
+      )}
+    </button>
+  );
+}
+
 export function BandcampSupportButton({
   entityType,
   entityUid,
@@ -78,177 +328,33 @@ export function BandcampSupportButton({
   presentation = "default",
 }: BandcampSupportButtonProps) {
   const { t } = useTranslation();
-  const [resolved, setResolved] = useState<ResolvedBandcampLink | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!entityUid && !(entityType === "album" && fallbackArtistEntityUid)) {
-      setResolved(null);
-      return;
-    }
-    let cancelled = false;
-    async function load() {
-      try {
-        const primary = entityUid
-          ? await fetchBandcampLink(entityType, entityUid)
-          : null;
-        if (cancelled) return;
-        if (primary) {
-          setResolved(primary);
-          return;
-        }
-
-        if (entityType === "album" && fallbackArtistEntityUid) {
-          const fallback = await fetchBandcampLink(
-            "artist",
-            fallbackArtistEntityUid,
-          );
-          if (!cancelled) setResolved(fallback);
-          return;
-        }
-
-        setResolved(null);
-      } catch {
-        if (!cancelled) setResolved(null);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [entityType, entityUid, fallbackArtistEntityUid]);
-
-  const link = resolved?.link;
-  if (!link) return null;
-
-  const resolvedEntityType = resolved.entityType;
-  const url = linkUrlForType(resolvedEntityType, link);
-  if (!url) return null;
-  const latestImportStatus = link.latest_import_status || "";
-  const importInProgress = ["queued", "downloading", "importing"].includes(
-    latestImportStatus,
+  const resolved = useBandcampLink(
+    entityType,
+    entityUid,
+    fallbackArtistEntityUid,
   );
-  const ownedAlbum = resolvedEntityType === "album" && Boolean(link.user_owned);
-  const canImport =
-    ownedAlbum &&
-    link.bandcamp_item_id &&
-    link.user_downloadable &&
-    latestImportStatus !== "completed" &&
-    !importInProgress;
-  const ownedLabel = importInProgress
-    ? t("bandcamp.support.importing")
-    : t("bandcamp.support.owned");
-  const label =
-    resolvedEntityType === "artist"
-      ? t("bandcamp.support.artist")
-      : canImport
-        ? t("bandcamp.support.import")
-        : t("bandcamp.support.album");
-  const handleClick = async () => {
-    if (canImport && link.bandcamp_item_id) {
-      setBusy(true);
-      try {
-        const result = await api<{ task_id: string }>(
-          "/api/bandcamp/me/imports",
-          "POST",
-          { bandcamp_item_id: link.bandcamp_item_id, format: "flac" },
-        );
-        toast.success(
-          t("bandcamp.toasts.importQueued", { taskId: result.task_id }),
-        );
-      } catch (error) {
-        toast.error(
-          (error as Error).message || t("bandcamp.toasts.importFailed"),
-        );
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    await openExternalUrl(url);
-  };
-  const secondaryActionClassName =
-    "inline-flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-white/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-primary hover:drop-shadow-[0_0_10px_rgba(34,211,238,0.32)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
+  const state = resolved ? buildBandcampActionState(resolved, t) : null;
+  const { activate, busy } = useBandcampActivation(state, t);
 
+  if (!state) return null;
   if (presentation === "secondary-action") {
-    const ariaLabel = ownedAlbum && !canImport ? ownedLabel : label;
-
-    if (ownedAlbum && !canImport) {
-      return (
-        <span
-          className={`${secondaryActionClassName} text-primary drop-shadow-[0_0_8px_rgba(34,211,238,0.28)] ${className}`}
-          aria-label={ariaLabel}
-        >
-          <BandcampLogo size={CRATE_ICON_SIZE.lg} />
-          <span>Bandcamp</span>
-        </span>
-      );
-    }
-
     return (
-      <button
-        onClick={handleClick}
-        disabled={busy}
-        className={`${secondaryActionClassName} ${className}`}
-        aria-label={ariaLabel}
-      >
-        {busy ? (
-          <Loader2 size={CRATE_ICON_SIZE.lg} className="animate-spin" />
-        ) : (
-          <BandcampLogo size={CRATE_ICON_SIZE.lg} />
-        )}
-        <span>Bandcamp</span>
-      </button>
-    );
-  }
-
-  if (ownedAlbum && !canImport) {
-    return (
-      <span
-        className={`inline-flex h-10 items-center rounded-full border border-[#1da0c3]/25 bg-[#1da0c3]/10 text-sm font-medium text-[#7ee7ff]/90 ${
-          iconOnly ? "w-10 justify-center px-0" : "gap-2 px-4"
-        } ${className}`}
-        aria-label={ownedLabel}
-      >
-        <BandcampLogo size={15} />
-        {iconOnly ? (
-          <span className="sr-only">{ownedLabel}</span>
-        ) : (
-          <>
-            <span className="hidden sm:inline">{ownedLabel}</span>
-            <span className="sm:hidden">
-              {t("bandcamp.support.ownedShort")}
-            </span>
-          </>
-        )}
-      </span>
+      <BandcampSecondaryAction
+        state={state}
+        busy={busy}
+        className={className}
+        onActivate={() => void activate()}
+      />
     );
   }
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={busy}
-      className={`inline-flex h-10 items-center ${
-        iconOnly ? "w-10 justify-center px-0" : "gap-2 px-4"
-      } rounded-full border border-[#1da0c3]/30 bg-[#1da0c3]/10 text-sm font-medium text-[#7ee7ff] transition-colors hover:bg-[#1da0c3]/15 disabled:opacity-50 ${className}`}
-      aria-label={ownedAlbum && !canImport ? ownedLabel : label}
-    >
-      {busy ? (
-        <Loader2 size={15} className="animate-spin" />
-      ) : (
-        <BandcampLogo size={15} />
-      )}
-      {iconOnly ? (
-        <span className="sr-only">
-          {ownedAlbum && !canImport ? ownedLabel : label}
-        </span>
-      ) : (
-        <>
-          <span className="hidden sm:inline">{label}</span>
-          <span className="sm:hidden">Bandcamp</span>
-        </>
-      )}
-    </button>
+    <BandcampDefaultAction
+      state={state}
+      busy={busy}
+      className={className}
+      iconOnly={iconOnly}
+      onActivate={() => void activate()}
+    />
   );
 }

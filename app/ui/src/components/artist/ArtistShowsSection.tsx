@@ -42,7 +42,7 @@ export function ArtistShowsSection({
 }: ArtistShowsSectionProps) {
   return (
     <div className="space-y-1">
-      {shows.map((show, i) => {
+      {shows.map((show) => {
         const dateObj = show.date
           ? new Date(show.date + (show.date.includes("T") ? "" : "T12:00:00"))
           : null;
@@ -55,11 +55,11 @@ export function ArtistShowsSection({
         const location = [show.city, show.country].filter(Boolean).join(", ");
         return (
           <a
-            key={show.id || i}
+            key={show.id || `${show.date}-${show.name}-${show.venue}`}
             href={show.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-4 p-3 rounded-md border border-amber-500/10 hover:border-amber-500/20 transition-all hover:bg-card/80 group"
+            className="flex items-center gap-4 p-3 rounded-md border border-amber-500/10 hover:border-amber-500/20 transition-[border-color,background-color] hover:bg-card/80 group"
           >
             <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-secondary">
               <img

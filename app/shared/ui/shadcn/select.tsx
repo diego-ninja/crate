@@ -5,12 +5,12 @@ import { Select as SelectPrimitive } from "radix-ui";
 import { cn } from "@crate/ui/lib/cn";
 
 export const SELECT_TRIGGER_BASE_CLASS =
-  "flex w-fit items-center justify-between gap-2 rounded-md border border-white/10 bg-black/25 px-3 py-2 text-sm whitespace-nowrap text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] outline-none focus-visible:border-primary/35 focus-visible:bg-black/35 focus-visible:shadow-[0_0_0_1px_rgba(34,211,238,0.08)] disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[placeholder]:text-muted-foreground data-[size=default]:h-10 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px] [&_svg:not([class*='text-'])]:text-muted-foreground";
+  "flex w-fit items-center justify-between gap-2 rounded-md border border-border-quiet bg-surface-canvas/25 px-3 py-2 text-sm whitespace-nowrap text-text-primary shadow-control-inset backdrop-blur-sm transition-[background-color,border-color,box-shadow] outline-none focus-visible:border-accent-action/35 focus-visible:bg-surface-canvas/35 focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-state-danger data-[placeholder]:text-text-muted data-[size=default]:h-10 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px] [&_svg:not([class*='text-'])]:text-text-muted";
 export const SELECT_TRIGGER_ICON_CLASS = "size-4 opacity-50";
 export const SELECT_CONTENT_BASE_CLASS =
-  "relative z-app-dropdown max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-white/10 bg-popover-surface text-popover-foreground shadow-[0_24px_64px_rgba(0,0,0,0.42)] backdrop-blur-xl data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95";
+  "relative z-app-dropdown max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border-quiet bg-popover-surface text-popover-foreground shadow-popover backdrop-blur-xl data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95";
 export const SELECT_ITEM_BASE_CLASS =
-  "relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pr-8 pl-3 text-sm outline-hidden select-none focus:bg-white/5 focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px] [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2";
+  "relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pr-8 pl-3 text-sm outline-hidden select-none focus:bg-text-primary/5 focus:text-text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px] [&_svg:not([class*='text-'])]:text-text-muted *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2";
 
 function Select({
   ...props
@@ -97,7 +97,7 @@ function SelectLabel({
   return (
     <SelectPrimitive.Label
       data-slot="select-label"
-      className={cn("px-2 py-1.5 text-xs text-muted-foreground", className)}
+      className={cn("px-2 py-1.5 text-xs text-text-muted", className)}
       {...props}
     />
   );
@@ -134,7 +134,10 @@ function SelectSeparator({
   return (
     <SelectPrimitive.Separator
       data-slot="select-separator"
-      className={cn("pointer-events-none -mx-1 my-1 h-px bg-border", className)}
+      className={cn(
+        "pointer-events-none -mx-1 my-1 h-px bg-border-subtle",
+        className,
+      )}
       {...props}
     />
   );

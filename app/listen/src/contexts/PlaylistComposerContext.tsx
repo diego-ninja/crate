@@ -84,15 +84,19 @@ export function PlaylistComposerProvider({
           is_collaborative: payload.isCollaborative,
         });
 
-        const tracksPayload = payload.tracks
-          .filter((track) => hasTrackReference(track))
-          .map((track) =>
+        const tracksPayload = payload.tracks.reduce<
+          ReturnType<typeof toTrackReferencePayload>[]
+        >((tracks, track) => {
+          if (!hasTrackReference(track)) return tracks;
+          tracks.push(
             toTrackReferencePayload({
               ...track,
               album: track.album || "",
               duration: track.duration || 0,
             }),
           );
+          return tracks;
+        }, []);
 
         if (tracksPayload.length > 0) {
           await api(`/api/playlists/${created.id}/tracks`, "POST", {

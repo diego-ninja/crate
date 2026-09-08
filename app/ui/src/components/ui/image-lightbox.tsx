@@ -22,21 +22,29 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
 
   return (
     <>
-      <div onClick={() => setOpen(true)} className="cursor-zoom-in">
+      <button
+        type="button"
+        aria-label={`Open image: ${alt}`}
+        onClick={() => setOpen(true)}
+        className="cursor-zoom-in border-0 bg-transparent p-0"
+      >
         {children}
-      </div>
+      </button>
       {open && (
-        <div
-          onClick={close}
-          className="fixed inset-0 z-app-modal flex items-center justify-center bg-black/80 animate-in fade-in duration-200"
+        <button
+          type="button"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+          aria-label="Close image"
+          className="fixed inset-0 z-app-modal flex items-center justify-center border-0 bg-black/80 p-0 animate-in fade-in duration-200"
         >
           <img
             src={src}
             alt={alt}
-            onClick={(e) => e.stopPropagation()}
             className="max-w-[90vw] max-h-[90vh] rounded-md object-contain animate-in zoom-in-90 duration-200"
           />
-        </div>
+        </button>
       )}
     </>
   );

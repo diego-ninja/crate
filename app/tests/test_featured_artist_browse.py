@@ -3,6 +3,7 @@ from __future__ import annotations
 
 def test_browse_artists_defaults_to_recent_and_filters_featured(monkeypatch, test_app):
     from crate.api import browse_artist
+    from crate.artist_hero_artwork import ARTIST_HERO_RENDER_VERSION
 
     captured: dict[str, object] = {}
 
@@ -52,7 +53,7 @@ def test_browse_artists_defaults_to_recent_and_filters_featured(monkeypatch, tes
                 "first_seen_at": "2026-08-01T00:00:00+00:00",
                 "_hero_provenance": "manual",
                 "_hero_review_status": "approved",
-                "_hero_revision": "cover-fit-v4:abc",
+                "_hero_revision": f"{ARTIST_HERO_RENDER_VERSION}:abc",
                 "_hero_source_width": 2000,
                 "_hero_source_height": 1000,
                 "_hero_desktop_source_width": 2000,

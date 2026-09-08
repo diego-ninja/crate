@@ -63,7 +63,7 @@ export function FromCrateSection({
           ))}
         </SectionRail>
       ) : (
-        <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-quiet px-4 py-6 text-sm text-text-muted">
           {t("home.library.fromCrate.empty")}
         </div>
       )}
@@ -185,7 +185,7 @@ export function HomeLibrarySection({
           })}
         </SectionRail>
       ) : (
-        <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-quiet px-4 py-6 text-sm text-text-muted">
           {t("home.library.inYourLibrary.empty")}
         </div>
       )}
@@ -273,7 +273,7 @@ export function JustLandedSection({
           </div>
         </>
       ) : (
-        <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-quiet px-4 py-6 text-sm text-text-muted">
           {t("home.library.justLanded.empty")}
         </div>
       )}

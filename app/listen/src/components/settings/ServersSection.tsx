@@ -68,12 +68,12 @@ export function ServersSection() {
   };
 
   return (
-    <section className="rounded-[12px] border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+    <section className="rounded-[12px] border border-border-quiet bg-text-primary/[0.03] p-5 sm:p-6">
       <div className="mb-1 flex items-center gap-2">
-        <Server size={16} className="text-cyan-400" />
-        <h2 className="text-sm font-semibold text-foreground">Servers</h2>
+        <Server size={16} className="text-accent-action" />
+        <h2 className="text-sm font-semibold text-text-primary">Servers</h2>
       </div>
-      <p className="mb-4 text-[12px] text-muted-foreground">
+      <p className="mb-4 text-[0.75rem] text-text-muted">
         Crate servers this app can talk to. Switching drops you back to the
         login screen for the new host.
       </p>
@@ -86,8 +86,8 @@ export function ServersSection() {
               key={server.id}
               className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${
                 isCurrent
-                  ? "border-cyan-400/40 bg-cyan-400/10"
-                  : "border-white/10 bg-white/[0.03]"
+                  ? "border-accent-action/40 bg-accent-action/10"
+                  : "border-border-quiet bg-text-primary/[0.03]"
               }`}
             >
               <button
@@ -99,27 +99,25 @@ export function ServersSection() {
                 <div className="flex items-center gap-2">
                   <span
                     className={`text-sm font-medium ${
-                      isCurrent ? "text-cyan-100" : "text-white"
+                      isCurrent ? "text-text-accent" : "text-text-primary"
                     }`}
                   >
                     {server.label}
                   </span>
                   {isCurrent ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-text-accent">
                       <CheckCircle2 size={10} />
                       Current
                     </span>
                   ) : null}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {server.url}
-                </div>
+                <div className="text-xs text-text-muted">{server.url}</div>
               </button>
               <button
                 type="button"
                 onClick={() => handleRemove(server)}
                 aria-label={`Remove ${server.label}`}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-muted-foreground transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-200"
+                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border-quiet text-text-muted transition hover:border-state-danger/40 hover:bg-state-danger/10 hover:text-state-danger-text"
               >
                 <Trash2 size={14} />
               </button>
@@ -131,7 +129,7 @@ export function ServersSection() {
       <button
         type="button"
         onClick={() => navigate("/server-setup")}
-        className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 hover:text-cyan-200"
+        className="mt-4 inline-flex items-center gap-2 rounded-full border border-text-primary/15 bg-text-primary/5 px-4 py-2 text-sm font-medium text-text-primary/80 transition hover:border-accent-action/30 hover:bg-accent-action/10 hover:text-text-accent"
       >
         <Plus size={14} />
         Add another server

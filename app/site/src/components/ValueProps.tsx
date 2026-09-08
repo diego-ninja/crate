@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   Activity,
   Calendar,
@@ -96,8 +98,10 @@ export function ValueProps() {
       </div>
 
       <div className="grid gap-x-8 gap-y-10 md:grid-cols-3">
-        {PROPS.filter(({ hidden }) => !hidden).map(
-          ({ icon: Icon, title, body, className }) => (
+        {PROPS.reduce<ReactNode[]>((items, prop) => {
+          if (prop.hidden) return items;
+          const { icon: Icon, title, body, className } = prop;
+          items.push(
             <article
               key={title}
               className={`group border-t border-white/10 pt-6 ${
@@ -113,9 +117,10 @@ export function ValueProps() {
               <p className="text-[14.5px] leading-[1.65] text-white/60">
                 {body}
               </p>
-            </article>
-          ),
-        )}
+            </article>,
+          );
+          return items;
+        }, [])}
       </div>
     </section>
   );

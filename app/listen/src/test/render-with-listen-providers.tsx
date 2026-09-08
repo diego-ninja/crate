@@ -96,6 +96,7 @@ export function createMockPlayerActions(
     jamTransport: null as JamTransportControls | null,
     shuffle: false,
     repeat: "off",
+    smartCrossfadeEnabled: false,
     playSource: null,
     recentlyPlayed: [],
     currentTrack,

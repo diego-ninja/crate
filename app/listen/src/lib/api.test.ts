@@ -90,6 +90,7 @@ function mockJsonResponse(body: unknown): Response {
 
 beforeEach(() => {
   localStorage.clear();
+  setAuthToken(null);
   vi.restoreAllMocks();
   redirectToLoginMock.mockClear();
   captureApiErrorMock.mockClear();
@@ -318,8 +319,8 @@ describe("apiWsUrl", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("auth tokens", () => {
-  it("getAuthToken reads from localStorage", () => {
-    localStorage.setItem("listen-auth-token", "abc");
+  it("getAuthToken reads from in-memory web session", () => {
+    setAuthToken("abc");
     expect(getAuthToken()).toBe("abc");
   });
 
@@ -327,11 +328,8 @@ describe("auth tokens", () => {
     expect(getAuthToken()).toBeNull();
   });
 
-  it("getAuthTokenExpiresAt reads from localStorage", () => {
-    localStorage.setItem(
-      "listen-auth-token-expires-at",
-      "2025-01-01T00:00:00.000Z",
-    );
+  it("getAuthTokenExpiresAt reads from in-memory web session", () => {
+    setAuthToken("abc", "2025-01-01T00:00:00.000Z");
     expect(getAuthTokenExpiresAt()).toBe("2025-01-01T00:00:00.000Z");
   });
 

@@ -1,0 +1,94 @@
+{
+  "projectName": "Crate Theme Engine v2",
+  "projectDescription": "Personalización de colores, tipografía, superficies y densidad, con heroes y logo Crate sensibles al tema.",
+  "createdAt": "2026-09-08",
+  "scopeStatus": "confirmed",
+  "technicalPlanStatus": "proposed",
+  "technicalPlanRevision": "2026-09-08-review-corrections",
+  "technicalPlanFile": "../../docs/plans/2026-09-08-crate-theme-engine-v2-plan.md",
+  "htmlFile": "index.html",
+  "decisions": [
+    {
+      "id": "theme-engine-v2-scope",
+      "slug": "appearance-density-hero-logo",
+      "title": "Alcance de personalización",
+      "category": "visual",
+      "status": "chosen",
+      "chosenOption": "B",
+      "chosenTitle": "Apariencia, densidad, hero y logo",
+      "options": ["A", "B", "C", "D"],
+      "recommended": "B",
+      "htmlFile": "index.html#alcance",
+      "decidedAt": "2026-09-08",
+      "confirmationScope": "Dirección de producto; no implica aprobación de la arquitectura o los pasos de implementación.",
+      "source": "Diego: Principalmente apariencia: colores, tipografía, superficies y densidad.",
+      "additionalConfirmedRequirement": "El logo Crate dentro de la interfaz debe responder al tema elegido.",
+      "summary": "La opción B representa el alcance de apariencia confirmado, incluido el logo sensible al tema, manteniendo navegación y reproducción actuales.",
+      "optionDetails": {
+        "A": {
+          "title": "Colores y presets",
+          "relativeCost": "low",
+          "status": "reduced-alternative"
+        },
+        "B": {
+          "title": "Apariencia, densidad, hero y logo",
+          "relativeCost": "medium",
+          "status": "chosen-scope"
+        },
+        "C": {
+          "title": "Layouts curados",
+          "relativeCost": "high",
+          "status": "optional-future"
+        },
+        "D": {
+          "title": "Clon completo",
+          "relativeCost": "very-high",
+          "status": "out-of-scope"
+        }
+      }
+    }
+  ],
+  "technicalProposals": [
+    {
+      "id": "appearance-presentation-behavior",
+      "status": "proposed",
+      "summary": "Separar apariencia, densidad de contenido y comportamiento. La entrega A/B incluye controles reales y una paleta de acentos acotada; C entrega comfortable/compact como alcance confirmado, independiente del skin."
+    },
+    {
+      "id": "neutral-hero-asset",
+      "status": "proposed",
+      "summary": "Entregar D/E por separado: presentación compartida con fallback legacy, después renderer neutral y migración. Capturar fuentes/recetas coherentes; aislar assets, materialización y dedup por revisión; publicar y hacer rollback con CAS editorial y manifest esperado. Migrar todas las composiciones habilitadas juntas o conservar el bundle legacy."
+    },
+    {
+      "id": "appearance-storage-compatibility",
+      "status": "proposed",
+      "summary": "Clave v2 independiente y proyección compatible para clientes antiguos. Preservar preferencias completas tras downgrade/upgrade, proteger versiones futuras y recuperar payloads corruptos mediante Apply con respaldo previo."
+    },
+    {
+      "id": "appearance-verification",
+      "status": "proposed",
+      "summary": "Incluir contratos CSS de tokens en Vitest y ejecutar Playwright mediante script y CI explícitos desde A/B, ampliando cobertura con C y D/E; verificar que los tests se descubren y se ejecutan."
+    },
+    {
+      "id": "theme-aware-crate-logo",
+      "status": "proposed",
+      "requirementStatus": "confirmed",
+      "summary": "Reutilizar la geometría SVG actual como componente inline compartido con tokens propios de marca, separados de playback y estados.",
+      "recipes": ["signature", "restrained", "mono"],
+      "effects": "Glows y pulso condicionados por preferencias de efectos y reduced motion.",
+      "scopeIsolation": "IDs de filtros, máscaras y gradientes únicos por instancia; admitir scopes simultáneos de Admin, Listen y previews.",
+      "preservedStaticAssets": ["favicon", "tray", "PWA", "export"]
+    },
+    {
+      "id": "representative-pilot",
+      "status": "proposed",
+      "summary": "Validar Home, Album y Library con reproducción activa, logos en scopes simultáneos y reduced motion antes de extender la personalización."
+    }
+  ],
+  "previews": {
+    "status": "illustrative-only",
+    "externalAssets": false,
+    "variants": ["Crate dark", "Music-inspired light", "Music-inspired dark"],
+    "note": "Previews conceptuales CSS con la misma composición; no son capturas de la aplicación ni diseños finales. Crate se muestra como texto de referencia, sin reproducir ni rediseñar el logo. Las recetas de marca indicadas son propuestas."
+  }
+}

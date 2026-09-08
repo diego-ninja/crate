@@ -1,5 +1,5 @@
 import { ListMusic } from "@crate/ui/icons";
-import type { ImgHTMLAttributes, Key, ReactNode } from "react";
+import type { CSSProperties, ImgHTMLAttributes, Key, ReactNode } from "react";
 
 export interface PlaylistArtworkTrack {
   artist?: string;
@@ -31,14 +31,14 @@ interface PlaylistArtworkProps {
   renderImage?: (props: PlaylistArtworkImageProps) => ReactNode;
 }
 
-function playlistGradient(name: string): string {
+function playlistGradientHues(name: string): { hue1: number; hue2: number } {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   const hue1 = Math.abs(hash) % 360;
   const hue2 = (hue1 + 44) % 360;
-  return `linear-gradient(145deg, hsl(${hue1}, 42%, 30%), hsl(${hue2}, 55%, 18%))`;
+  return { hue1, hue2 };
 }
 
 function CrateMark({
@@ -56,7 +56,7 @@ function CrateMark({
         src={logoSrc}
         alt=""
         aria-hidden="true"
-        className="h-4 w-4 opacity-95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
+        className=" size-4 opacity-95 drop-shadow-artwork-compact-mark"
       />
     </div>
   );
@@ -74,10 +74,12 @@ export function PlaylistArtwork({
   renderImage,
 }: PlaylistArtworkProps) {
   const collageSources: string[] = [];
+  const collageSourceSet = new Set<string>();
   for (const track of tracks) {
     const source = buildCoverUrl(track);
-    if (source && !collageSources.includes(source)) {
+    if (source && !collageSourceSet.has(source)) {
       collageSources.push(source);
+      collageSourceSet.add(source);
     }
     if (collageSources.length >= 4) break;
   }
@@ -93,11 +95,13 @@ export function PlaylistArtwork({
 
   if (coverDataUrl) {
     return (
-      <div className={`relative overflow-hidden bg-white/5 ${className}`}>
+      <div
+        className={`relative overflow-hidden bg-text-primary/5 ${className}`}
+      >
         {artworkImage({
           src: coverDataUrl,
           alt: name,
-          className: "w-full h-full object-cover",
+          className: "size-full object-cover",
         })}
         {crateMark}
       </div>
@@ -107,11 +111,13 @@ export function PlaylistArtwork({
   if (collageSources.length > 0) {
     if (collageSources.length === 1) {
       return (
-        <div className={`relative overflow-hidden bg-white/5 ${className}`}>
+        <div
+          className={`relative overflow-hidden bg-text-primary/5 ${className}`}
+        >
           {artworkImage({
             src: collageSources[0],
             alt: name,
-            className: "w-full h-full object-cover",
+            className: "size-full object-cover",
           })}
           {crateMark}
         </div>
@@ -124,14 +130,16 @@ export function PlaylistArtwork({
         : "grid-cols-2 grid-rows-2";
 
     return (
-      <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-        <div className={`grid h-full w-full ${collageClassName} gap-[2px]`}>
+      <div
+        className={`relative overflow-hidden bg-text-primary/5 ${className}`}
+      >
+        <div className={`grid size-full ${collageClassName} gap-[2px]`}>
           {collageSources.map((source, index) =>
             artworkImage({
               key: `${source}-${index}`,
               src: source,
               alt: "",
-              className: `w-full h-full object-cover ${
+              className: `size-full object-cover ${
                 collageSources.length === 3 && index === 2 ? "col-span-2" : ""
               }`,
             }),
@@ -142,12 +150,19 @@ export function PlaylistArtwork({
     );
   }
 
+  const { hue1, hue2 } = playlistGradientHues(name);
+
   return (
     <div
-      className={`relative overflow-hidden flex items-center justify-center ${className}`}
-      style={{ background: playlistGradient(name) }}
+      className={`playlist-artwork-placeholder relative flex items-center justify-center overflow-hidden ${className}`}
+      style={
+        {
+          "--playlist-artwork-hue-1": String(hue1),
+          "--playlist-artwork-hue-2": String(hue2),
+        } as CSSProperties
+      }
     >
-      <ListMusic size={24} className="text-white/60" />
+      <ListMusic size={24} className="text-text-primary/60" />
       {crateMark}
     </div>
   );

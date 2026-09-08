@@ -51,7 +51,16 @@ export function ArtistCard({
 
   return (
     <div
+      role="link"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleClick();
+        }
+      }}
       className={`group cursor-pointer rounded-md p-2 text-left transition-colors hover:bg-white/5 ${
         isSelected ? "bg-white/[0.06]" : ""
       }`}

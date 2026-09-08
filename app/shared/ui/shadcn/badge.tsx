@@ -5,21 +5,21 @@ import { Slot } from "radix-ui";
 import { cn } from "@crate/ui/lib/cn";
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-[background-color,color,border-color,box-shadow] focus-visible:border-white/15 focus-visible:shadow-[0_0_0_1px_rgba(255,255,255,0.08)] aria-invalid:border-destructive [&>svg]:pointer-events-none [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-[background-color,color,border-color,box-shadow] focus-visible:border-text-primary/15 focus-visible:shadow-border-soft aria-invalid:border-state-danger [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {
         default:
-          "border-primary/25 bg-primary/10 text-primary [a&]:hover:bg-primary/15",
+          "border-accent-action/25 bg-accent-action/10 text-accent-action [a&]:hover:bg-accent-action/15",
         secondary:
-          "border-white/10 bg-white/5 text-white/70 [a&]:hover:bg-white/8",
+          "border-border-quiet bg-text-primary/5 text-text-primary/70 [a&]:hover:bg-text-primary/8",
         destructive:
-          "border-destructive/30 bg-destructive/10 text-red-200 dark:bg-destructive/20 [a&]:hover:bg-destructive/20",
+          "border-state-danger/30 bg-state-danger/10 text-state-danger-text dark:bg-state-danger/20 [a&]:hover:bg-state-danger/20",
         outline:
-          "border-white/12 bg-transparent text-foreground [a&]:hover:bg-white/5 [a&]:hover:text-accent-foreground",
+          "border-text-primary/12 bg-transparent text-text-primary [a&]:hover:bg-text-primary/5 [a&]:hover:text-text-primary",
         ghost:
-          "border-transparent bg-transparent [a&]:hover:bg-white/5 [a&]:hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 [a&]:hover:underline",
+          "border-transparent bg-transparent [a&]:hover:bg-text-primary/5 [a&]:hover:text-text-primary",
+        link: "text-accent-action underline-offset-4 [a&]:hover:underline",
       },
     },
     defaultVariants: {

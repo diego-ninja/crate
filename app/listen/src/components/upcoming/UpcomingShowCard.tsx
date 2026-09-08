@@ -83,14 +83,28 @@ export function UpcomingShowCard({
         "relative overflow-hidden rounded-xl border",
         expanded
           ? cn(
-              "border-primary/20 shadow-[0_12px_40px_rgba(6,182,212,0.10)] transition-[height,border-color,box-shadow] duration-400 ease-out",
-              featured &&
-                "border-primary/25 shadow-[0_18px_60px_rgba(6,182,212,0.14)]",
+              featured
+                ? "border-accent-action/25 shadow-accent-action-card-featured"
+                : "border-accent-action/20 shadow-accent-action-card",
+              "transition-[height,border-color,box-shadow] duration-400 ease-out",
             )
-          : "border-white/[0.06] bg-white/[0.02] transition-[height,border-color] duration-300 ease-out hover:border-primary/15 hover:bg-white/[0.03]",
+          : "border-text-primary/[0.06] bg-text-primary/[0.02] transition-[height,border-color] duration-300 ease-out hover:border-accent-action/15 hover:bg-text-primary/[0.03]",
       )}
       style={{ height: cardHeight }}
+      role={!expanded ? "button" : undefined}
+      tabIndex={!expanded ? 0 : undefined}
+      aria-expanded={!expanded ? expanded : undefined}
       onClick={!expanded ? onToggle : undefined}
+      onKeyDown={
+        !expanded && onToggle
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onToggle();
+              }
+            }
+          : undefined
+      }
       onContextMenu={actionMenu.handleContextMenu}
     >
       <div ref={contentRef}>

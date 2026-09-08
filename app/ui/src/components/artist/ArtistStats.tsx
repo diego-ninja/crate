@@ -82,6 +82,18 @@ export function ArtistStats({
           acousticness: a.avg_acousticness ?? 0,
         }))
       : [];
+  const timelineData = data.albums_timeline.reduce<
+    Array<{ album: string; tracks: number; year: string }>
+  >((items, album) => {
+    if (!album.year) return items;
+    items.push({
+      album:
+        album.name.length > 18 ? album.name.slice(0, 18) + "..." : album.name,
+      tracks: album.track_count,
+      year: album.year,
+    });
+    return items;
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -90,14 +102,7 @@ export function ArtistStats({
           <h4 className="text-sm font-semibold mb-3">Discography Timeline</h4>
           <div className="h-[200px]">
             <ResponsiveBar
-              data={data.albums_timeline
-                .filter((a) => a.year)
-                .map((a) => ({
-                  album:
-                    a.name.length > 18 ? a.name.slice(0, 18) + "..." : a.name,
-                  tracks: a.track_count,
-                  year: a.year,
-                }))}
+              data={timelineData}
               keys={["tracks"]}
               indexBy="album"
               margin={{ top: 10, right: 10, bottom: 50, left: 40 }}

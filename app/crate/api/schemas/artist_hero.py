@@ -24,3 +24,19 @@ class ArtistHeroCompositionView(BaseModel):
     height: int = Field(gt=0)
     bounds: ArtistHeroArtworkBounds
     asset_path: str = Field(min_length=1)
+
+
+class ArtistHeroArtifactView(BaseModel):
+    renderer_version: str = Field(min_length=1)
+    render_revision: str = Field(min_length=1)
+    source_fingerprint: str = Field(min_length=1)
+    recipe_hash: str = Field(min_length=1)
+    asset_path: str = Field(min_length=1)
+
+
+class ArtistHeroRenderManifestView(BaseModel):
+    manifest_version: Literal[1]
+    editorial_revision: str = Field(min_length=1)
+    artifacts: dict[ArtistHeroComposition, ArtistHeroArtifactView] = Field(
+        default_factory=dict
+    )

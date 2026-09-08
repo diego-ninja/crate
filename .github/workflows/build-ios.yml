@@ -10,6 +10,7 @@ on:
       - "app/shared/**"
       - "package-lock.json"
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - ".github/workflows/build-ios.yml"
       - "app/listen/**"
@@ -19,6 +20,7 @@ on:
 
 jobs:
   simulator:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     runs-on: macos-15
     steps:
       - name: Checkout

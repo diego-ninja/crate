@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
 import {
   Card,
   CardContent,
@@ -47,6 +53,14 @@ import {
   Bot,
   ShieldCheck,
 } from "lucide-react";
+
+const CACHE_ACTIONS = [
+  { type: "all", label: "Clear All", variant: "destructive" as const },
+  { type: "enrichment", label: "Enrichment", variant: "outline" as const },
+  { type: "lastfm", label: "Last.fm", variant: "outline" as const },
+  { type: "analytics", label: "Analytics", variant: "outline" as const },
+  { type: "paths_llm", label: "Music Paths AI", variant: "outline" as const },
+];
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -129,6 +143,29 @@ interface AuditResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+async function saveSoulseekSettings(
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await api("/api/settings/soulseek", "PUT", data);
+    toast.success("Soulseek settings saved");
+  } catch {
+    toast.error("Failed to save");
+  }
+}
+
+async function saveSettingsSection(
+  section: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await api(`/api/settings/${section}`, "PUT", data);
+    toast.success("Setting saved");
+  } catch {
+    toast.error("Failed to save");
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -945,15 +982,6 @@ function SoulseekCard() {
     }
   }, [loaded]);
 
-  async function save(data: Record<string, unknown>) {
-    try {
-      await api("/api/settings/soulseek", "PUT", data);
-      toast.success("Soulseek settings saved");
-    } catch {
-      toast.error("Failed to save");
-    }
-  }
-
   return (
     <Section
       title="Soulseek"
@@ -980,7 +1008,7 @@ function SoulseekCard() {
             value={quality}
             onChange={(value) => {
               setQuality(value);
-              save({ quality: value });
+              void saveSoulseekSettings({ quality: value });
             }}
             options={[
               { value: "flac", label: "FLAC only" },
@@ -998,7 +1026,11 @@ function SoulseekCard() {
             className="h-10 w-24"
             value={minBitrate}
             onChange={(e) => setMinBitrate(e.target.value)}
-            onBlur={() => save({ min_bitrate: parseInt(minBitrate) || 320 })}
+            onBlur={() =>
+              void saveSoulseekSettings({
+                min_bitrate: parseInt(minBitrate) || 320,
+              })
+            }
           />
           <span className="text-xs text-muted-foreground">kbps</span>
         </FieldRow>
@@ -1016,18 +1048,18 @@ function DownloadWindowCard() {
   const [windowEnd, setWindowEnd] = useState("07:00");
   const [maxUsers, setMaxUsers] = useState("0");
   const [maxStreams, setMaxStreams] = useState("0");
-  const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
-    if (policy && !loaded) {
+    if (policy && !loadedRef.current) {
       setWindowEnabled(policy.time_window.enabled);
       setWindowStart(policy.time_window.start);
       setWindowEnd(policy.time_window.end);
       setMaxUsers(String(policy.user_limit.max));
       setMaxStreams(String(policy.stream_limit.max));
-      setLoaded(true);
+      loadedRef.current = true;
     }
-  }, [policy, loaded]);
+  }, [policy]);
 
   async function save(patch: Record<string, unknown>) {
     try {
@@ -1282,15 +1314,6 @@ function EnrichmentSection({
     }
   }
 
-  async function saveSetting(section: string, data: Record<string, unknown>) {
-    try {
-      await api(`/api/settings/${section}`, "PUT", data);
-      toast.success("Setting saved");
-    } catch {
-      toast.error("Failed to save");
-    }
-  }
-
   async function savePathsSetting(enabled: boolean) {
     const previous = llmRefinementEnabled;
     setLlmRefinementEnabled(enabled);
@@ -1312,7 +1335,7 @@ function EnrichmentSection({
   function removeExt(ext: string) {
     const updated = audioExts.filter((e) => e !== ext);
     setAudioExts(updated);
-    saveSetting("library", { audio_extensions: updated });
+    void saveSettingsSection("library", { audio_extensions: updated });
   }
 
   function addExt() {
@@ -1323,7 +1346,7 @@ function EnrichmentSection({
     const updated = [...audioExts, normalized];
     setAudioExts(updated);
     setNewExt("");
-    saveSetting("library", { audio_extensions: updated });
+    void saveSettingsSection("library", { audio_extensions: updated });
   }
 
   return (
@@ -1418,12 +1441,12 @@ function EnrichmentSection({
               value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
               onMouseUp={() =>
-                saveSetting("processing", {
+                void saveSettingsSection("processing", {
                   mb_auto_apply_threshold: threshold,
                 })
               }
               onTouchEnd={() =>
-                saveSetting("processing", {
+                void saveSettingsSection("processing", {
                   mb_auto_apply_threshold: threshold,
                 })
               }
@@ -1442,7 +1465,9 @@ function EnrichmentSection({
               value={minAge}
               onChange={(e) => setMinAge(Number(e.target.value))}
               onBlur={() =>
-                saveSetting("processing", { enrichment_min_age_hours: minAge })
+                void saveSettingsSection("processing", {
+                  enrichment_min_age_hours: minAge,
+                })
               }
             />
             <span className="text-xs text-muted-foreground">hours</span>
@@ -1459,7 +1484,9 @@ function EnrichmentSection({
               value={maxPop}
               onChange={(e) => setMaxPop(Number(e.target.value))}
               onBlur={() =>
-                saveSetting("processing", { max_track_popularity: maxPop })
+                void saveSettingsSection("processing", {
+                  max_track_popularity: maxPop,
+                })
               }
             />
             <span className="text-xs text-muted-foreground">tracks</span>
@@ -1485,6 +1512,8 @@ function EnrichmentSection({
               >
                 {ext}
                 <button
+                  type="button"
+                  aria-label={`Remove ${ext}`}
                   onClick={() => removeExt(ext)}
                   className="ml-0.5 hover:text-red-400 transition-colors"
                 >
@@ -1651,14 +1680,6 @@ function StorageSection({
     }
   }
 
-  const cacheActions = [
-    { type: "all", label: "Clear All", variant: "destructive" as const },
-    { type: "enrichment", label: "Enrichment", variant: "outline" as const },
-    { type: "lastfm", label: "Last.fm", variant: "outline" as const },
-    { type: "analytics", label: "Analytics", variant: "outline" as const },
-    { type: "paths_llm", label: "Music Paths AI", variant: "outline" as const },
-  ];
-
   return (
     <>
       <Section
@@ -1713,7 +1734,7 @@ function StorageSection({
           description="Clear derived data without touching the underlying library."
         >
           <div className="flex gap-2 flex-wrap">
-            {cacheActions.map(({ type, label, variant }) => (
+            {CACHE_ACTIONS.map(({ type, label, variant }) => (
               <Button
                 key={type}
                 variant={variant}
@@ -1747,10 +1768,10 @@ function AuditSection() {
   const limit = 50;
 
   const load = useCallback(
-    async (reset: boolean) => {
+    async (reset: boolean, currentOffset = 0) => {
       setLoading(true);
       try {
-        const newOffset = reset ? 0 : offset;
+        const newOffset = reset ? 0 : currentOffset;
         const filterParam =
           actionFilter !== "all" ? `&action=${actionFilter}` : "";
         const res = await api<AuditResponse>(
@@ -1770,12 +1791,12 @@ function AuditSection() {
         setLoading(false);
       }
     },
-    [offset, actionFilter],
+    [actionFilter],
   );
 
   useEffect(() => {
     load(true);
-  }, [actionFilter]);
+  }, [actionFilter, load]);
 
   const actions = [...new Set(entries.map((e) => e.action))].sort();
 
@@ -1865,7 +1886,7 @@ function AuditSection() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => load(false)}
+                  onClick={() => load(false, offset)}
                   disabled={loading}
                 >
                   {loading && (

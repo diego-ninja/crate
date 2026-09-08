@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "./dist"
+  },
+  "include": [
+    "charts/**/*.ts",
+    "composites/**/*.tsx",
+    "domain/**/*.ts",
+    "domain/**/*.tsx",
+    "icons/**/*.tsx",
+    "lib/**/*.ts",
+    "primitives/**/*.tsx",
+    "shadcn/**/*.tsx"
+  ],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+}

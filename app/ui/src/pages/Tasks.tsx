@@ -96,6 +96,15 @@ interface WorkerPoolBreakdown {
   playback: number;
 }
 
+const EMPTY_TASKS: Task[] = [];
+const POOL_KEYS: Array<keyof WorkerPoolBreakdown> = [
+  "fast",
+  "default",
+  "heavy",
+  "maintenance",
+  "playback",
+];
+
 interface WorkerQueueBreakdown {
   running: WorkerPoolBreakdown;
   pending: WorkerPoolBreakdown;
@@ -626,9 +635,14 @@ function LiveTaskEvents({ taskId }: { taskId: string }) {
   return (
     <div className="max-h-[280px] space-y-1 overflow-y-auto py-3 font-mono">
       <TaskDoneBanner done={done} />
-      {events.map((event, index) => (
+      {events.map((event) => (
         <div
-          key={`${taskId}-${index}`}
+          key={`${taskId}-${
+            event.id ||
+            `${event.timestamp}-${event.type}-${String(
+              event.data.message ?? "",
+            )}`
+          }`}
           className="flex items-start gap-2 text-xs"
         >
           <span className="w-16 shrink-0 text-[10px] text-white/20">
@@ -681,9 +695,14 @@ function TaskEventLog({
   return (
     <div className="max-h-[320px] space-y-1 overflow-y-auto py-3 font-mono">
       <TaskDoneBanner done={done} />
-      {events.map((event, index) => (
+      {events.map((event) => (
         <div
-          key={`${taskId}-${index}`}
+          key={`${taskId}-${
+            event.id ||
+            `${event.timestamp}-${event.type}-${String(
+              event.data.message ?? "",
+            )}`
+          }`}
           className="flex items-start gap-2 text-xs"
         >
           <span className="w-16 shrink-0 text-[10px] text-white/20">
@@ -787,13 +806,6 @@ function WorkerControlPanel({
     }
   }
 
-  const poolKeys: Array<keyof WorkerPoolBreakdown> = [
-    "fast",
-    "default",
-    "heavy",
-    "maintenance",
-    "playback",
-  ];
   const hasQueuedDbHeavy = dbHeavyGate.pending > 0;
   const gateMessage = dbHeavyGate.blocking
     ? `DB-heavy work is serialized right now: ${dbHeavyGate.active} running, ${dbHeavyGate.pending} waiting. Free Dramatiq slots will stay idle until the gate clears.`
@@ -873,36 +885,34 @@ function WorkerControlPanel({
       </div>
 
       <div className="flex gap-1">
-        {Array.from({ length: slotLimit }, (_, index) => {
-          const task = activeTasks[index];
-          return (
-            <div
-              key={`slot-${index}`}
-              className={cn(
-                "flex h-9 flex-1 items-center justify-center rounded-sm border px-2 text-[11px] transition-colors",
-                task
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-white/8 bg-black/15 text-white/30",
-              )}
-              title={
-                task
-                  ? `${taskLabel(task.type)}${
-                      task.pool ? ` · ${task.pool}` : ""
-                    }`
-                  : "Idle slot"
-              }
-            >
-              <span className="truncate">
-                {task ? taskLabel(task.type) : "idle"}
-              </span>
-            </div>
-          );
-        })}
+        {Array.from({ length: slotLimit }, (_, slot) => ({
+          key: `slot-${slot}`,
+          task: activeTasks[slot],
+        })).map(({ key, task }) => (
+          <div
+            key={key}
+            className={cn(
+              "flex h-9 flex-1 items-center justify-center rounded-sm border px-2 text-[11px] transition-colors",
+              task
+                ? "border-primary/25 bg-primary/10 text-primary"
+                : "border-white/8 bg-black/15 text-white/30",
+            )}
+            title={
+              task
+                ? `${taskLabel(task.type)}${task.pool ? ` · ${task.pool}` : ""}`
+                : "Idle slot"
+            }
+          >
+            <span className="truncate">
+              {task ? taskLabel(task.type) : "idle"}
+            </span>
+          </div>
+        ))}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
         <div className="grid gap-2 md:grid-cols-5">
-          {poolKeys.map((pool) => {
+          {POOL_KEYS.map((pool) => {
             const meta = POOL_META[pool];
             const runningForPool = queueBreakdown.running[pool] ?? 0;
             const pendingForPool = queueBreakdown.pending[pool] ?? 0;
@@ -1523,7 +1533,7 @@ export function Tasks() {
     };
   }, []);
 
-  const tasks = tasksSnapshot?.history ?? [];
+  const tasks = tasksSnapshot?.history ?? EMPTY_TASKS;
   const live = tasksSnapshot?.live;
 
   useEffect(() => {
@@ -1684,22 +1694,24 @@ export function Tasks() {
     }
 
     if (nextHighlights.length > 0) {
+      for (const item of nextHighlights) {
+        const existingTimer = highlightTimersRef.current[item.id];
+        if (existingTimer != null) {
+          window.clearTimeout(existingTimer);
+        }
+        highlightTimersRef.current[item.id] = window.setTimeout(() => {
+          setSettledHighlights((current) => {
+            const updated = { ...current };
+            delete updated[item.id];
+            return updated;
+          });
+          delete highlightTimersRef.current[item.id];
+        }, 8000);
+      }
       setSettledHighlights((prev) => {
         const next = { ...prev };
         for (const item of nextHighlights) {
           next[item.id] = { status: item.status };
-          const existingTimer = highlightTimersRef.current[item.id];
-          if (existingTimer != null) {
-            window.clearTimeout(existingTimer);
-          }
-          highlightTimersRef.current[item.id] = window.setTimeout(() => {
-            setSettledHighlights((current) => {
-              const updated = { ...current };
-              delete updated[item.id];
-              return updated;
-            });
-            delete highlightTimersRef.current[item.id];
-          }, 8000);
         }
         return next;
       });

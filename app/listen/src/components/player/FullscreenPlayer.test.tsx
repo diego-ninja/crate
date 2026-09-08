@@ -334,6 +334,46 @@ describe("FullscreenPlayer", () => {
         expect(screen.getByLabelText("Play")).toBeInTheDocument();
       });
     });
+
+    it("uses semantic tokens for fullscreen static surfaces", async () => {
+      const track = makeTrack({ albumCover: undefined });
+      const user = userEvent.setup();
+      const { container } = renderWithListenProviders(
+        <FullscreenPlayer open onClose={vi.fn()} />,
+        {
+          playerActions: createMockPlayerActions({
+            currentTrack: track,
+            queue: [track],
+            currentIndex: 0,
+          }),
+        },
+      );
+
+      expect(
+        container.querySelector(".fullscreen-player-surface"),
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector(".fullscreen-player-handle"),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText("Show album cover"));
+
+      await waitFor(() => {
+        expect(
+          container.querySelector(".fullscreen-player-artwork-placeholder"),
+        ).toBeInTheDocument();
+        expect(
+          container.querySelector(".fullscreen-player-artwork-icon"),
+        ).toBeInTheDocument();
+      });
+
+      expect(container.innerHTML).not.toContain("bg-white/20");
+      expect(container.innerHTML).not.toContain("bg-white/5");
+      expect(container.innerHTML).not.toContain("text-white");
+      expect(container.innerHTML).not.toContain("shadow-black/60");
+      expect(container.innerHTML).not.toContain("text-muted-foreground");
+      expect(container.innerHTML).not.toContain("#1a2030");
+    });
   });
 
   // ════════════════════════════════════════════════════════════════════
@@ -861,6 +901,51 @@ describe("FullscreenPlayer", () => {
       });
       expect(queueSwitch).toHaveAttribute("aria-pressed", "false");
     });
+
+    it("uses semantic tokens for active panel and transport states", async () => {
+      const track = makeTrack();
+      const user = userEvent.setup();
+
+      renderWithListenProviders(<FullscreenPlayer open onClose={vi.fn()} />, {
+        playerActions: createMockPlayerActions({
+          currentTrack: track,
+          queue: [track],
+          currentIndex: 0,
+          shuffle: true,
+          repeat: "one",
+        }),
+      });
+
+      const shuffle = await screen.findByRole("button", {
+        name: "Disable shuffle",
+      });
+      const repeat = screen.getByRole("button", { name: "Repeat: one" });
+      expect(shuffle).toHaveClass(
+        "text-accent-action",
+        "drop-shadow-accent-action",
+      );
+      expect(repeat).toHaveClass(
+        "text-accent-action",
+        "drop-shadow-accent-action",
+      );
+
+      const queueSwitch = screen.getByRole("button", { name: "Queue" });
+      expect(queueSwitch).toHaveClass(
+        "text-text-muted",
+        "active:text-text-secondary",
+      );
+
+      await user.click(queueSwitch);
+
+      expect(queueSwitch).toHaveClass(
+        "text-accent-action",
+        "drop-shadow-accent-action-icon",
+      );
+      expect(queueSwitch.querySelector('[aria-hidden="true"]')).toHaveClass(
+        "bg-accent-action",
+        "shadow-accent-action-indicator-active",
+      );
+    });
   });
 
   // ════════════════════════════════════════════════════════════════════
@@ -1102,6 +1187,37 @@ describe("FullscreenPlayer", () => {
       await user.click(screen.getByText("Queue One"));
       expect(actions.jumpTo).toHaveBeenCalledWith(1);
     });
+
+    it("uses semantic tokens for queue rows", async () => {
+      const track = makeTrack();
+      const qTrack = makeQueueTrack({ title: "Queue One" }, 0);
+      const user = userEvent.setup();
+
+      renderWithListenProviders(<FullscreenPlayer open onClose={vi.fn()} />, {
+        playerActions: createMockPlayerActions({
+          currentTrack: track,
+          queue: [track, qTrack],
+          currentIndex: 0,
+        }),
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Queue")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Queue"));
+
+      const queueRow = await screen.findByText("Queue One");
+      const row = queueRow.closest('[role="button"]');
+
+      expect(row).toHaveClass(
+        "active:bg-surface-control",
+        "focus-visible:bg-surface-control",
+        "focus-visible:ring-focus-ring/40",
+      );
+      expect(queueRow).toHaveClass("text-text-primary");
+      expect(row?.className).not.toContain("white/");
+    });
   });
 
   // ════════════════════════════════════════════════════════════════════
@@ -1204,8 +1320,10 @@ describe("FullscreenPlayer", () => {
       expect(activeLine).toHaveClass(
         "text-[1.9rem]",
         "font-extrabold",
-        "text-white",
+        "text-text-primary",
+        "lyrics-active-line",
       );
+      expect(activeLine.className).not.toContain("rgba(");
       expect(nextLine).toHaveClass("text-[1.55rem]");
       expect(nextLine.className).toContain("blur-[0.35px]");
     });
@@ -1226,10 +1344,9 @@ describe("FullscreenPlayer", () => {
       });
 
       await waitFor(() => {
-        const dragHandle = document.querySelector(".w-10.h-1");
+        const dragHandle = document.querySelector(".fullscreen-player-handle");
         expect(dragHandle).toBeInTheDocument();
         expect(dragHandle?.className).toContain("rounded-full");
-        expect(dragHandle?.className).toContain("bg-white/20");
       });
     });
 
@@ -1275,6 +1392,53 @@ describe("FullscreenPlayer", () => {
       await waitFor(() => {
         expect(screen.getByLabelText("Show album cover")).toBeInTheDocument();
       });
+    });
+
+    it("uses semantic tokens for secondary player actions", async () => {
+      const track = makeTrack();
+      localStorage.setItem("listen-eq-enabled", "true");
+      const user = userEvent.setup();
+      renderWithListenProviders(<FullscreenPlayer open onClose={vi.fn()} />, {
+        playerActions: createMockPlayerActions({
+          currentTrack: track,
+          queue: [track],
+          currentIndex: 0,
+        }),
+      });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Like track")).toBeInTheDocument();
+      });
+
+      for (const button of [
+        screen.getByLabelText("Like track"),
+        screen.getByLabelText("Equalizer"),
+        screen.getByLabelText("Show album cover"),
+      ]) {
+        expect(button).toHaveClass(
+          "border-border-subtle",
+          "bg-surface-control",
+          "text-text-secondary",
+          "active:bg-surface-control-hover",
+          "active:text-text-primary",
+        );
+        expect(button.className).not.toContain("white/");
+      }
+
+      const equalizer = screen.getByLabelText("Equalizer");
+      await user.click(equalizer);
+      expect(equalizer).toHaveClass(
+        "text-accent-action",
+        "drop-shadow-accent-action",
+      );
+
+      expect(screen.getByTestId("player-track-menu")).toHaveClass(
+        "border-border-subtle",
+        "bg-surface-control",
+        "text-text-secondary",
+        "active:bg-surface-control-hover",
+        "active:text-text-primary",
+      );
     });
   });
 

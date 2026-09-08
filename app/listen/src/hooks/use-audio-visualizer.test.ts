@@ -32,6 +32,10 @@ describe("useAudioVisualizer", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
   });
 
   it("clears frames from the previous track before sampling the next one", () => {
@@ -67,5 +71,47 @@ describe("useAudioVisualizer", () => {
 
     expect(result.current.frequenciesDb).toEqual([]);
     expect(result.current.waveform).toEqual([]);
+  });
+
+  it("pauses sampling while the document is hidden and resumes when visible", () => {
+    const analyser = createAnalyser();
+    const requestAnimationFrame = vi.fn(() => 1);
+    vi.stubGlobal("requestAnimationFrame", requestAnimationFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    mockGetAnalyserNode.mockReturnValue(analyser);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+
+    renderHook(() => useAudioVisualizer(true, "track-one"));
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(requestAnimationFrame).toHaveBeenCalledOnce();
+  });
+
+  it("does not start sampling when reduced motion is preferred", () => {
+    const analyser = createAnalyser();
+    const requestAnimationFrame = vi.fn(() => 1);
+    vi.stubGlobal("requestAnimationFrame", requestAnimationFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    mockGetAnalyserNode.mockReturnValue(analyser);
+
+    renderHook(() => useAudioVisualizer(true, "track-one"));
+
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
   });
 });

@@ -102,7 +102,7 @@ function EqMock() {
                 <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/15" />
                 <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-white/[0.06]" />
                 <div
-                  className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.6)] transition-all duration-500"
+                  className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.6)] transition-[background-color,box-shadow,transform] duration-500"
                   style={{ top: `calc(${100 - pct}% - 6px)` }}
                 />
               </div>
@@ -302,7 +302,7 @@ function RadioMock() {
           return (
             <div
               key={track.name}
-              className="absolute left-1/2 top-1/2 transition-all duration-500"
+              className="absolute left-1/2 top-1/2 transition-transform duration-500"
               style={{
                 transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
               }}
@@ -330,7 +330,7 @@ function RadioMock() {
                 />
               </svg>
               <div
-                className={`h-2.5 w-2.5 rounded-full transition-all duration-300 ${
+                className={`h-2.5 w-2.5 rounded-full transition-[background-color,box-shadow,transform] duration-300 ${
                   isActive
                     ? "scale-150 bg-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.6)]"
                     : "bg-white/30"
@@ -357,6 +357,7 @@ function RadioMock() {
               {Math.round(RADIO_TRACKS[activeIndex]!.similarity * 100)}%
             </span>
             <button
+              aria-label="Next radio track"
               onClick={advance}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-400/15 text-cyan-300 transition hover:bg-cyan-400/25"
             >

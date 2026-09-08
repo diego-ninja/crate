@@ -417,18 +417,26 @@ export function AppModal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-label="Dialog"
+      tabIndex={-1}
       className={cn(
-        "z-app-modal fixed inset-0 flex items-end justify-center bg-black/72 p-0 backdrop-blur-md animate-fade-in sm:items-center sm:p-6",
+        "z-app-modal fixed inset-0 flex items-end justify-center bg-surface-canvas/72 p-0 backdrop-blur-md animate-fade-in sm:items-center sm:p-6",
         overlayClassName,
       )}
       onClick={handleOverlayClick}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && closeOnEscape) {
+          event.preventDefault();
+          onClose();
+        }
+      }}
       onPointerDown={handleOverlayPointerDown}
     >
       <div
         ref={panelRef}
         tabIndex={-1}
         className={cn(
-          "bg-modal-surface w-full overflow-hidden overscroll-contain rounded-t-3xl border border-white/10 shadow-2xl sm:rounded-3xl",
+          "bg-modal-surface w-full overflow-hidden overscroll-contain rounded-t-3xl border border-border-quiet shadow-2xl sm:rounded-3xl",
           isDragClosing
             ? undefined
             : isEntering && !isDragging
@@ -465,7 +473,7 @@ export function AppModal({
           onPointerUp={onPointerSwipeEnd}
           onPointerCancel={onSwipeCancel}
         >
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+          <div className="w-10 h-1 rounded-full bg-text-primary/20" />
         </div>
         {children}
       </div>
@@ -483,7 +491,7 @@ export function ModalHeader({
     <div
       {...props}
       className={cn(
-        "sticky top-0 z-10 border-b border-white/10 bg-modal-surface backdrop-blur-xl",
+        "sticky top-0 z-10 border-b border-border-quiet bg-modal-surface backdrop-blur-xl",
         className,
       )}
     >
@@ -516,7 +524,7 @@ export function ModalFooter({
     <div
       {...props}
       className={cn(
-        "sticky bottom-0 z-10 border-t border-white/10 bg-modal-surface backdrop-blur-xl",
+        "sticky bottom-0 z-10 border-t border-border-quiet bg-modal-surface backdrop-blur-xl",
         className,
       )}
     >
@@ -541,7 +549,7 @@ export function ModalCloseButton({
       type="button"
       aria-label="Close"
       className={cn(
-        "flex size-10 items-center justify-center text-white/55 transition-colors hover:text-white focus-visible:text-white focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+        "flex size-10 items-center justify-center text-text-primary/55 transition-colors hover:text-text-primary focus-visible:text-text-primary focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
       onClick={onClick}

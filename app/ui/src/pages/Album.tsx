@@ -297,7 +297,10 @@ export function MoveAlbumToArtistDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label
+            htmlFor="move-album-target"
+            className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
             Target artist
           </label>
           <div className="relative">
@@ -306,6 +309,7 @@ export function MoveAlbumToArtistDialog({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
             />
             <Input
+              id="move-album-target"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="pl-9"
@@ -445,7 +449,10 @@ export function MergeAlbumDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label
+            htmlFor="merge-album-target"
+            className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+          >
             Target album
           </label>
           <div className="relative">
@@ -454,6 +461,7 @@ export function MergeAlbumDialog({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
             />
             <Input
+              id="merge-album-target"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="pl-9"
@@ -592,10 +600,14 @@ export function SplitAlbumDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <label
+              htmlFor="split-album-name"
+              className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+            >
               New album name
             </label>
             <Input
+              id="split-album-name"
               value={targetAlbumName}
               onChange={(event) => setTargetAlbumName(event.target.value)}
               placeholder="Target album title"
@@ -610,9 +622,7 @@ export function SplitAlbumDialog({
               const checked = trackId != null && selectedTrackIds.has(trackId);
               return (
                 <label
-                  key={`${
-                    track.entity_uid || track.id || track.filename
-                  }-${index}`}
+                  key={track.entity_uid ?? String(track.id ?? track.filename)}
                   className="flex cursor-pointer items-center gap-3 border-b border-white/8 px-4 py-3 last:border-b-0 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45"
                 >
                   <input
@@ -700,6 +710,8 @@ export function Album() {
   const [syncingLyricsTrackKey, setSyncingLyricsTrackKey] = useState<
     string | null
   >(null);
+  const syncingLyricsTrackKeyRef = useRef<string | null>(null);
+  const processedLyricsTaskIdRef = useRef<string | null>(null);
   const processedLyricsEventIds = useRef<Set<number | string>>(new Set());
   const { events: lyricsEvents, done: lyricsTaskDone } =
     useTaskEvents(lyricsTaskId);
@@ -748,15 +760,16 @@ export function Album() {
 
   useEffect(() => {
     setLyricsOverrides({});
+    syncingLyricsTrackKeyRef.current = null;
     setSyncingLyricsTrackKey(null);
     processedLyricsEventIds.current.clear();
   }, [data?.id, data?.entity_uid]);
 
   useEffect(() => {
-    processedLyricsEventIds.current.clear();
-  }, [lyricsTaskId]);
-
-  useEffect(() => {
+    if (processedLyricsTaskIdRef.current !== lyricsTaskId) {
+      processedLyricsEventIds.current.clear();
+      processedLyricsTaskIdRef.current = lyricsTaskId;
+    }
     if (!lyricsTaskId || lyricsEvents.length === 0) return;
 
     const updates: Record<string, TrackLyricsStatus> = {};
@@ -775,19 +788,21 @@ export function Album() {
       const key = lyricOverrideKeyFromEvent(event.data);
       if (!key) continue;
       updates[key] = lyricsStatusFromTaskEvent(event.data);
-      if (syncingLyricsTrackKey === key) {
+      if (syncingLyricsTrackKeyRef.current === key) {
+        syncingLyricsTrackKeyRef.current = null;
         setSyncingLyricsTrackKey(null);
       }
     }
     if (Object.keys(updates).length === 0) return;
     setLyricsOverrides((prev) => ({ ...prev, ...updates }));
-  }, [lyricsEvents, lyricsTaskId, syncingLyricsTrackKey]);
+  }, [lyricsEvents, lyricsTaskId]);
 
   useEffect(() => {
     if (!lyricsTaskId || !lyricsTaskDone) return;
     if (lyricsTaskDone.status === "completed") {
       refetch();
     }
+    syncingLyricsTrackKeyRef.current = null;
     setSyncingLyricsTrackKey(null);
     setLyricsTaskId(null);
   }, [lyricsTaskDone, lyricsTaskId, refetch]);
@@ -829,7 +844,9 @@ export function Album() {
       return;
     }
 
-    setSyncingLyricsTrackKey(primaryLyricOverrideKeyForTrack(track));
+    const trackKey = primaryLyricOverrideKeyForTrack(track);
+    syncingLyricsTrackKeyRef.current = trackKey;
+    setSyncingLyricsTrackKey(trackKey);
     try {
       const response = await api<{ task_id: string }>(
         "/api/manage/sync-lyrics",
@@ -845,6 +862,7 @@ export function Album() {
       setLyricsTaskId(response.task_id);
       toast.success("Lyrics sync queued");
     } catch (error) {
+      syncingLyricsTrackKeyRef.current = null;
       setSyncingLyricsTrackKey(null);
       toast.error(apiErrorMessage(error, "Failed to queue lyrics sync"));
     }
@@ -1006,8 +1024,11 @@ export function Album() {
         <div className="mx-auto w-full max-w-[1480px] px-4 pt-6 md:px-8">
           <Skeleton className="mb-4 h-6 w-48" />
           <div className="space-y-2">
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
+            {Array.from(
+              { length: 6 },
+              (_, index) => `album-track-skeleton-${index}`,
+            ).map((key) => (
+              <Skeleton key={key} className="h-10 w-full" />
             ))}
           </div>
         </div>
@@ -1204,9 +1225,9 @@ export function Album() {
                 No matches found on MusicBrainz
               </div>
             ) : (
-              matches.map((m, i) => (
+              matches.map((m) => (
                 <MatchCard
-                  key={i}
+                  key={`${m.title}-${m.artist}-${m.date ?? ""}`}
                   match={m}
                   onApply={() => setPendingMatch(m)}
                 />

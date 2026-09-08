@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildSpectrumRibbonBands,
-  SPECTRUM_RIBBON_COLORS,
   SPECTRUM_RIBBON_PERSISTENCE,
   SpectrumRibbonCanvas,
 } from "./SpectrumRibbonCanvas";
+import { SPECTRUM_RIBBON_COLOR_TOKENS } from "./visualizer-color-tokens";
 
 describe("SpectrumRibbonCanvas", () => {
   beforeEach(() => {
@@ -17,13 +17,15 @@ describe("SpectrumRibbonCanvas", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses Crate cyan spectrum stops", () => {
-    expect(SPECTRUM_RIBBON_COLORS).toEqual([
-      "#0891b2",
-      "#06b6d4",
-      "#27d7ff",
-      "#67e8f9",
-      "#a5f3fc",
+  it("uses semantic tokens for spectrum stops", () => {
+    expect(SPECTRUM_RIBBON_COLOR_TOKENS).toEqual([
+      "--visualizer-ribbon-stop-0",
+      "--visualizer-ribbon-stop-1",
+      "--visualizer-ribbon-stop-2",
+      "--visualizer-ribbon-stop-3",
+      "--visualizer-ribbon-stop-4",
+      "--visualizer-ribbon-stop-5",
+      "--visualizer-ribbon-stop-6",
     ]);
   });
 

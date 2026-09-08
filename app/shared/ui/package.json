@@ -42,6 +42,10 @@
       "types": "./domain/*.tsx",
       "default": "./domain/*.tsx"
     },
+    "./domain/shows/show-types": {
+      "types": "./domain/shows/show-types.ts",
+      "default": "./domain/shows/show-types.ts"
+    },
     "./domain/actions": {
       "types": "./domain/actions/index.ts",
       "default": "./domain/actions/index.ts"
@@ -154,6 +158,10 @@
         "types": "./dist/domain/*.d.ts",
         "default": "./dist/domain/*.js"
       },
+      "./domain/shows/show-types": {
+        "types": "./dist/domain/shows/show-types.d.ts",
+        "default": "./dist/domain/shows/show-types.js"
+      },
       "./domain/actions": {
         "types": "./dist/domain/actions/index.d.ts",
         "default": "./dist/domain/actions/index.js"
@@ -240,7 +248,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsup",
+    "build": "npm run build:js && npm run build:types",
+    "build:js": "tsup --no-dts",
+    "build:types": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"

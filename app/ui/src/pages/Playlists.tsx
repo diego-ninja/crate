@@ -54,6 +54,13 @@ interface SystemPlaylist {
   last_generated_at?: string | null;
 }
 
+function ruleHasValue(rule: DraftSmartRule): boolean {
+  if (rule.op === "between") {
+    return rule.rangeMin.trim() !== "" || rule.rangeMax.trim() !== "";
+  }
+  return rule.value.trim() !== "";
+}
+
 interface FilterOptions {
   genres: string[];
   formats: string[];
@@ -211,9 +218,9 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
         {label}
-      </label>
+      </span>
       {children}
     </div>
   );
@@ -497,8 +504,17 @@ export function Playlists() {
               className="overflow-hidden border-white/10 bg-card"
             >
               <div
+                role="link"
+                tabIndex={0}
                 className="flex cursor-pointer flex-col gap-4 px-4 py-4 transition-colors hover:bg-white/[0.03] lg:flex-row lg:items-stretch"
                 onClick={() => navigate(`/playlists/${playlist.id}`)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    navigate(`/playlists/${playlist.id}`);
+                  }
+                }}
               >
                 <PlaylistArtwork
                   name={playlist.name}
@@ -816,30 +832,39 @@ function CreateSmartPlaylistPanel({
     });
   }
 
-  function ruleHasValue(rule: DraftSmartRule) {
-    if (rule.op === "between") {
-      return rule.rangeMin.trim() !== "" || rule.rangeMax.trim() !== "";
-    }
-    return rule.value.trim() !== "";
-  }
-
   async function submit() {
     if (!name.trim()) return;
-    const payloadRules = rules.filter(ruleHasValue).map((rule) => {
+    const payloadRules = rules.reduce<
+      Array<{
+        field: string;
+        op: string;
+        value: string | number | [number, number];
+      }>
+    >((payloadRules, rule) => {
+      if (!ruleHasValue(rule)) return payloadRules;
       if (rule.op === "between") {
         const min = rule.rangeMin.trim() ? Number(rule.rangeMin) : 0;
         const max = rule.rangeMax.trim() ? Number(rule.rangeMax) : 9999;
-        return {
+        payloadRules.push({
           field: rule.field,
           op: "between",
-          value: [min, max] as [number, number],
-        };
+          value: [min, max],
+        });
+      } else if (getFieldType(rule.field) === "number") {
+        payloadRules.push({
+          field: rule.field,
+          op: rule.op,
+          value: Number(rule.value),
+        });
+      } else {
+        payloadRules.push({
+          field: rule.field,
+          op: rule.op,
+          value: rule.value.trim(),
+        });
       }
-      if (getFieldType(rule.field) === "number") {
-        return { field: rule.field, op: rule.op, value: Number(rule.value) };
-      }
-      return { field: rule.field, op: rule.op, value: rule.value.trim() };
-    });
+      return payloadRules;
+    }, []);
 
     if (payloadRules.length === 0) {
       toast.error("Add at least one smart rule");
@@ -1013,7 +1038,7 @@ function CreateSmartPlaylistPanel({
 
               return (
                 <div
-                  key={`${rule.field}-${index}`}
+                  key={`${rule.field}-${rule.op}-${rule.value}-${rule.rangeMin}-${rule.rangeMax}`}
                   className="rounded-md border border-white/10 bg-card/60 p-3"
                 >
                   <div className="mb-3 flex items-center justify-between gap-3">

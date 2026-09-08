@@ -71,14 +71,14 @@ export function ArtistNetworkGraph({
   const fgRef = useRef<any>(undefined);
   const navigate = useNavigate();
   const [width, setWidth] = useState(0);
-  const [height] = useState(
+  const [height] = useState(() =>
     Math.min(600, Math.round(window.innerHeight * 0.55)),
   );
   const [networkData, setNetworkData] = useState<NetworkData>({
     nodes: [],
     links: [],
   });
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const expandedNodesRef = useRef<Set<string>>(new Set());
   const [artistsWithShows, setArtistsWithShows] = useState<Set<string>>(
     new Set(),
   );
@@ -94,7 +94,7 @@ export function ArtistNetworkGraph({
       .catch(() => {});
 
     setLoading(true);
-    setExpandedNodes(new Set([centerArtist]));
+    expandedNodesRef.current = new Set([centerArtist]);
     api<NetworkData>(
       artistNetworkApiPath(centerArtist, centerArtistId, centerArtistEntityUid),
     )
@@ -104,8 +104,8 @@ export function ArtistNetworkGraph({
   }, [centerArtist, centerArtistEntityUid, centerArtistId]);
 
   function expandNode(node: NetworkNode) {
-    if (expandedNodes.has(node.id)) return;
-    setExpandedNodes((previous) => new Set([...previous, node.id]));
+    if (expandedNodesRef.current.has(node.id)) return;
+    expandedNodesRef.current.add(node.id);
     api<NetworkData>(
       artistNetworkApiPath(node.id, node.artist_id, undefined, 1),
     )

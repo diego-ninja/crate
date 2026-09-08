@@ -2,6 +2,7 @@ import { type ComponentProps } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@crate/ui/shadcn/button";
 import { cn } from "@/lib/utils";
+import { useLLMStatus } from "@/hooks/use-llm";
 
 interface AIButtonProps
   extends Omit<ComponentProps<typeof Button>, "variant" | "size"> {
@@ -15,6 +16,10 @@ export function AIButton({
   disabled,
   ...props
 }: AIButtonProps) {
+  const llmStatus = useLLMStatus();
+
+  if (!llmStatus?.available) return null;
+
   return (
     <div className="relative inline-flex">
       {/* Glow pulse behind the button */}

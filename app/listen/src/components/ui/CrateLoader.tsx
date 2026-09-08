@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 
 import { cn } from "@/lib/utils";
 
@@ -75,32 +76,29 @@ export function CrateLoader({
         aria-hidden="true"
         className={cn(
           "group relative isolate flex shrink-0 items-center justify-center overflow-visible rounded-full",
-          "bg-[conic-gradient(from_218deg,#0891b2_0deg,#22d3ee_84deg,#a5f3fc_166deg,#06b6d4_248deg,#0891b2_360deg)]",
-          "shadow-[0_0_5px_rgba(34,211,238,0.3),0_0_9px_rgba(39,215,255,0.14)]",
+          "crate-loader-mark",
           "brightness-110 saturate-125",
           MARK_CLASSES[variant],
         )}
       >
-        <span className="pointer-events-none absolute -inset-[16px] z-0 origin-[46%_57%] animate-crate-play-aura-pulse rounded-[45%_55%_49%_51%/53%_47%_56%_44%] bg-[radial-gradient(ellipse_58%_46%_at_46%_57%,rgba(34,211,238,0.38)_0%,rgba(34,211,238,0.22)_24%,rgba(34,211,238,0.09)_42%,transparent_64%),radial-gradient(ellipse_38%_32%_at_68%_34%,rgba(165,243,252,0.22)_0%,rgba(165,243,252,0.09)_34%,transparent_66%),radial-gradient(ellipse_34%_42%_at_30%_66%,rgba(8,145,178,0.25)_0%,rgba(8,145,178,0.09)_38%,transparent_68%)] opacity-[0.72]" />
-        <span className="pointer-events-none absolute inset-0 z-10 animate-crate-play-rim-pulse rounded-full bg-[conic-gradient(from_218deg,rgba(8,145,178,0.94)_0deg,rgba(34,211,238,0.98)_92deg,rgba(165,243,252,0.96)_170deg,rgba(6,182,212,0.92)_250deg,rgba(8,145,178,0.9)_360deg)]" />
-        <span className="pointer-events-none absolute inset-[2px] z-20 animate-crate-play-core-pulse rounded-full bg-[#121326] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),inset_0_-10px_24px_rgba(0,0,0,0.48)]" />
-        <img
-          src="/icons/logo.svg"
-          alt=""
+        <span className="crate-loader-aura pointer-events-none absolute -inset-[16px] z-0 origin-[46%_57%] animate-crate-play-aura-pulse rounded-[45%_55%_49%_51%/53%_47%_56%_44%] opacity-[0.72]" />
+        <span className="crate-loader-rim pointer-events-none absolute inset-0 z-10 animate-crate-play-rim-pulse rounded-full" />
+        <span className="crate-loader-core pointer-events-none absolute inset-[2px] z-20 animate-crate-play-core-pulse rounded-full" />
+        <CrateLogo
           aria-hidden="true"
-          draggable={false}
-          className="relative z-30 h-[58%] w-[58%] select-none drop-shadow-[0_0_8px_rgba(103,232,249,0.42)]"
+          effects={false}
+          className="crate-loader-logo relative z-30 size-[58%] select-none"
         />
       </div>
-      <p className="font-sans text-[0.9375rem] font-semibold tracking-[0.055em] text-cyan-50/80">
+      <p className="font-sans text-[0.9375rem] font-semibold tracking-[0.055em] text-text-accent/80">
         {t(phrase)}
         <span
           className="inline-flex w-[1.35em] justify-start"
           aria-hidden="true"
         >
-          {[0, 1, 2].map((index) => (
+          {["first", "second", "third"].map((key, index) => (
             <span
-              key={index}
+              key={key}
               aria-hidden="true"
               data-testid="crate-loader-dot"
               className="animate-crate-loader-dot-bounce"

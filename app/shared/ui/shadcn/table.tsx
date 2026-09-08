@@ -6,7 +6,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto rounded-md border border-white/8 bg-black/10 shadow-[0_16px_40px_rgba(0,0,0,0.18)] backdrop-blur-sm"
+      className="relative w-full overflow-x-auto rounded-md border border-text-primary/8 bg-surface-canvas/10 shadow-card backdrop-blur-sm"
     >
       <table
         data-slot="table"
@@ -21,7 +21,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b [&_tr]:border-white/8", className)}
+      className={cn("[&_tr]:border-b [&_tr]:border-text-primary/8", className)}
       {...props}
     />
   );
@@ -42,7 +42,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
     <tfoot
       data-slot="table-footer"
       className={cn(
-        "border-t border-white/8 bg-white/[0.03] font-medium [&>tr]:last:border-b-0",
+        "border-t border-text-primary/8 bg-text-primary/[0.03] font-medium [&>tr]:last:border-b-0",
         className,
       )}
       {...props}
@@ -55,7 +55,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b border-white/6 transition-colors hover:bg-white/[0.04] data-[state=selected]:bg-primary/8",
+        "border-b border-text-primary/6 transition-colors hover:bg-text-primary/[0.04] data-[state=selected]:bg-accent-action/8",
         className,
       )}
       {...props}
@@ -68,7 +68,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-11 px-3 text-left align-middle text-[11px] font-semibold uppercase tracking-[0.16em] whitespace-nowrap text-white/40 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "h-11 px-3 text-left align-middle text-xs font-semibold uppercase tracking-[0.16em] whitespace-nowrap text-text-primary/40 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className,
       )}
       {...props}
@@ -96,7 +96,7 @@ function TableCaption({
   return (
     <caption
       data-slot="table-caption"
-      className={cn("mt-4 text-sm text-muted-foreground", className)}
+      className={cn("mt-4 text-sm text-text-muted", className)}
       {...props}
     />
   );

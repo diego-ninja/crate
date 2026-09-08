@@ -11,11 +11,11 @@ const IS_DEV_HOST =
 async function clearListenCaches() {
   const names = await caches.keys();
   await Promise.all(
-    names
-      .filter(
-        (name) => name === CACHE_NAME || name.startsWith(OFFLINE_CACHE_PREFIX),
-      )
-      .map((name) => caches.delete(name)),
+    names.map((name) =>
+      name === CACHE_NAME || name.startsWith(OFFLINE_CACHE_PREFIX)
+        ? caches.delete(name)
+        : Promise.resolve(false),
+    ),
   );
 }
 
@@ -57,11 +57,11 @@ if (IS_DEV_HOST) {
         .keys()
         .then((names) =>
           Promise.all(
-            names
-              .filter(
-                (n) => n !== CACHE_NAME && !n.startsWith(OFFLINE_CACHE_PREFIX),
-              )
-              .map((n) => caches.delete(n)),
+            names.map((name) =>
+              name !== CACHE_NAME && !name.startsWith(OFFLINE_CACHE_PREFIX)
+                ? caches.delete(name)
+                : Promise.resolve(false),
+            ),
           ),
         ),
     );

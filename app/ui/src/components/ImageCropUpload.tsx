@@ -27,7 +27,7 @@ export function ImageCropUpload({
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedArea, setCroppedArea] = useState<Area | null>(null);
+  const croppedAreaRef = useRef<Area | null>(null);
 
   function handleFileSelect(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -40,10 +40,11 @@ export function ImageCropUpload({
   }
 
   const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
-    setCroppedArea(croppedPixels);
+    croppedAreaRef.current = croppedPixels;
   }, []);
 
   async function handleUpload() {
+    const croppedArea = croppedAreaRef.current;
     if (!imageSrc || !croppedArea) return;
     setUploading(true);
     try {
@@ -69,6 +70,7 @@ export function ImageCropUpload({
 
       toast.success("Image saved");
       setImageSrc(null);
+      croppedAreaRef.current = null;
       onUploaded?.();
     } catch (e) {
       toast.error(
@@ -82,6 +84,7 @@ export function ImageCropUpload({
 
   function cancel() {
     setImageSrc(null);
+    croppedAreaRef.current = null;
     setCrop({ x: 0, y: 0 });
     setZoom(1);
     if (inputRef.current) inputRef.current.value = "";
@@ -92,6 +95,7 @@ export function ImageCropUpload({
       <input
         ref={inputRef}
         type="file"
+        aria-label={label ?? "Upload image"}
         accept="image/*"
         className="hidden"
         onChange={(e) => {
@@ -129,6 +133,8 @@ export function ImageCropUpload({
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="text-sm font-medium">Crop Image</span>
               <button
+                type="button"
+                aria-label="Close crop dialog"
                 onClick={cancel}
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -155,6 +161,7 @@ export function ImageCropUpload({
               <span className="text-xs text-muted-foreground">Zoom</span>
               <input
                 type="range"
+                aria-label="Image zoom"
                 min={1}
                 max={3}
                 step={0.05}

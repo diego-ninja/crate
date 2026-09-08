@@ -269,10 +269,10 @@ function TaxonomyRelationField({
   const normalizedQuery = query.trim().toLowerCase();
   const suggestions = useMemo(() => {
     const candidates = options
-      .filter(
-        (option) => option.slug !== sourceSlug && !selected.has(option.slug),
-      )
       .filter((option) => {
+        if (option.slug === sourceSlug || selected.has(option.slug)) {
+          return false;
+        }
         if (!normalizedQuery) return true;
         return (
           option.slug.includes(normalizedQuery) ||
@@ -352,7 +352,11 @@ function TaxonomyRelationField({
           </div>
         ) : null}
         <div className="relative">
+          <label htmlFor="genre-filter" className="sr-only">
+            Filter genres
+          </label>
           <input
+            id="genre-filter"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -1144,8 +1148,11 @@ function GenreList() {
   const filtered = useMemo(() => {
     if (!genres) return [];
     return genres
-      .filter((g) => g.name.toLowerCase().includes(filter.toLowerCase()))
-      .filter((g) => !hideEmpty || g.artist_count > 0 || g.album_count > 0)
+      .filter(
+        (g) =>
+          g.name.toLowerCase().includes(filter.toLowerCase()) &&
+          (!hideEmpty || g.artist_count > 0 || g.album_count > 0),
+      )
       .sort((a, b) => b.artist_count - a.artist_count);
   }, [genres, filter, hideEmpty]);
 
@@ -1633,18 +1640,13 @@ function GenreList() {
                     {unmappedGenres!.slice(0, 12).map((genre) => (
                       <div
                         key={`unmapped-${genre.slug}`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => navigate(`/genres/${genre.slug}`)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            navigate(`/genres/${genre.slug}`);
-                          }
-                        }}
                         className="flex items-center justify-between rounded-md border border-amber-500/20 bg-black/10 px-3 py-2 text-left transition-colors hover:bg-black/20"
                       >
-                        <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/genres/${genre.slug}`)}
+                          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
+                        >
                           <div className="truncate text-sm font-medium text-foreground">
                             {genre.name}
                           </div>
@@ -1652,7 +1654,7 @@ function GenreList() {
                             {genre.artist_count} artists · {genre.album_count}{" "}
                             albums
                           </div>
-                        </div>
+                        </button>
                         <div className="flex items-center gap-2">
                           <Badge
                             variant="outline"
@@ -1700,15 +1702,6 @@ function GenreList() {
                   {filtered.map((g) => (
                     <div
                       key={g.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => navigate(`/genres/${g.slug}`)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          navigate(`/genres/${g.slug}`);
-                        }
-                      }}
                       className={`group overflow-hidden rounded-md border bg-black/20 p-4 text-left shadow-[0_16px_36px_rgba(0,0,0,0.16)] transition-colors hover:bg-white/[0.04] ${
                         g.mapped
                           ? "border-white/8 hover:border-primary/30"
@@ -1716,9 +1709,15 @@ function GenreList() {
                       }`}
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="font-semibold text-foreground text-sm truncate">
-                          {g.name}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/genres/${g.slug}`)}
+                          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
+                        >
+                          <div className="font-semibold text-foreground text-sm truncate">
+                            {g.name}
+                          </div>
+                        </button>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <Badge
                             variant="outline"

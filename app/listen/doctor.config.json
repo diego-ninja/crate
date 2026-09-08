@@ -1,0 +1,63 @@
+{
+  "ignore": {
+    "files": ["src/lib/gapless5/**", "scripts/**"],
+    "rules": [
+      "react-doctor/no-high-complexity-react-function",
+      "react-doctor/no-giant-component",
+      "react-doctor/prefer-useReducer",
+      "react-doctor/no-many-boolean-props",
+      "react-doctor/no-multi-component-file",
+      "react-doctor/only-export-components",
+      "react-doctor/duplicate-jsx-subtree"
+    ],
+    "overrides": [
+      {
+        "files": ["src/components/explore/ExploreViews.tsx"],
+        "rules": [
+          "react-doctor/no-reset-all-state-on-prop-change",
+          "react-doctor/no-adjust-state-on-prop-change"
+        ]
+      },
+      {
+        "files": [
+          "src/components/home/HomeDiscoverySections.tsx",
+          "src/components/player/ExtendedPlayer.tsx",
+          "src/components/player/useResolvedPlayerArtist.ts",
+          "src/components/playlists/PlaylistCreateModal.tsx",
+          "src/components/social/ProfileHoverCard.tsx",
+          "src/hooks/use-api.ts"
+        ],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": ["src/contexts/use-player-lifecycle-runtime.ts"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": [
+          "src/components/artwork/CrateImage.tsx",
+          "src/components/player/SpinningDisc.tsx"
+        ],
+        "rules": [
+          "react-doctor/no-pass-data-to-parent",
+          "react-doctor/no-pass-live-state-to-parent",
+          "react-doctor/no-prop-callback-in-effect"
+        ]
+      },
+      {
+        "files": [
+          "src/pages/LibraryPlaylistsTab.tsx",
+          "src/pages/playlist-actions.ts"
+        ],
+        "rules": ["react-doctor/async-await-in-loop"]
+      },
+      {
+        "files": ["src/components/player/RadioFeedback.tsx"],
+        "rules": [
+          "react-doctor/no-reset-all-state-on-prop-change",
+          "react-doctor/no-adjust-state-on-prop-change"
+        ]
+      }
+    ]
+  }
+}

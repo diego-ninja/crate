@@ -22,7 +22,7 @@ export function SectionHeader({
       <div className="min-w-0">
         <div className="text-lg font-semibold leading-tight">{title}</div>
         {subtitle ? (
-          <div className="mt-1 text-sm text-white/50">{subtitle}</div>
+          <div className="mt-1 text-sm text-text-primary/50">{subtitle}</div>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}

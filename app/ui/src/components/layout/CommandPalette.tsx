@@ -268,11 +268,25 @@ export function CommandPalette() {
   if (!open) return null;
 
   return (
-    <div
+    <dialog
+      open
+      aria-modal="true"
+      aria-label="Command palette"
       className="fixed inset-0 z-[100] bg-black/50 flex items-start justify-center pt-[20vh]"
-      onClick={() => setOpen(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+        }
+      }}
     >
-      <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label="Close command palette"
+        className="absolute inset-0 border-0 bg-transparent p-0"
+        onClick={() => setOpen(false)}
+      />
+      <div className="relative z-10 w-full max-w-lg">
         <Command
           className="bg-card border border-border rounded-md shadow-2xl overflow-hidden"
           shouldFilter={false}
@@ -443,18 +457,23 @@ export function CommandPalette() {
                     icon: Settings,
                     capabilities: ["settings.manage"],
                   },
-                ]
-                  .filter((item) => hasAnyCapability(item.capabilities))
-                  .map((item) => (
-                    <Command.Item
-                      key={item.path}
-                      onSelect={() => go(item.path)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
-                    >
-                      <item.icon size={14} className="text-muted-foreground" />
-                      {item.label}
-                    </Command.Item>
-                  ))}
+                ].flatMap((item) =>
+                  hasAnyCapability(item.capabilities)
+                    ? [
+                        <Command.Item
+                          key={item.path}
+                          onSelect={() => go(item.path)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                        >
+                          <item.icon
+                            size={14}
+                            className="text-muted-foreground"
+                          />
+                          {item.label}
+                        </Command.Item>,
+                      ]
+                    : [],
+                )}
               </Command.Group>
             )}
 
@@ -536,6 +555,6 @@ export function CommandPalette() {
           </Command.List>
         </Command>
       </div>
-    </div>
+    </dialog>
   );
 }

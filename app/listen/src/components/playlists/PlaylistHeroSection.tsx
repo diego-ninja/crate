@@ -50,7 +50,7 @@ interface PlaylistHeroSectionProps {
 }
 
 const SECONDARY_ACTION_CLASS =
-  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-[11px] font-medium text-white/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-primary hover:drop-shadow-[0_0_10px_rgba(34,211,238,0.32)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
+  "flex min-h-14 min-w-[56px] shrink-0 touch-manipulation flex-col items-center justify-center gap-1 px-1.5 py-1 text-xs font-medium text-text-primary/62 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:drop-shadow-none";
 
 export function PlaylistHeroSection({
   title,
@@ -103,7 +103,7 @@ export function PlaylistHeroSection({
         <button
           ref={menuController.anchorRef}
           data-testid="playlist-mobile-hero-menu"
-          className="flex h-11 w-11 touch-manipulation items-center justify-center text-white/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-primary hover:drop-shadow-[0_0_10px_rgba(34,211,238,0.32)]"
+          className="flex size-11 touch-manipulation items-center justify-center text-text-primary/72 transition-[color,filter,transform] hover:-translate-y-px hover:text-accent-action hover:drop-shadow-accent-action-hover"
           onClick={handleToggleMenu}
           aria-label={t("common.more")}
         >
@@ -133,27 +133,25 @@ export function PlaylistHeroSection({
         <div className="absolute inset-0 scale-[1.02] opacity-[0.82] sm:grayscale sm:brightness-[0.5] sm:opacity-[0.45]">
           {artwork("h-full w-full rounded-none")}
         </div>
-        <div className="absolute inset-0 bg-black/12 sm:bg-black/36" />
+        <div className="absolute inset-0 bg-surface-canvas/12 sm:bg-surface-canvas/36" />
         <div
           className="absolute inset-0 sm:hidden"
-          style={{
-            background:
-              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.04) 34%, rgba(8, 10, 14, 0.28) 64%, var(--surface-app) 100%)",
-          }}
+          data-testid="playlist-hero-mobile-gradient"
+          style={{ background: "var(--hero-artwork-gradient-mobile)" }}
         />
         <div
           className="absolute inset-0 hidden sm:block"
+          data-testid="playlist-hero-desktop-gradient"
           style={{
-            background:
-              "linear-gradient(to bottom, transparent 0%, rgba(8, 10, 14, 0.16) 34%, rgba(8, 10, 14, 0.52) 66%, var(--surface-app) 100%)",
+            background: "var(--hero-artwork-gradient-desktop-strong)",
           }}
         />
 
-        <div className="relative mx-auto flex h-full w-full max-w-[1480px] items-end px-4 pb-6 pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pt-0">
+        <div className="relative mx-auto flex size-full max-w-[1480px] items-end px-4 pb-6 pt-[var(--listen-mobile-page-top)] sm:px-6 sm:pt-0">
           <div className="flex w-full flex-col gap-5 sm:flex-row sm:items-end">
-            <div className="hidden w-[200px] flex-shrink-0 sm:block lg:w-[240px]">
+            <div className="hidden w-[200px] shrink-0 sm:block lg:w-[240px]">
               {artwork(
-                "aspect-square rounded-xl bg-white/5 shadow-2xl ring-1 ring-white/10",
+                "aspect-square rounded-xl bg-text-primary/5 shadow-2xl ring-1 ring-text-primary/10",
               )}
             </div>
 
@@ -163,16 +161,16 @@ export function PlaylistHeroSection({
                   {badges}
                 </div>
               ) : null}
-              <h1 className="text-3xl font-bold text-foreground sm:text-4xl">
+              <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
                 {title}
               </h1>
               {description ? (
-                <p className="mt-3 line-clamp-3 max-w-2xl whitespace-pre-line text-sm leading-relaxed text-white/70">
+                <p className="mt-3 line-clamp-3 max-w-2xl whitespace-pre-line text-sm leading-relaxed text-text-primary/70">
                   {description}
                 </p>
               ) : null}
               {visibleMetaItems.length ? (
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                   {visibleMetaItems.map((item) => (
                     <span key={String(item)}>{item}</span>
                   ))}
@@ -183,7 +181,7 @@ export function PlaylistHeroSection({
         </div>
       </div>
 
-      <div className="px-4 py-4 sm:px-6">
+      <div className="p-4  sm:px-6">
         <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5 md:flex-row md:items-center md:justify-between md:gap-6">
           <div
             role="group"
@@ -191,7 +189,7 @@ export function PlaylistHeroSection({
             className="grid grid-cols-2 gap-3 md:flex md:shrink-0 md:items-center md:gap-3"
           >
             <button
-              className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_0_18px_rgba(34,211,238,0.24)] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_0_24px_rgba(34,211,238,0.34)] disabled:cursor-not-allowed disabled:opacity-45 md:px-7 md:text-[15px]"
+              className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-accent-action px-5 text-sm font-semibold text-accent-action-foreground shadow-action-solid transition-[background-color,box-shadow] hover:bg-accent-action/90 hover:shadow-action-solid-hover disabled:cursor-not-allowed disabled:opacity-45 md:px-7 md:text-[0.9375rem]"
               onClick={onPlay}
               disabled={playDisabled}
               aria-label={t("player.play")}
@@ -200,7 +198,7 @@ export function PlaylistHeroSection({
               <span>{t("player.play")}</span>
             </button>
             <button
-              className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-white/[0.08] px-5 text-sm font-semibold text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-[background-color,color,filter,transform] hover:-translate-y-px hover:bg-white/[0.12] hover:text-primary hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.24)] disabled:cursor-not-allowed disabled:opacity-45 md:w-auto md:px-7"
+              className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-text-primary/[0.08] px-5 text-sm font-semibold text-text-primary shadow-control-inset transition-[background-color,color,filter,transform] hover:-translate-y-px hover:bg-text-primary/[0.12] hover:text-accent-action hover:drop-shadow-accent-action disabled:cursor-not-allowed disabled:opacity-45 md:w-auto md:px-7"
               onClick={onShuffle}
               disabled={shuffleDisabled}
               aria-label={t("player.shuffle")}
@@ -223,8 +221,8 @@ export function PlaylistHeroSection({
                   className={cn(
                     SECONDARY_ACTION_CLASS,
                     action.active
-                      ? "text-primary drop-shadow-[0_0_8px_rgba(34,211,238,0.28)]"
-                      : "text-white/62",
+                      ? "text-accent-action drop-shadow-accent-action"
+                      : "text-text-primary/62",
                     action.className,
                   )}
                   onClick={action.onClick}

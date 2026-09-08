@@ -161,8 +161,8 @@ export function ArtistMetadataEditor({
   return (
     <>
       <Dialog open={open} onOpenChange={closeEditor}>
-        <DialogContent className="max-h-[min(86vh,900px)] max-w-3xl overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(92dvh,960px)] max-w-3xl flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Edit artist metadata</DialogTitle>
             <DialogDescription>
               Update descriptive library metadata for {artist.name}. Audio files
@@ -170,7 +170,7 @@ export function ArtistMetadataEditor({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 space-y-6 overflow-y-auto py-2 pr-1">
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain py-2 pr-1">
             <section className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium text-white/75">
@@ -277,7 +277,7 @@ export function ArtistMetadataEditor({
                     onChange={(event) =>
                       updateField("artist_type", event.target.value)
                     }
-                    className="h-10 rounded-md border border-white/10 bg-black/25 px-3 text-sm text-white"
+                    className="h-10 rounded-md border border-white/10 bg-black/25 px-3 text-base text-white"
                   >
                     <option value="">Not specified</option>
                     <option value="Group">Group</option>

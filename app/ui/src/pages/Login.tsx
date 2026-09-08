@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
 
@@ -69,7 +70,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
         <div className="flex flex-col items-center pb-4">
-          <img src="/assets/logo.svg" alt="Crate" className="mb-2 h-16 w-16" />
+          <CrateLogo title="Crate" className="mb-2 h-16 w-16" />
           <h1 className="text-2xl font-bold text-white">Crate</h1>
           <p className="-mt-0.5 text-sm text-white/40">Own your music</p>
         </div>
@@ -95,7 +96,6 @@ export function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            autoFocus
             autoComplete="email"
             className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white focus:border-cyan-400/50 focus:outline-none"
           />

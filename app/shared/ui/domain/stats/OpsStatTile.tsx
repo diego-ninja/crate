@@ -10,31 +10,32 @@ function toneClasses(tone: OpsTone) {
     case "primary":
       return {
         iconWrap:
-          "border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]",
-        value: "text-white",
+          "border-accent-action/20 bg-accent-action/12 text-accent-action shadow-accent-action-status",
+        value: "text-text-primary",
       };
     case "success":
       return {
         iconWrap:
-          "border-emerald-400/20 bg-emerald-400/12 text-emerald-300 shadow-[0_18px_40px_rgba(16,185,129,0.14)]",
-        value: "text-emerald-200",
+          "border-state-success/20 bg-state-success/12 text-state-success-text shadow-state-success",
+        value: "text-state-success-text",
       };
     case "warning":
       return {
         iconWrap:
-          "border-amber-400/20 bg-amber-400/12 text-amber-200 shadow-[0_18px_40px_rgba(245,158,11,0.14)]",
-        value: "text-amber-100",
+          "border-state-warning/20 bg-state-warning/12 text-state-warning-text shadow-state-warning",
+        value: "text-state-warning-text",
       };
     case "danger":
       return {
         iconWrap:
-          "border-red-400/20 bg-red-500/12 text-red-200 shadow-[0_18px_40px_rgba(239,68,68,0.14)]",
-        value: "text-red-100",
+          "border-state-danger/20 bg-state-danger/12 text-state-danger-text shadow-state-danger",
+        value: "text-state-danger-text",
       };
     default:
       return {
-        iconWrap: "border-white/10 bg-white/[0.05] text-white/65",
-        value: "text-white",
+        iconWrap:
+          "border-border-quiet bg-text-primary/[0.05] text-text-primary/65",
+        value: "text-text-primary",
       };
   }
 }
@@ -59,12 +60,12 @@ export function OpsStatTile({
   return (
     <div
       className={cn(
-        "rounded-md border border-white/8 bg-black/20 p-4 shadow-[0_16px_36px_rgba(0,0,0,0.16)]",
+        "rounded-md border border-text-primary/8 bg-surface-canvas/20 p-4 shadow-card",
         className,
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-[11px] uppercase tracking-[0.12em] text-white/35">
+        <div className="text-xs uppercase tracking-[0.12em] text-text-primary/35">
           {label}
         </div>
         <div
@@ -82,7 +83,7 @@ export function OpsStatTile({
         {value}
       </div>
       {caption ? (
-        <div className="mt-1 text-xs text-white/40">{caption}</div>
+        <div className="mt-1 text-xs text-text-primary/40">{caption}</div>
       ) : null}
     </div>
   );

@@ -4,6 +4,7 @@ import {
   clearQueue,
   enqueueEvent,
   flushQueue,
+  PENDING_PLAY_EVENTS_STORAGE_KEY,
   postWithRetry,
   queueSize,
 } from "./play-event-queue";
@@ -49,7 +50,7 @@ describe("enqueueEvent", () => {
     }
     expect(queueSize()).toBe(500);
     // First 5 should have been dropped.
-    const raw = localStorage.getItem("listen-pending-play-events")!;
+    const raw = localStorage.getItem(PENDING_PLAY_EVENTS_STORAGE_KEY)!;
     const events = JSON.parse(raw);
     expect((events[0].payload as { i: number }).i).toBe(5);
   });
@@ -120,7 +121,7 @@ describe("flushQueue", () => {
     // dropped after MAX_ATTEMPTS=5 if 401 counted.
     expect(queueSize()).toBe(1);
     const events = JSON.parse(
-      localStorage.getItem("listen-pending-play-events")!,
+      localStorage.getItem(PENDING_PLAY_EVENTS_STORAGE_KEY)!,
     );
     expect(events[0].attempts).toBe(0);
   });
@@ -132,7 +133,7 @@ describe("flushQueue", () => {
     await flushQueue();
 
     const events = JSON.parse(
-      localStorage.getItem("listen-pending-play-events")!,
+      localStorage.getItem(PENDING_PLAY_EVENTS_STORAGE_KEY)!,
     );
     // nextRetryAt should still be "now-ish" (not pushed into the future)
     // so the next flush attempt fires immediately.
@@ -150,7 +151,7 @@ describe("flushQueue", () => {
     expect(queueSize()).toBe(1);
 
     const events = JSON.parse(
-      localStorage.getItem("listen-pending-play-events")!,
+      localStorage.getItem(PENDING_PLAY_EVENTS_STORAGE_KEY)!,
     );
     expect(events[0].attempts).toBe(1);
     // nextRetryAt should be in the future (~2s backoff on first attempt).
@@ -168,7 +169,7 @@ describe("flushQueue", () => {
       nextRetryAt: new Date(0).toISOString(), // due now
     };
     localStorage.setItem(
-      "listen-pending-play-events",
+      PENDING_PLAY_EVENTS_STORAGE_KEY,
       JSON.stringify([oldEvent]),
     );
     mockApiFetch.mockRejectedValue(new Error("still down"));
@@ -189,7 +190,7 @@ describe("flushQueue", () => {
       nextRetryAt: new Date(Date.now() + 60_000).toISOString(),
     };
     localStorage.setItem(
-      "listen-pending-play-events",
+      PENDING_PLAY_EVENTS_STORAGE_KEY,
       JSON.stringify([futureEvent]),
     );
 

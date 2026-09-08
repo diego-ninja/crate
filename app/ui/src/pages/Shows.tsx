@@ -3,11 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Button } from "@crate/ui/shadcn/button";
-import {
-  ShowCard,
-  type ShowEvent,
-  getGenreColor,
-} from "@/components/shows/ShowCard";
+import { ShowCard, type ShowEvent } from "@/components/shows/ShowCard";
+import { getGenreColor } from "@crate/ui/domain/shows/show-types";
 import {
   Loader2,
   MapPin,
@@ -17,6 +14,7 @@ import {
   ChevronRight,
   Filter,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 // Fix Leaflet default marker icon
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
@@ -29,6 +27,16 @@ L.Icon.Default.mergeOptions({
 });
 
 type ViewMode = "map" | "calendar" | "list";
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
 
 export function Shows() {
   const [events, setEvents] = useState<ShowEvent[]>([]);
@@ -68,38 +76,32 @@ export function Shows() {
 
     async function fetchShows() {
       try {
-        const res = await fetch("/api/shows/cached?limit=200", {
-          credentials: "include",
-        });
-        if (!res.ok) {
-          setLoading(false);
-          setDone(true);
-          return;
-        }
-        const data = await res.json();
+        const data = await api<{ events?: Record<string, unknown>[] }>(
+          "/api/shows/cached?limit=200",
+        );
         if (cancelled) return;
         const mapped: ShowEvent[] = (data.events || []).map(
           (e: Record<string, unknown>) => ({
-            id: e.external_id || e.id || "",
-            name: e.artist_name || "",
-            date: e.date || "",
-            local_date: ((e.date as string) || "").slice(0, 10),
-            local_time: e.local_time || "",
-            venue: e.venue || "",
+            id: stringValue(e.external_id ?? e.id),
+            name: stringValue(e.artist_name),
+            date: stringValue(e.date),
+            local_date: stringValue(e.date).slice(0, 10),
+            local_time: stringValue(e.local_time),
+            venue: stringValue(e.venue),
             address_line1: (e.address_line1 as string) || undefined,
-            city: e.city || "",
-            region: e.region || "",
-            country: e.country || "",
-            country_code: e.country_code || "",
-            url: e.url || "",
-            image: e.image_url || "",
+            city: stringValue(e.city),
+            region: stringValue(e.region),
+            country: stringValue(e.country),
+            country_code: stringValue(e.country_code),
+            url: stringValue(e.url),
+            image: stringValue(e.image_url),
             lineup: Array.isArray(e.lineup)
-              ? e.lineup
-              : e.artist_name
-                ? [e.artist_name as string]
+              ? stringArray(e.lineup)
+              : stringValue(e.artist_name)
+                ? [stringValue(e.artist_name)]
                 : [],
             price_range: null,
-            status: e.status || "onsale",
+            status: stringValue(e.status) || "onsale",
             latitude: e.latitude ? String(e.latitude) : undefined,
             longitude: e.longitude ? String(e.longitude) : undefined,
             artist_name: (e.artist_name as string) || "",
@@ -111,9 +113,7 @@ export function Shows() {
               ? (e.lineup_artists as ShowEvent["lineup_artists"])
               : undefined,
             artist_listeners: 0,
-            artist_genres: Array.isArray(e.artist_genres)
-              ? e.artist_genres
-              : [],
+            artist_genres: stringArray(e.artist_genres),
           }),
         );
         setEvents(mapped);
@@ -230,6 +230,8 @@ export function Shows() {
         )}
         {isMap && (
           <button
+            type="button"
+            aria-label="Toggle show filters"
             className={`p-1.5 rounded ${
               isMap ? "bg-card/90 backdrop-blur" : ""
             } ${
@@ -250,6 +252,8 @@ export function Shows() {
           {(["map", "calendar", "list"] as ViewMode[]).map((m) => (
             <button
               key={m}
+              type="button"
+              aria-label={`Show ${m} view`}
               className={`px-2.5 py-1.5 text-xs transition-colors ${
                 viewMode === m
                   ? "bg-primary/20 text-primary"
@@ -380,9 +384,9 @@ export function Shows() {
         <div>
           {controls}
           <div className="space-y-2">
-            {filteredEvents.map((e, i) => (
+            {filteredEvents.map((e) => (
               <ShowListItem
-                key={e.id || i}
+                key={e.id || `${e.date}-${e.artist_name}-${e.venue}`}
                 show={e}
                 onClick={() => setSelectedShow(e)}
               />
@@ -393,14 +397,28 @@ export function Shows() {
 
       {/* Detail overlay */}
       {selectedShow && (
-        <div
+        <dialog
+          open
+          aria-modal="true"
+          aria-label="Show details"
           className="fixed inset-0 z-app-modal flex items-center justify-center bg-black/70"
-          onClick={() => setSelectedShow(null)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setSelectedShow(null);
+            }
+          }}
         >
-          <div onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            aria-label="Close show details"
+            className="absolute inset-0 border-0 bg-transparent p-0"
+            onClick={() => setSelectedShow(null)}
+          />
+          <div className="relative z-10">
             <ShowCard show={selectedShow} />
           </div>
-        </div>
+        </dialog>
       )}
     </>
   );
@@ -463,11 +481,11 @@ function LiveMarkers({ events }: { events: ShowEvent[] }) {
   return (
     <>
       <PopupCenterer />
-      {events.map((e, i) => {
+      {events.map((e) => {
         const color = getGenreColor(e.artist_genres);
         return (
           <Marker
-            key={e.id || i}
+            key={e.id || `${e.date}-${e.artist_name}-${e.venue}`}
             position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
             icon={coloredIcon(color)}
           >
@@ -501,11 +519,17 @@ function CalendarGrid({
     today.getMonth() + 1,
   ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-  const cells: (number | null)[] = [];
+  const cells: Array<{ key: string; day: number | null }> = [];
   const offset = (firstDay + 6) % 7;
-  for (let i = 0; i < offset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  for (let slot = 0; slot < offset; slot++) {
+    cells.push({ key: `${year}-${month}-leading-${slot}`, day: null });
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push({ key: `${year}-${month}-${day}`, day });
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push({ key: `${year}-${month}-trailing-${cells.length}`, day: null });
+  }
 
   return (
     <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-hidden">
@@ -517,7 +541,8 @@ function CalendarGrid({
           {d}
         </div>
       ))}
-      {cells.map((day, i) => {
+      {cells.map((cell) => {
+        const day = cell.day;
         const dateStr = day
           ? `${year}-${String(month + 1).padStart(2, "0")}-${String(
               day,
@@ -527,7 +552,7 @@ function CalendarGrid({
         const isToday = dateStr === todayStr;
         return (
           <div
-            key={i}
+            key={cell.key}
             className={`bg-card min-h-[80px] p-1.5 ${
               !day ? "opacity-30" : ""
             } ${isToday ? "ring-1 ring-primary/40" : ""}`}
@@ -542,9 +567,9 @@ function CalendarGrid({
                   {day}
                 </div>
                 <div className="space-y-0.5">
-                  {dayEvents.slice(0, 3).map((e, j) => (
+                  {dayEvents.slice(0, 3).map((e) => (
                     <button
-                      key={j}
+                      key={e.id || `${e.date}-${e.artist_name}-${e.venue}`}
                       className="w-full text-left"
                       onClick={() => onSelectShow(e)}
                     >

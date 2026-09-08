@@ -1,0 +1,38 @@
+{
+  "ignore": {
+    "rules": [
+      "react-doctor/no-high-complexity-react-function",
+      "react-doctor/no-giant-component",
+      "react-doctor/prefer-useReducer",
+      "react-doctor/no-many-boolean-props",
+      "react-doctor/no-multi-component-file",
+      "react-doctor/only-export-components",
+      "react-doctor/duplicate-jsx-subtree"
+    ],
+    "overrides": [
+      {
+        "files": ["src/components/album/TrackTable.tsx"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": ["src/components/artist/ArtistRepairDialog.tsx"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": ["src/components/genres/GenreTaxonomyTree.tsx"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      },
+      {
+        "files": ["src/pages/Album.tsx", "src/pages/Artist.tsx"],
+        "rules": [
+          "react-doctor/no-reset-all-state-on-prop-change",
+          "react-doctor/no-adjust-state-on-prop-change"
+        ]
+      },
+      {
+        "files": ["src/pages/Genres.tsx", "src/pages/Users.tsx"],
+        "rules": ["react-doctor/no-adjust-state-on-prop-change"]
+      }
+    ]
+  }
+}

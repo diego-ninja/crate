@@ -30,20 +30,20 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="bg-card border-border">
+      <AlertDialogContent className="bg-surface-container border-border-subtle">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="border-border">
+          <AlertDialogCancel className="border-border-subtle">
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className={
               variant === "destructive"
-                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                ? "bg-state-danger text-state-danger-foreground hover:bg-state-danger/90"
                 : ""
             }
           >

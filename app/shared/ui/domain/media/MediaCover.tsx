@@ -39,7 +39,7 @@ export function MediaCover({
       : null;
 
   const baseClasses = cn(
-    "overflow-hidden bg-white/5",
+    "overflow-hidden bg-text-primary/5",
     shapeClass(shape),
     className,
   );
@@ -52,7 +52,7 @@ export function MediaCover({
         className={cn(baseClasses, "flex items-center justify-center")}
         data-testid="media-cover-fallback"
       >
-        <Icon size={iconSize} className="text-white/25" />
+        <Icon size={iconSize} className="text-text-primary/25" />
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function MediaCover({
         src={imageSrc}
         alt={alt}
         loading="lazy"
-        className="h-full w-full object-cover"
+        className=" size-full object-cover"
         onError={() => {
           if (showingPrimary) {
             setPrimaryErrored(true);

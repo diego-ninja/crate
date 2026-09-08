@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useEffectEvent } from "react";
 import { useNavigate } from "react-router";
 import {
   Clock,
@@ -56,7 +56,7 @@ interface SearchBarProps {
   onQueryChange?: (query: string) => void;
 }
 
-const RECENTS_KEY = "search-recents";
+const RECENTS_KEY = "search-recents:v1";
 const MAX_RECENTS = 5;
 
 function loadRecents(): string[] {
@@ -132,36 +132,33 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
   const localCacheRef = useRef<Map<string, LocalResults>>(new Map());
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const doLocalSearch = useCallback(
-    async (value: string) => {
-      onQueryChange?.(value);
-      if (value.length < 2) {
-        setLocalResults(null);
-        setLoading(false);
-        return;
-      }
+  const doLocalSearch = useEffectEvent(async (value: string) => {
+    onQueryChange?.(value);
+    if (value.length < 2) {
+      setLocalResults(null);
+      setLoading(false);
+      return;
+    }
 
-      const cached = localCacheRef.current.get(value.toLowerCase());
-      if (cached) {
-        setLocalResults(cached);
-        setOpen(true);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      const result = await api<LocalResults>(
-        `/api/search?q=${encodeURIComponent(value)}`,
-      ).catch(() => null);
-      if (result) {
-        localCacheRef.current.set(value.toLowerCase(), result);
-      }
-      setLocalResults(result);
+    const cached = localCacheRef.current.get(value.toLowerCase());
+    if (cached) {
+      setLocalResults(cached);
       setOpen(true);
       setLoading(false);
-    },
-    [onQueryChange],
-  );
+      return;
+    }
+
+    setLoading(true);
+    const result = await api<LocalResults>(
+      `/api/search?q=${encodeURIComponent(value)}`,
+    ).catch(() => null);
+    if (result) {
+      localCacheRef.current.set(value.toLowerCase(), result);
+    }
+    setLocalResults(result);
+    setOpen(true);
+    setLoading(false);
+  });
 
   useEffect(() => {
     clearTimeout(localTimeoutRef.current);
@@ -177,7 +174,7 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
     }, 200);
 
     return () => clearTimeout(localTimeoutRef.current);
-  }, [query, doLocalSearch]);
+  }, [query]);
 
   useEffect(() => {
     setSelectedIdx(-1);
@@ -357,8 +354,12 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
               <X size={15} />
             </button>
           ) : null}
+          <label htmlFor="library-search" className="sr-only">
+            Search library
+          </label>
           <input
             ref={inputRef}
+            id="library-search"
             type="text"
             value={query}
             onChange={(event) => {
@@ -379,7 +380,7 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
             </div>
             {items.map((item, index) => (
               <button
-                key={`${item.type}-${item.label}-${index}`}
+                key={`${item.type}-${item.path}`}
                 type="button"
                 onClick={() => go(item.path)}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${

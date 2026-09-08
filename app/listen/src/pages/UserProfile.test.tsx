@@ -75,7 +75,7 @@ describe("UserProfile", () => {
       refetch: vi.fn(),
     });
 
-    renderWithListenProviders(<UserProfile />, {
+    const { container } = renderWithListenProviders(<UserProfile />, {
       route: "/users/jane",
       path: "/users/:username",
       auth: {
@@ -96,6 +96,14 @@ describe("UserProfile", () => {
     expect(screen.getByText("Public Record")).toBeVisible();
     expect(screen.getByText("Jane Band")).toBeVisible();
     expect(screen.getByText("via upload")).toBeVisible();
+    expect(container.querySelector(".user-profile-hero")).toBeInTheDocument();
+    expect(container.querySelector(".user-profile-card")).toBeInTheDocument();
+    expect(
+      container.querySelector(".user-profile-accent-panel"),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".user-profile-affinity-high"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /View Crate DNA/i }),
     ).toHaveAttribute("href", "/users/jane/stats");

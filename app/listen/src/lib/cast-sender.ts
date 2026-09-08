@@ -1,202 +1,36 @@
 import { registerPlugin } from "@capacitor/core";
 
-import type { Track } from "@/contexts/player-types";
-import { api, apiUrl } from "@/lib/api";
+import { api } from "@/lib/api";
 import { isNative } from "@/lib/capacitor-runtime";
+import {
+  buildCastTicketRequest,
+  buildNativePayload,
+  buildWebLoadRequest,
+  resolveCastMedia,
+  DEFAULT_CAST_TARGET_ID,
+} from "./cast-sender-media";
+import type {
+  CastSenderCapabilities,
+  CastSession,
+  CastStartPayload,
+  CastStartResult,
+  CastTicketResponse,
+  CastWindow,
+  ChromeCastMedia,
+  ChromeCastNamespace,
+  NativeCastPlugin,
+} from "./cast-sender-types";
+
+export type {
+  CastSenderCapabilities,
+  CastStartPayload,
+  CastStartResult,
+  CastTicketRequest,
+} from "./cast-sender-types";
+export { buildCastTicketRequest } from "./cast-sender-media";
 
 const CAST_SENDER_SCRIPT =
   "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1";
-
-const DEFAULT_CAST_TARGET_ID = "google-cast:default";
-const DEFAULT_RECEIVER_CAPABILITIES = {
-  formats: ["mp3", "aac", "m4a"],
-  content_types: ["audio/mpeg", "audio/aac", "audio/mp4"],
-};
-
-export interface CastTicketRequest {
-  track_id?: number;
-  track_entity_uid?: string;
-  track_path?: string;
-  purpose: "google_cast";
-  target_device_id?: string;
-  delivery: "auto";
-  receiver_capabilities: Record<string, unknown>;
-}
-
-interface CastTicketResponse {
-  stream_url: string;
-  metadata_url: string;
-  expires_at: string;
-  delivery_policy: string;
-}
-
-interface CastMediaResponse {
-  stream_url: string;
-  title?: string;
-  artist?: string;
-  album?: string;
-  duration_ms?: number | null;
-  content_type?: string;
-  delivery?: Record<string, unknown>;
-}
-
-export interface CastSenderCapabilities {
-  platform: "native" | "unsupported" | "web";
-  visible: boolean;
-  available: boolean;
-  activeSession: boolean;
-  targetName?: string;
-  reason?: string;
-}
-
-export interface CastStartPayload {
-  track: Track;
-  currentTime?: number;
-  targetDeviceId?: string;
-}
-
-export interface CastStartResult {
-  ok: boolean;
-  message?: string;
-  targetName?: string;
-}
-
-interface NativeCastPlugin {
-  getCapabilities(): Promise<CastSenderCapabilities>;
-  requestSession(payload: NativeCastMediaPayload): Promise<CastStartResult>;
-  play(): Promise<CastStartResult>;
-  pause(): Promise<CastStartResult>;
-  seek(payload: { currentTime: number }): Promise<CastStartResult>;
-  setVolume(payload: { volume: number }): Promise<CastStartResult>;
-  stop(): Promise<CastStartResult>;
-}
-
-interface NativeCastMediaPayload {
-  streamUrl: string;
-  metadataUrl: string;
-  contentType: string;
-  title: string;
-  artist: string;
-  album: string;
-  artworkUrl?: string;
-  duration?: number;
-  currentTime?: number;
-}
-
-interface CastWindow extends Window {
-  __onGCastApiAvailable?: (available: boolean) => void;
-  cast?: CastNamespace;
-  chrome?: ChromeCastWindow;
-}
-
-interface CastNamespace {
-  framework: {
-    CastContext: {
-      getInstance(): CastContext;
-    };
-  };
-}
-
-interface CastContext {
-  setOptions(options: {
-    receiverApplicationId: string;
-    autoJoinPolicy: string;
-  }): void;
-  getCurrentSession(): CastSession | null;
-  requestSession(): Promise<CastSession>;
-}
-
-interface CastSession {
-  getCastDevice?(): { friendlyName?: string } | null;
-  getMediaSession?(): ChromeCastMedia | null;
-  loadMedia(request: ChromeCastLoadRequest): Promise<unknown>;
-  setVolume?(volume: number): Promise<unknown>;
-}
-
-interface ChromeCastWindow {
-  cast?: ChromeCastNamespace;
-}
-
-interface ChromeCastNamespace {
-  AutoJoinPolicy: {
-    ORIGIN_SCOPED: string;
-  };
-  Volume: new (level?: number, muted?: boolean) => ChromeCastVolume;
-  Image: new (url: string) => ChromeCastImage;
-  media: {
-    DEFAULT_MEDIA_RECEIVER_APP_ID: string;
-    LoadRequest: new (mediaInfo: ChromeCastMediaInfo) => ChromeCastLoadRequest;
-    MediaInfo: new (
-      contentId: string,
-      contentType: string,
-    ) => ChromeCastMediaInfo;
-    MusicTrackMediaMetadata: new () => ChromeCastMusicMetadata;
-    PauseRequest: new () => Record<string, never>;
-    PlayRequest: new () => Record<string, never>;
-    SeekRequest: new () => ChromeCastSeekRequest;
-    StopRequest: new () => Record<string, never>;
-    VolumeRequest: new (volume: ChromeCastVolume) => Record<string, unknown>;
-  };
-}
-
-interface ChromeCastMedia {
-  pause(
-    request: Record<string, never>,
-    success: () => void,
-    error: (error: unknown) => void,
-  ): void;
-  play(
-    request: Record<string, never>,
-    success: () => void,
-    error: (error: unknown) => void,
-  ): void;
-  seek(
-    request: ChromeCastSeekRequest,
-    success: () => void,
-    error: (error: unknown) => void,
-  ): void;
-  setVolume(
-    request: Record<string, unknown>,
-    success: () => void,
-    error: (error: unknown) => void,
-  ): void;
-  stop(
-    request: Record<string, never>,
-    success: () => void,
-    error: (error: unknown) => void,
-  ): void;
-}
-
-interface ChromeCastImage {
-  url: string;
-}
-
-interface ChromeCastMediaInfo {
-  customData?: unknown;
-  duration?: number;
-  metadata?: ChromeCastMusicMetadata;
-}
-
-interface ChromeCastLoadRequest {
-  autoplay?: boolean;
-  currentTime?: number;
-}
-
-interface ChromeCastSeekRequest {
-  currentTime?: number;
-}
-
-interface ChromeCastMusicMetadata {
-  albumName?: string;
-  artist?: string;
-  images?: ChromeCastImage[];
-  title?: string;
-}
-
-interface ChromeCastVolume {
-  level?: number;
-  muted?: boolean;
-}
 
 let webCastReady: Promise<boolean> | null = null;
 let webCastInitialized = false;
@@ -323,113 +157,6 @@ function resolveWebCastMediaCommand(
   });
 }
 
-function receiverArtworkUrl(
-  url: string | null | undefined,
-): string | undefined {
-  if (!url) return undefined;
-  if (
-    url.startsWith("data:") ||
-    url.startsWith("blob:") ||
-    url.startsWith("file:") ||
-    url.startsWith("capacitor:")
-  ) {
-    return undefined;
-  }
-  if (url.startsWith("/api/")) return apiUrl(url);
-  if (/^https?:\/\//i.test(url)) return url;
-  if (typeof window === "undefined") return undefined;
-  try {
-    return new URL(url, window.location.origin).href;
-  } catch {
-    return undefined;
-  }
-}
-
-function mediaDurationSeconds(
-  media: CastMediaResponse,
-  track: Track,
-): number | undefined {
-  if (typeof media.duration_ms === "number" && media.duration_ms > 0) {
-    return media.duration_ms / 1000;
-  }
-  if (typeof track.duration === "number" && track.duration > 0) {
-    return track.duration;
-  }
-  return undefined;
-}
-
-async function resolveCastMedia(
-  ticket: CastTicketResponse,
-): Promise<CastMediaResponse> {
-  const response = await fetch(ticket.metadata_url, {
-    credentials: "omit",
-  });
-  if (response.status === 425) {
-    throw new Error(
-      "Receiver-safe audio is still preparing. Try again shortly.",
-    );
-  }
-  if (!response.ok) {
-    throw new Error("Could not prepare this track for Cast.");
-  }
-  return (await response.json()) as CastMediaResponse;
-}
-
-function buildNativePayload(
-  ticket: CastTicketResponse,
-  media: CastMediaResponse,
-  payload: CastStartPayload,
-): NativeCastMediaPayload {
-  const track = payload.track;
-  return {
-    streamUrl: media.stream_url || ticket.stream_url,
-    metadataUrl: ticket.metadata_url,
-    contentType: media.content_type || "audio/mpeg",
-    title: media.title || track.title,
-    artist: media.artist || track.artist,
-    album: media.album || track.album || "",
-    artworkUrl: receiverArtworkUrl(track.albumCover),
-    duration: mediaDurationSeconds(media, track),
-    currentTime: payload.currentTime,
-  };
-}
-
-function buildWebLoadRequest(
-  ticket: CastTicketResponse,
-  media: CastMediaResponse,
-  payload: CastStartPayload,
-): ChromeCastLoadRequest | null {
-  const currentWindow = castWindow();
-  const chromeCast = currentWindow?.chrome?.cast;
-  if (!chromeCast) return null;
-
-  const nativePayload = buildNativePayload(ticket, media, payload);
-  const mediaInfo = new chromeCast.media.MediaInfo(
-    nativePayload.streamUrl,
-    nativePayload.contentType,
-  );
-  const metadata = new chromeCast.media.MusicTrackMediaMetadata();
-  metadata.title = nativePayload.title;
-  metadata.artist = nativePayload.artist;
-  metadata.albumName = nativePayload.album;
-
-  if (nativePayload.artworkUrl) {
-    metadata.images = [new chromeCast.Image(nativePayload.artworkUrl)];
-  }
-
-  mediaInfo.metadata = metadata;
-  mediaInfo.duration = nativePayload.duration;
-  mediaInfo.customData = {
-    metadataUrl: nativePayload.metadataUrl,
-    delivery: media.delivery,
-  };
-
-  const request = new chromeCast.media.LoadRequest(mediaInfo);
-  request.autoplay = true;
-  request.currentTime = Math.max(0, Math.floor(payload.currentTime || 0));
-  return request;
-}
-
 async function getNativeCastCapabilities(): Promise<CastSenderCapabilities> {
   try {
     const capabilities = await getNativeCast().getCapabilities();
@@ -450,32 +177,6 @@ async function getNativeCastCapabilities(): Promise<CastSenderCapabilities> {
       reason: "Native Cast sender is not installed in this build.",
     };
   }
-}
-
-export function buildCastTicketRequest(
-  track: Track,
-  targetDeviceId: string = DEFAULT_CAST_TARGET_ID,
-): CastTicketRequest | null {
-  const request: CastTicketRequest = {
-    purpose: "google_cast",
-    target_device_id: targetDeviceId,
-    delivery: "auto",
-    receiver_capabilities: DEFAULT_RECEIVER_CAPABILITIES,
-  };
-
-  if (typeof track.libraryTrackId === "number" && track.libraryTrackId > 0) {
-    request.track_id = track.libraryTrackId;
-    return request;
-  }
-  if (track.entityUid) {
-    request.track_entity_uid = track.entityUid;
-    return request;
-  }
-  if (track.path) {
-    request.track_path = track.path;
-    return request;
-  }
-  return null;
 }
 
 export async function getCastSenderCapabilities(): Promise<CastSenderCapabilities> {
@@ -635,7 +336,10 @@ export async function startCastSession(
     }
 
     const session = await requestWebCastSession();
-    const loadRequest = buildWebLoadRequest(ticket, media, payload);
+    const chromeCast = castWindow()?.chrome?.cast;
+    const loadRequest = chromeCast
+      ? buildWebLoadRequest(ticket, media, payload, chromeCast)
+      : null;
     if (!session || !loadRequest) {
       return { ok: false, message: "Could not open the Cast device picker." };
     }

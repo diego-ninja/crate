@@ -82,6 +82,17 @@ export interface SystemPlaylist {
   is_smart: boolean;
 }
 
+export interface MoodPreset {
+  name: string;
+  track_count: number;
+}
+
+export interface ExplorePageData {
+  filters: BrowseFilters;
+  playlists: SystemPlaylist[];
+  moods: MoodPreset[];
+}
+
 interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;

@@ -10,7 +10,7 @@ export const EQ_PREFS_EVENT = "listen-equalizer-prefs";
 
 const ENABLED_KEY = "listen-eq-enabled";
 const PRESET_KEY = "listen-eq-preset"; // "custom" or one of EQ_PRESETS keys
-const GAINS_KEY = "listen-eq-gains"; // JSON array of numbers
+const GAINS_KEY = "listen-eq-gains:v1"; // JSON array of numbers
 const SMART_KEY = "listen-eq-smart";
 const ADAPTIVE_KEY = "listen-eq-adaptive";
 const GENRE_ADAPTIVE_KEY = "listen-eq-genre-adaptive";

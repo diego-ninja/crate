@@ -52,6 +52,9 @@ class TestHandlerRegistration:
     def test_artwork_task_handlers_registers_all_handlers(self):
         expected = {
             "backfill_artist_heroes",
+            "migrate_artist_heroes",
+            "migrate_artist_hero",
+            "rollback_artist_hero",
             "backfill_artwork_variants",
             "cleanup_artwork_variants",
             "compose_artist_hero",

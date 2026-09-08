@@ -96,47 +96,6 @@ interface NormalizedShow {
   backgroundUrl: string;
 }
 
-const GENRE_COLORS: Record<string, string> = {
-  metal: "#1f2937",
-  "heavy metal": "#1f2937",
-  "death metal": "#1f2937",
-  "black metal": "#1f2937",
-  "doom metal": "#374151",
-  punk: "#dc2626",
-  hardcore: "#dc2626",
-  "hardcore punk": "#dc2626",
-  "post-hardcore": "#ea580c",
-  grindcore: "#991b1b",
-  rock: "#2563eb",
-  "alternative rock": "#3b82f6",
-  "indie rock": "#6366f1",
-  grunge: "#4b5563",
-  "post-punk": "#7c3aed",
-  shoegaze: "#a78bfa",
-  electronic: "#06b6d4",
-  ambient: "#0e7490",
-  noise: "#78716c",
-  experimental: "#a855f7",
-  "math rock": "#14b8a6",
-  emo: "#f43f5e",
-  screamo: "#e11d48",
-  "hip hop": "#eab308",
-  jazz: "#f59e0b",
-  folk: "#65a30d",
-};
-
-export function getGenreColor(genres?: string[]): string {
-  if (!genres || genres.length === 0) return "#06b6d4";
-  for (const genre of genres) {
-    const lower = genre.toLowerCase();
-    if (GENRE_COLORS[lower]) return GENRE_COLORS[lower];
-    for (const [key, color] of Object.entries(GENRE_COLORS)) {
-      if (lower.includes(key) || key.includes(lower)) return color;
-    }
-  }
-  return "#06b6d4";
-}
-
 function getArtistLink(artist: ShowArtistRef | null | undefined) {
   if (!artist || artist.id == null) return undefined;
   return artistPagePath({
@@ -325,13 +284,7 @@ function PreloadBackground({ show }: { show: NormalizedShow }) {
   return <img src={show.backgroundUrl} alt="" className="hidden" />;
 }
 
-function CollapsedShowCard({
-  show,
-  onToggle,
-}: {
-  show: NormalizedShow;
-  onToggle?: () => void;
-}) {
+function CollapsedShowCard({ show }: { show: NormalizedShow }) {
   const { monthLabel, dayLabel, weekdayLabel } = formatDateParts(
     show.date,
     show.time,
@@ -339,10 +292,7 @@ function CollapsedShowCard({
   const support = show.lineupArtists.slice(1);
 
   return (
-    <div
-      className="absolute inset-x-0 top-0 z-10 flex h-full items-center gap-0"
-      onClick={onToggle}
-    >
+    <div className="absolute inset-x-0 top-0 z-10 flex h-full items-center gap-0">
       <PreloadBackground show={show} />
       <div className="h-full w-[88px] flex-shrink-0 bg-white/5">
         {show.artistPhotoUrl ? (
@@ -656,14 +606,28 @@ export function ShowCard({
         className,
       )}
       style={{ height: cardHeight }}
+      role={!expanded ? "button" : undefined}
+      tabIndex={!expanded ? 0 : undefined}
+      aria-expanded={!expanded ? expanded : undefined}
       onClick={!expanded ? onToggle : undefined}
+      onKeyDown={
+        !expanded && onToggle
+          ? (event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onToggle();
+              }
+            }
+          : undefined
+      }
     >
       <div ref={contentRef}>
         {!expanded ? (
           <div className="absolute inset-0 bg-raised-surface" />
         ) : null}
         {!expanded ? (
-          <CollapsedShowCard show={normalized} onToggle={onToggle} />
+          <CollapsedShowCard show={normalized} />
         ) : (
           <ExpandedShowCardBody
             show={normalized}

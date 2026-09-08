@@ -12,11 +12,11 @@ describe("StarRating", () => {
   it("fills stars up to value", () => {
     render(<StarRating value={3} />);
     const stars = screen.getAllByRole("button");
-    expect(stars[0]).toHaveClass("text-primary");
-    expect(stars[1]).toHaveClass("text-primary");
-    expect(stars[2]).toHaveClass("text-primary");
-    expect(stars[3]).toHaveClass("text-muted-foreground/20");
-    expect(stars[4]).toHaveClass("text-muted-foreground/20");
+    expect(stars[0]).toHaveClass("text-accent-action");
+    expect(stars[1]).toHaveClass("text-accent-action");
+    expect(stars[2]).toHaveClass("text-accent-action");
+    expect(stars[3]).toHaveClass("text-text-muted/20");
+    expect(stars[4]).toHaveClass("text-text-muted/20");
   });
 
   it("calls onChange when a star is clicked", async () => {

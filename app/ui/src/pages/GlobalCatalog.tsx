@@ -77,13 +77,15 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "duplicates", label: "Duplicates" },
 ];
 
+const numberFormatter = new Intl.NumberFormat();
+
 function formatDate(value?: string | null) {
   if (!value) return "Never";
   return new Date(value).toLocaleString();
 }
 
 function formatNumber(value: number | undefined) {
-  return new Intl.NumberFormat().format(value || 0);
+  return numberFormatter.format(value || 0);
 }
 
 function servingModeLabel(mode?: GlobalCatalogStatus["serving_mode"]) {
@@ -320,9 +322,16 @@ export function GlobalCatalog() {
                     </span>
                   </div>
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {candidate.sources.map((source, index) => (
+                    {candidate.sources.map((source) => (
                       <div
-                        key={`${source.source_kind}-${index}`}
+                        key={`${source.source_kind}-${
+                          source.node_uid ??
+                          source.local_entity_uid ??
+                          source.remote_entity_uid ??
+                          source.global_entity_uid ??
+                          source.match_method ??
+                          "source"
+                        }`}
                         className="rounded-md bg-white/[0.03] p-3 text-xs text-muted-foreground"
                       >
                         <div className="font-medium text-foreground">

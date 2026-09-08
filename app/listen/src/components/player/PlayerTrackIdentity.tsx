@@ -48,7 +48,7 @@ export function PlayerTrackIdentity({
       {sourceLabel ? (
         <p
           className={cn(
-            "mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36",
+            "mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-text-subtle",
             sourceClassName,
           )}
         >
@@ -64,13 +64,19 @@ export function PlayerTrackIdentity({
               style={{ opacity: 1 - crossfadeProgress }}
             >
               <h2
-                className={cn("truncate font-bold text-white", titleClassName)}
+                className={cn(
+                  "truncate font-bold text-text-primary",
+                  titleClassName,
+                )}
               >
                 {crossfadeTransition.outgoing.title}
               </h2>
               {crossfadeTransition.outgoing.album ? (
                 <p
-                  className={cn("mt-1 truncate text-white/40", albumClassName)}
+                  className={cn(
+                    "mt-1 truncate text-text-muted",
+                    albumClassName,
+                  )}
                 >
                   {crossfadeTransition.outgoing.album}
                 </p>
@@ -78,13 +84,19 @@ export function PlayerTrackIdentity({
             </div>
             <div style={{ opacity: crossfadeProgress }}>
               <h2
-                className={cn("truncate font-bold text-white", titleClassName)}
+                className={cn(
+                  "truncate font-bold text-text-primary",
+                  titleClassName,
+                )}
               >
                 {crossfadeTransition.incoming.title}
               </h2>
               {crossfadeTransition.incoming.album ? (
                 <p
-                  className={cn("mt-1 truncate text-white/40", albumClassName)}
+                  className={cn(
+                    "mt-1 truncate text-text-muted",
+                    albumClassName,
+                  )}
                 >
                   {crossfadeTransition.incoming.album}
                 </p>
@@ -93,11 +105,18 @@ export function PlayerTrackIdentity({
           </>
         ) : (
           <>
-            <h2 className={cn("truncate font-bold text-white", titleClassName)}>
+            <h2
+              className={cn(
+                "truncate font-bold text-text-primary",
+                titleClassName,
+              )}
+            >
               {currentTrack.title}
             </h2>
             {currentTrack.album ? (
-              <p className={cn("mt-1 truncate text-white/40", albumClassName)}>
+              <p
+                className={cn("mt-1 truncate text-text-muted", albumClassName)}
+              >
                 {currentTrack.album}
               </p>
             ) : null}
@@ -113,8 +132,10 @@ export function PlayerTrackIdentity({
           aria-label={`Go to ${currentTrack.artist}`}
           disabled={!artistClickable}
           className={cn(
-            "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-2 py-1.5 transition-colors",
-            artistClickable ? "active:bg-white/12" : "cursor-default",
+            "inline-flex items-center gap-2 rounded-full border border-border-subtle bg-surface-quiet-subtle px-2 py-1.5 transition-colors",
+            artistClickable
+              ? "active:bg-surface-control-hover"
+              : "cursor-default",
             badgeClassName,
           )}
         >
@@ -122,17 +143,17 @@ export function PlayerTrackIdentity({
             <CrateImage
               src={artistAvatarUrl}
               alt={currentTrack.artist}
-              className="h-7 w-7 rounded-full object-cover"
+              className=" size-7 rounded-full object-cover"
               onError={onArtistAvatarError}
             />
           ) : (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold text-white/55">
+            <div className="flex size-7 items-center justify-center rounded-full bg-surface-control-hover text-xs font-semibold text-text-secondary">
               {currentTrack.artist.slice(0, 1).toUpperCase()}
             </div>
           )}
           <span
             className={cn(
-              "truncate text-[12px] font-medium text-white/78",
+              "truncate text-[0.75rem] font-medium text-text-primary",
               badgeTextClassName,
               badgeMaxWidthClassName ?? "max-w-[240px]",
             )}

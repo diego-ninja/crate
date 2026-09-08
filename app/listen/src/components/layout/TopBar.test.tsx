@@ -41,4 +41,13 @@ describe("TopBar", () => {
       "Avanzar",
     );
   });
+
+  it("uses semantic text tokens for navigation controls", () => {
+    renderWithListenProviders(<TopBar />);
+
+    expect(screen.getByRole("button", { name: "Go back" })).toHaveClass(
+      "text-text-secondary",
+      "hover:text-text-primary",
+    );
+  });
 });

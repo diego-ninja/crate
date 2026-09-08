@@ -29,7 +29,7 @@ export function StarRating({
             className={cn(
               "transition-colors",
               readonly ? "cursor-default" : "cursor-pointer hover:scale-110",
-              filled ? "text-primary" : "text-muted-foreground/20",
+              filled ? "text-accent-action" : "text-text-muted/20",
             )}
             onMouseEnter={() => !readonly && setHover(star)}
             onMouseLeave={() => setHover(0)}

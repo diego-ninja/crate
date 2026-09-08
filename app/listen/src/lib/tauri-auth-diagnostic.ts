@@ -1,5 +1,5 @@
 export const TAURI_AUTH_DIAGNOSTIC_EVENT = "crate:tauri-auth-diagnostic";
-export const TAURI_AUTH_DIAGNOSTIC_KEY = "crate-tauri-auth-diagnostic";
+export const TAURI_AUTH_DIAGNOSTIC_KEY = "crate-tauri-auth-diagnostic:v1";
 
 export interface TauriAuthDiagnostic {
   status: string;

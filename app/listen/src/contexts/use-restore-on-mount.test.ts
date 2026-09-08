@@ -24,6 +24,7 @@ vi.mock("@/lib/android-native-engine", () => ({
 
 import * as gaplessPlayer from "@/lib/gapless-player";
 import { useRestoreOnMount } from "./use-restore-on-mount";
+import { STORAGE_KEY } from "./player-utils";
 import type { RepeatMode, Track } from "./player-types";
 
 const mockFadeInAndPlay = vi.mocked(gaplessPlayer.fadeInAndPlay);
@@ -41,7 +42,7 @@ function setStored(
   extras: { shuffle?: boolean; unshuffledQueue?: Track[] | null } = {},
 ) {
   localStorage.setItem(
-    "listen-player-state",
+    STORAGE_KEY,
     JSON.stringify({
       queue,
       currentIndex,
@@ -299,7 +300,7 @@ describe("useRestoreOnMount", () => {
   it("is tolerant to legacy stored sessions missing shuffle fields", () => {
     // Simulate a session persisted by an older version of the app.
     localStorage.setItem(
-      "listen-player-state",
+      STORAGE_KEY,
       JSON.stringify({
         queue: [TRACK_A],
         currentIndex: 0,

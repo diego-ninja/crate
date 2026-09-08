@@ -52,13 +52,27 @@ export function SimilarTracksPanel({
   if (!open) return null;
 
   return (
-    <div
+    <dialog
+      open
+      aria-modal="true"
+      aria-label={`Similar tracks to ${trackTitle}`}
       className="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center"
-      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onClose();
+        }
+      }}
     >
+      <button
+        type="button"
+        aria-label="Close similar tracks"
+        className="absolute inset-0 border-0 bg-transparent p-0"
+        onClick={onClose}
+      />
       <div
+        role="presentation"
         className="bg-card border border-border rounded-md w-[500px] max-h-[600px] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div>
@@ -66,6 +80,8 @@ export function SimilarTracksPanel({
             <p className="text-xs text-muted-foreground">{artist}</p>
           </div>
           <button
+            type="button"
+            aria-label="Close similar tracks"
             onClick={onClose}
             className="p-1 text-muted-foreground hover:text-foreground"
           >
@@ -85,7 +101,7 @@ export function SimilarTracksPanel({
           )}
           {tracks.map((t, i) => (
             <button
-              key={t.path || i}
+              key={t.path || `${t.artist}-${t.album}-${t.title}`}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left group"
               onClick={() => {
                 if (t.album) {
@@ -139,6 +155,6 @@ export function SimilarTracksPanel({
           ))}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

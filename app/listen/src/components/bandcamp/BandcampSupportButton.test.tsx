@@ -187,7 +187,7 @@ describe("BandcampSupportButton", () => {
       name: /support on bandcamp/i,
     });
     expect(action).toHaveTextContent("Bandcamp");
-    expect(action).toHaveClass("hover:text-primary");
+    expect(action).toHaveClass("hover:text-accent-action");
     expect(action.className).toContain("hover:drop-shadow");
     expect(action).not.toHaveClass("rounded-full");
   });

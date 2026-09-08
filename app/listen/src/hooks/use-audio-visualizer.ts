@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 import { getAnalyserNode } from "@/lib/gapless-player";
+import {
+  isMotionBlocked,
+  subscribeToMotionAvailability,
+} from "@/lib/motion-availability";
 
 const BAR_COUNT = 64;
 
@@ -38,6 +42,10 @@ export function useAudioVisualizer(
   const frameCountRef = useRef(0);
 
   const tick = useCallback(() => {
+    if (isMotionBlocked()) {
+      rafRef.current = 0;
+      return;
+    }
     if (!analyserRef.current || !dataRef.current) return;
     frameCountRef.current++;
     // Throttle state updates to ~20fps (every 3rd frame at 60fps)
@@ -89,11 +97,20 @@ export function useAudioVisualizer(
     setSampleRate(node.context.sampleRate || 44100);
     dataRef.current = new Float32Array(node.frequencyBinCount);
     waveRef.current = new Uint8Array(node.fftSize);
-    rafRef.current = requestAnimationFrame(tick);
+
+    const startSampling = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      if (isMotionBlocked()) return;
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    const unsubscribeFromMotion = subscribeToMotionAvailability(startSampling);
+    startSampling();
 
     return () => {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
+      unsubscribeFromMotion();
       analyserRef.current = null;
       dataRef.current = null;
       waveRef.current = null;
