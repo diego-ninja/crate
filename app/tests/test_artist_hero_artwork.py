@@ -937,6 +937,8 @@ def test_upload_handler_normalizes_exif_orientation_before_persisting_hero_sourc
 def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp_path):
     from crate.worker_handlers.artwork import _handle_upload_image
 
+    desktop_recipe = _crop_recipe(1400, 600)
+    requested_desktop_recipe = {**desktop_recipe, "brightness": 0.6}
     artist_dir = tmp_path / "Converge"
     artist_dir.mkdir()
     Image.new("RGB", (1800, 900), color=(180, 40, 20)).save(
@@ -1009,7 +1011,7 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
                 "artist": "Converge",
                 "composition": "mobile",
                 "data_b64": base64.b64encode(_image_bytes((1000, 1500))).decode(),
-                "desktop_recipe": _crop_recipe(1400, 600),
+                "desktop_recipe": requested_desktop_recipe,
                 "mobile_recipe": _crop_recipe(800, 1000),
             },
             {"library_path": str(tmp_path)},
@@ -1021,6 +1023,7 @@ def test_upload_handler_replaces_only_mobile_source_and_variant(monkeypatch, tmp
     assert Image.open(artist_dir / "artist-hero-mobile.webp").size == (2160, 2700)
     assert profiles[0]["desktop_source_width"] == 1800
     assert profiles[0]["mobile_source_width"] == 1000
+    assert profiles[0]["desktop_recipe"] == desktop_recipe
     manifest = profiles[0]["render_manifest"]
     assert manifest["artifacts"]["desktop"]["render_revision"] == "desktop-legacy"
     assert manifest["artifacts"]["mobile"]["render_revision"] == profiles[0]["revision"]
@@ -1117,6 +1120,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
         "position_y": 0.77,
     }
     mobile_recipe = _crop_recipe(800, 1000)
+    requested_mobile_recipe = {**mobile_recipe, "brightness": 0.6}
     profiles: list[dict] = []
     queued: list[tuple[str, str]] = []
 
@@ -1160,7 +1164,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
                 "artist": "Crossed",
                 "composition": "desktop",
                 "desktop_recipe": desktop_recipe,
-                "mobile_recipe": mobile_recipe,
+                "mobile_recipe": requested_mobile_recipe,
             },
             {"library_path": str(tmp_path)},
         )
@@ -1169,6 +1173,7 @@ def test_compose_handler_can_update_only_desktop_when_mobile_source_is_missing(
     assert Image.open(artist_dir / "artist-hero-desktop.webp").size == (2960, 1200)
     assert (artist_dir / "artist-hero-mobile.webp").read_bytes() == mobile_before
     assert profiles[0]["desktop_recipe"] == desktop_recipe
+    assert profiles[0]["mobile_recipe"] == mobile_recipe
     assert queued == [("artist-hero", "artist-entity:desktop")]
 
 

@@ -56,7 +56,9 @@ are published atomically with a sidecar manifest. The active
 artifact. `artist_hero_manifest_history` stores complete manifests and their
 previous pointer before activation. A manifest ID is a SHA-256 of its canonical
 JSON, so retries are idempotent and two technical publications can share one
-editorial revision without overwriting one another.
+editorial revision without overwriting one another. A later editorial manifest
+may also reuse an existing technical artifact; its immutable render metadata is
+validated without treating the new editorial revision as a conflict.
 
 Hero writers use the profile revision as an optimistic concurrency token. A
 stale worker returns a conflict and cannot replace a newer profile or active

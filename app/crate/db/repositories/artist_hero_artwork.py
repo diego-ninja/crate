@@ -140,12 +140,15 @@ def upsert_artist_hero_artwork(
             render_revision = str(artifact.get("render_revision") or "")
             if not render_revision:
                 continue
-            metadata = {
-                "editorial_revision": editorial_revision,
+            immutable_metadata = {
                 "renderer_version": str(artifact.get("renderer_version") or ""),
                 "source_fingerprint": str(artifact.get("source_fingerprint") or ""),
                 "recipe_hash": str(artifact.get("recipe_hash") or ""),
                 "relative_path": str(artifact.get("relative_path") or ""),
+            }
+            metadata = {
+                "editorial_revision": editorial_revision,
+                **immutable_metadata,
             }
             existing = (
                 active_session.execute(
@@ -170,7 +173,12 @@ def upsert_artist_hero_artwork(
                 .first()
             )
             if existing is not None:
-                if any(existing[key] != value for key, value in metadata.items()):
+                # A render can be reused by a later editorial manifest. Its
+                # technical identity is immutable, but the manifest revision
+                # that references it is intentionally not.
+                if any(
+                    existing[key] != value for key, value in immutable_metadata.items()
+                ):
                     raise ValueError(
                         "Artist hero render revision metadata conflict: "
                         f"{artist_id}:{composition}:{render_revision}"

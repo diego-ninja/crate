@@ -44,8 +44,6 @@ def test_manifest_identity_is_stable_and_order_independent() -> None:
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
 def test_manifest_history_persists_previous_and_uses_manifest_cas(pg_db) -> None:
-    from sqlalchemy import text
-
     from crate.db.repositories.artist_hero_artwork import (
         compare_and_swap_artist_hero_manifest,
         get_artist_hero_artwork,
@@ -53,6 +51,7 @@ def test_manifest_history_persists_previous_and_uses_manifest_cas(pg_db) -> None
         upsert_artist_hero_artwork,
     )
     from crate.db.tx import read_scope
+    from sqlalchemy import text
 
     pg_db.upsert_artist({"name": "Manifest History Artist"})
     with read_scope() as session:
@@ -105,9 +104,62 @@ def test_manifest_history_persists_previous_and_uses_manifest_cas(pg_db) -> None
 
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
-def test_manifest_rollback_rejects_a_stale_active_pointer(pg_db) -> None:
+def test_render_history_allows_reusing_artifact_across_editorial_revisions(
+    pg_db,
+) -> None:
+    from crate.db.repositories.artist_hero_artwork import (
+        list_artist_hero_render_revisions,
+        upsert_artist_hero_artwork,
+    )
+    from crate.db.tx import read_scope
     from sqlalchemy import text
 
+    pg_db.upsert_artist({"name": "Artifact Reuse Artist"})
+    with read_scope() as session:
+        artist_id = session.execute(
+            text("SELECT id FROM library_artists WHERE name = 'Artifact Reuse Artist'")
+        ).scalar_one()
+
+    base = {
+        "artist_id": artist_id,
+        "provenance": "manual",
+        "review_status": "approved",
+        "source_width": 1600,
+        "source_height": 1000,
+        "desktop_recipe": {"mode": "crop"},
+        "mobile_recipe": {"mode": "crop"},
+        "desktop_enabled": True,
+        "mobile_enabled": False,
+    }
+
+    assert upsert_artist_hero_artwork(
+        **base,
+        revision="editorial-1",
+        render_manifest=_manifest("editorial-1", "artifact-a"),
+    )
+    assert upsert_artist_hero_artwork(
+        **base,
+        revision="editorial-2",
+        render_manifest=_manifest("editorial-2", "artifact-a"),
+    )
+
+    history = list_artist_hero_render_revisions(artist_id, composition="desktop")
+    assert len(history) == 1
+    assert history[0]["render_revision"] == "artifact-a"
+    assert history[0]["editorial_revision"] == "editorial-1"
+
+    conflicting_manifest = _manifest("editorial-3", "artifact-a")
+    conflicting_manifest["artifacts"]["desktop"]["recipe_hash"] = "recipe:other"
+    with pytest.raises(ValueError, match="metadata conflict"):
+        upsert_artist_hero_artwork(
+            **base,
+            revision="editorial-3",
+            render_manifest=conflicting_manifest,
+        )
+
+
+@pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
+def test_manifest_rollback_rejects_a_stale_active_pointer(pg_db) -> None:
     from crate.db.repositories.artist_hero_artwork import (
         artist_hero_manifest_id,
         compare_and_swap_artist_hero_manifest,
@@ -116,6 +168,7 @@ def test_manifest_rollback_rejects_a_stale_active_pointer(pg_db) -> None:
         upsert_artist_hero_artwork,
     )
     from crate.db.tx import read_scope
+    from sqlalchemy import text
 
     pg_db.upsert_artist({"name": "Manifest Rollback Artist"})
     with read_scope() as session:

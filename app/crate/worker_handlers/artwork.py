@@ -1325,6 +1325,12 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         if composition not in {"shared", "desktop", "mobile"}:
             return {"error": "Invalid artist hero composition"}
         existing = get_artist_hero_artwork(int(artist_row["id"])) or {}
+        if composition == "desktop" and isinstance(existing.get("mobile_recipe"), dict):
+            mobile_recipe = dict(existing["mobile_recipe"])
+        elif composition == "mobile" and isinstance(
+            existing.get("desktop_recipe"), dict
+        ):
+            desktop_recipe = dict(existing["desktop_recipe"])
         source_name = (
             "artist-hero-source.jpg"
             if composition == "shared"
@@ -1550,6 +1556,10 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
     existing = get_artist_hero_artwork(artist_id) or {}
     desktop_recipe = dict(params.get("desktop_recipe") or {})
     mobile_recipe = dict(params.get("mobile_recipe") or {})
+    if composition == "desktop" and isinstance(existing.get("mobile_recipe"), dict):
+        mobile_recipe = dict(existing["mobile_recipe"])
+    elif composition == "mobile" and isinstance(existing.get("desktop_recipe"), dict):
+        desktop_recipe = dict(existing["desktop_recipe"])
     recipes = {"desktop": desktop_recipe, "mobile": mobile_recipe}
     output_sizes = {
         "desktop": DESKTOP_HERO_RENDER_SIZE,
