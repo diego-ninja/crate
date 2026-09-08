@@ -295,6 +295,32 @@ export function ThemeSkinSection() {
           </select>
         </label>
 
+        <label className="flex max-w-sm flex-col gap-1 text-xs text-text-secondary">
+          <span>{t("settings.appearance.densityLabel")}</span>
+          <select
+            aria-label={t("settings.appearance.densityLabel")}
+            value={draft.presentation.density}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                presentation: {
+                  ...current.presentation,
+                  density: event.target
+                    .value as AppearancePreferencesV2["presentation"]["density"],
+                },
+              }))
+            }
+            className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
+          >
+            <option value="comfortable">
+              {t("settings.appearance.values.comfortable")}
+            </option>
+            <option value="compact">
+              {t("settings.appearance.values.compact")}
+            </option>
+          </select>
+        </label>
+
         <ThemeScope
           appearance={preview}
           data-testid="appearance-preview"

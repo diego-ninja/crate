@@ -380,7 +380,7 @@ export function TrackRowActions({
 
   return (
     <>
-      <div className="flex shrink-0 gap-1 opacity-100 transition-opacity md:opacity-65 md:group-hover:opacity-100">
+      <div className="flex shrink-0 gap-[var(--content-row-inline-gap)] opacity-100 transition-opacity md:opacity-65 md:group-hover:opacity-100">
         <ItemActionMenuButton
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}

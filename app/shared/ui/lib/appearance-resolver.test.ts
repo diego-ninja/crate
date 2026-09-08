@@ -6,6 +6,7 @@ import {
   APPEARANCE_LEGACY_BACKUP_STORAGE_KEY,
   LEGACY_THEME_SKIN_STORAGE_KEY,
   createDefaultAppearancePreferences,
+  applyAppearanceToRoot,
   readAppearancePreferences,
   resolveAccentForeground,
   resolveAppearance,
@@ -71,6 +72,25 @@ describe("appearance contract v2", () => {
     expect(appearance.effective.accent).toBe("violet");
     expect(appearance.effective.material).toBe("solid");
     expect(appearance.preferences.presentation.density).toBe("compact");
+  });
+
+  it("applies density to a scope without making it a global scale", () => {
+    const root = document.createElement("div");
+    const appearance = resolveAppearance(
+      {
+        ...createDefaultAppearancePreferences(),
+        presentation: { density: "compact" },
+      },
+      { prefersColorSchemeDark: true, prefersReducedMotion: false },
+    );
+
+    const cleanup = applyAppearanceToRoot(root, appearance);
+
+    expect(root.dataset.crateDensity).toBe("compact");
+    expect(root.style.transform).toBe("");
+
+    cleanup();
+    expect(root.dataset.crateDensity).toBeUndefined();
   });
 
   it("validates every supported accent and material before exposing it", () => {

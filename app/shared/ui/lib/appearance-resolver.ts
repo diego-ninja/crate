@@ -561,6 +561,7 @@ const SCOPE_ATTRIBUTES = [
   "crateSkin",
   "crateEffects",
   "crateMotion",
+  "crateDensity",
   "surface",
 ] as const;
 
@@ -587,6 +588,7 @@ export function applyAppearanceToRoot(
   root.dataset.crateSkin = appearance.preset;
   root.dataset.crateEffects = appearance.effective.effects;
   root.dataset.crateMotion = appearance.reducedMotion ? "reduced" : "system";
+  root.dataset.crateDensity = appearance.density;
   root.dataset.surface = appearance.effective.material;
 
   const previousColorScheme = root.style.colorScheme;

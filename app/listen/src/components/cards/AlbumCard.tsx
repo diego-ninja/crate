@@ -77,7 +77,7 @@ export const AlbumCard = memo(function AlbumCard({
       <button
         type="button"
         className={cn(
-          "group block w-full rounded-xl p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+          "group block w-full rounded-xl p-[var(--content-card-padding)] text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
           model.offlineState === "ready"
             ? "bg-accent-action/[0.04]"
             : isOfflineBusy(model.offlineState)

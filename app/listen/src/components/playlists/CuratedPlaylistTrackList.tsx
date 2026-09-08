@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 
 import { TrackRow } from "@/components/cards/TrackRow";
+import { useContentDensity } from "@/lib/content-density";
+import { CONTENT_DENSITY_METRICS } from "@crate/ui/lib/content-density";
 import { toTrackRowData } from "@/lib/track-row-data";
 import type {
   CuratedPlaylistTrack,
@@ -9,8 +11,6 @@ import type {
 } from "@/pages/curated-playlist-types";
 
 const VIRTUAL_TRACK_THRESHOLD = 80;
-const TRACK_ROW_ESTIMATE_PX = 72;
-
 function CuratedTrackRow({
   track,
   index,
@@ -41,15 +41,20 @@ function CuratedTrackRow({
 }
 
 function VirtualizedCuratedTrackList(props: CuratedTrackListProps) {
+  const density = useContentDensity();
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
   const rowVirtualizer = useWindowVirtualizer({
     count: props.tracks.length,
-    estimateSize: () => TRACK_ROW_ESTIMATE_PX,
+    estimateSize: () => CONTENT_DENSITY_METRICS[density].rowEstimate,
     getItemKey: (index) => props.tracks[index]?.id ?? index,
     overscan: 12,
     scrollMargin,
   });
+
+  useLayoutEffect(() => {
+    rowVirtualizer.measure();
+  }, [density, rowVirtualizer]);
 
   useLayoutEffect(() => {
     const node = listRef.current;
@@ -110,7 +115,7 @@ function VirtualizedCuratedTrackList(props: CuratedTrackListProps) {
 export function CuratedPlaylistTrackList(props: CuratedTrackListProps) {
   if (props.tracks.length < VIRTUAL_TRACK_THRESHOLD) {
     return (
-      <div className="space-y-1">
+      <div className="space-y-[var(--content-list-gap)]">
         {props.tracks.map((track, index) => (
           <CuratedTrackRow
             key={track.id}

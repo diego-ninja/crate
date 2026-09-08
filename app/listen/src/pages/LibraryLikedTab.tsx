@@ -128,7 +128,6 @@ export function LibraryLikedTab() {
       </div>
       <WindowVirtualList
         items={trackRows}
-        estimateSize={72}
         itemKey={(row, index) =>
           row.id ??
           row.path ??

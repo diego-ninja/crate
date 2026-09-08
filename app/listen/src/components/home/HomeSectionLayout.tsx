@@ -124,14 +124,14 @@ export function SectionRail({
   fit?: "content" | "square-card";
 }) {
   const squareFitClassName =
-    "grid grid-flow-col auto-cols-[calc((100%_-_1rem)/2)] sm:auto-cols-[calc((100%_-_2rem)/3)] md:auto-cols-[calc((100%_-_3rem)/4)] lg:auto-cols-[calc((100%_-_4rem)/5)] xl:auto-cols-[calc((100%_-_5rem)/6)] 2xl:auto-cols-[calc((100%_-_6rem)/7)]";
+    "grid grid-flow-col auto-cols-[var(--content-rail-column-2)] sm:auto-cols-[var(--content-rail-column-3)] md:auto-cols-[var(--content-rail-column-4)] lg:auto-cols-[var(--content-rail-column-5)] xl:auto-cols-[var(--content-rail-column-6)] 2xl:auto-cols-[var(--content-rail-column-7)]";
 
   return (
     <div
       ref={railRef}
       data-rail-fit={fit}
       className={cn(
-        "hide-rail-scrollbar snap-x snap-mandatory scroll-px-4 gap-4 overflow-x-auto overflow-y-hidden pb-2 transform-gpu will-change-scroll",
+        "hide-rail-scrollbar snap-x snap-mandatory scroll-px-4 gap-[var(--content-rail-gap)] overflow-x-auto overflow-y-hidden pb-2 transform-gpu will-change-scroll",
         fit === "square-card" ? squareFitClassName : "flex",
         className,
       )}

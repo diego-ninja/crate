@@ -176,7 +176,7 @@ export function AlbumCardArtworkSurface({
         sizes: coverArtwork.srcSet ? coverSizes : undefined,
       }}
       alt={album}
-      className="relative mb-2 aspect-square overflow-hidden rounded-lg bg-text-primary/5"
+      className="relative mb-[var(--content-card-gap)] aspect-square overflow-hidden rounded-lg bg-text-primary/5"
       fallback={
         <div className="grid size-full place-items-center bg-surface-elevated text-text-primary/35">
           <Disc3 size={CRATE_ICON_SIZE.xl} />

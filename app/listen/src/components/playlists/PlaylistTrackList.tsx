@@ -25,7 +25,6 @@ export function PlaylistTrackList({
   return (
     <WindowVirtualList
       items={filteredTracks}
-      estimateSize={72}
       itemKey={(track) => track.id ?? `${track.track_path}-${track.position}`}
       renderItem={(track, index) => (
         <TrackRow

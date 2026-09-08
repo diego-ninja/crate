@@ -12,6 +12,7 @@ describe("ThemeSkinSection", () => {
     document.documentElement.removeAttribute("data-crate-mode");
     document.documentElement.removeAttribute("data-crate-mode-preference");
     document.documentElement.removeAttribute("data-crate-skin");
+    document.documentElement.removeAttribute("data-crate-density");
   });
 
   it("keeps appearance changes in a draft until Apply", async () => {
@@ -103,6 +104,30 @@ describe("ThemeSkinSection", () => {
     ).toEqual(
       expect.objectContaining({
         accessibility: { motion: "reduced" },
+      }),
+    );
+  });
+
+  it("persists compact content density without changing the selected skin", async () => {
+    const user = userEvent.setup();
+
+    renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
+    const densitySelect = screen.getByLabelText("Content density", {
+      exact: true,
+    });
+
+    await user.selectOptions(densitySelect, "compact");
+    expect(document.documentElement.dataset.crateDensity).toBeUndefined();
+
+    await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
+
+    expect(document.documentElement.dataset.crateDensity).toBe("compact");
+    expect(
+      JSON.parse(localStorage.getItem("crate.listen.appearance.v2")!),
+    ).toEqual(
+      expect.objectContaining({
+        preset: "default",
+        presentation: { density: "compact" },
       }),
     );
   });

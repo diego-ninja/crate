@@ -14,7 +14,7 @@ export function MediaGrid({
 }: MediaGridProps) {
   return (
     <div
-      className={cn("grid gap-4", className)}
+      className={cn("grid gap-[var(--content-grid-gap)]", className)}
       style={{
         ["--media-grid-min" as string]: `${minItemWidth}px`,
         gridTemplateColumns:

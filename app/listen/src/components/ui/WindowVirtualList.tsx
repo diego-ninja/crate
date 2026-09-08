@@ -6,6 +6,10 @@ import {
   type ReactNode,
 } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import {
+  CONTENT_DENSITY_METRICS,
+  useContentDensity,
+} from "@/lib/content-density";
 
 interface WindowVirtualListProps<T> {
   items: T[];
@@ -17,11 +21,14 @@ interface WindowVirtualListProps<T> {
 
 export function WindowVirtualList<T>({
   items,
-  estimateSize = 72,
+  estimateSize,
   overscan = 8,
   itemKey,
   renderItem,
 }: WindowVirtualListProps<T>) {
+  const density = useContentDensity();
+  const resolvedEstimateSize =
+    estimateSize ?? CONTENT_DENSITY_METRICS[density].rowEstimate;
   const listRef = useRef<HTMLDivElement | null>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
   const getItemKey = useCallback(
@@ -33,11 +40,15 @@ export function WindowVirtualList<T>({
   );
   const virtualizer = useWindowVirtualizer({
     count: items.length,
-    estimateSize: () => estimateSize,
+    estimateSize: () => resolvedEstimateSize,
     overscan,
     scrollMargin,
     getItemKey,
   });
+
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [resolvedEstimateSize, virtualizer]);
 
   useLayoutEffect(() => {
     const node = listRef.current;

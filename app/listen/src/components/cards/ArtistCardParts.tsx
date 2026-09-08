@@ -298,7 +298,7 @@ export function ArtistCardArtwork({
     <ArtworkSurface
       source={photoArtwork}
       alt={name}
-      className="relative mx-auto mb-2 aspect-square overflow-hidden rounded-full bg-text-primary/5"
+      className="relative mx-auto mb-[var(--content-card-gap)] aspect-square overflow-hidden rounded-full bg-text-primary/5"
       style={{
         width: artworkWidth,
         maxWidth: artworkWidth === "100%" && fillGrid ? "none" : imageSize,

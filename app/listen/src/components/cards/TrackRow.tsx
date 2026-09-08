@@ -71,7 +71,7 @@ export const TrackRow = memo(function TrackRow({
   return (
     <div
       className={cn(
-        "group track-row flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors",
+        "group track-row flex items-center gap-[var(--content-row-gap)] rounded-lg px-3 py-[var(--content-row-padding-y)] transition-colors",
       )}
       data-active={isActive}
       data-disabled={model.disabled}
@@ -127,7 +127,7 @@ export const TrackRow = memo(function TrackRow({
       />
 
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-[var(--content-row-inline-gap)]">
           <div
             className={cn(
               "min-w-0 truncate text-sm",
