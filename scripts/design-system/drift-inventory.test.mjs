@@ -177,6 +177,13 @@ test("exposes ownership metadata for every raw color exception", () => {
       reviewBy: "2026-12-31",
     },
     {
+      path: "app/shared/ui/lib/appearance-resolver.ts",
+      owner: "design-system",
+      reason:
+        "Scoped appearance previews need explicit runtime palette values for each preset and mode.",
+      reviewBy: "2026-12-31",
+    },
+    {
       path: "app/listen/src/lib/capacitor-init.ts",
       owner: "listen-platform",
       reason: "Capacitor requires a fully transparent native status-bar color.",

@@ -1,15 +1,23 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Section } from "@/components/settings/SettingsPrimitives";
+import { ThemeScope } from "@crate/ui/primitives/ThemeScope";
 import {
   applyThemeSkin,
   MODE_REGISTRY,
-  readStoredThemeSkin,
-  SKIN_REGISTRY,
   type ColorModePreference,
   type SkinId,
 } from "@crate/ui/lib/theme-skin";
+import {
+  createDefaultAppearancePreferences,
+  readAppearancePreferences,
+  resolveAppearance,
+  writeAppearancePreferences,
+  type AppearanceOverrides,
+  type AppearancePreferencesV2,
+} from "@crate/ui/lib/appearance-resolver";
+import { SKIN_REGISTRY } from "@crate/ui/lib/theme-skin";
 
 const MODE_OPTIONS = Object.values(MODE_REGISTRY).map((mode) => ({
   id: mode.id as ColorModePreference,
@@ -25,14 +33,115 @@ const selectionButtonClass = (selected: boolean) =>
       : "border-border-quiet/10 bg-text-primary/[0.03] text-text-primary/70 hover:bg-text-primary/[0.06]"
   }`;
 
+function getStorage(): Storage | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function readInitialPreferences(): AppearancePreferencesV2 {
+  const storage = getStorage();
+  return storage
+    ? readAppearancePreferences(storage)
+    : createDefaultAppearancePreferences();
+}
+
+function getEnvironment() {
+  const prefersColorSchemeDark =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : true;
+  const prefersReducedMotion =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
+  return { prefersColorSchemeDark, prefersReducedMotion };
+}
+
 export function ThemeSkinSection() {
   const { t } = useTranslation();
-  const [selection, setSelection] = useState(readStoredThemeSkin);
+  const committedStore = useMemo(
+    () => ({ value: readInitialPreferences() }),
+    [],
+  );
+  const [draft, setDraft] = useState(readInitialPreferences);
+  const [saveError, setSaveError] = useState(false);
+  const preview = useMemo(
+    () => resolveAppearance(draft, getEnvironment()),
+    [draft],
+  );
 
-  const selectSkin = (skin: SkinId) => {
-    const applied = applyThemeSkin(selection.mode, skin);
-    setSelection({ mode: applied.mode, skin: applied.skin });
+  const setOverride = <K extends keyof AppearanceOverrides>(
+    key: K,
+    value: AppearanceOverrides[K] | undefined,
+  ) => {
+    setDraft((current) => {
+      const overrides = { ...current.overrides };
+      if (value === undefined) delete overrides[key];
+      else overrides[key] = value;
+      return { ...current, overrides };
+    });
   };
+
+  const applyDraft = () => {
+    const storage = getStorage();
+    if (!storage) {
+      setSaveError(true);
+      return;
+    }
+    const result = writeAppearancePreferences(storage, draft);
+    if (!result.v2Saved) {
+      setSaveError(true);
+      return;
+    }
+    const applied = applyThemeSkin(draft.mode, draft.preset, { storage });
+    const next = { ...draft, mode: applied.mode, preset: applied.skin };
+    committedStore.value = next;
+    setDraft(next);
+    setSaveError(false);
+  };
+
+  const cancelDraft = () => {
+    setDraft(committedStore.value);
+    setSaveError(false);
+  };
+
+  const resetOverrides = () => {
+    setDraft((current) => ({ ...current, overrides: {} }));
+  };
+
+  const renderOverride = <K extends keyof AppearanceOverrides>(
+    key: K,
+    labelKey: string,
+    values: readonly string[],
+  ) => (
+    <label className="flex min-w-0 flex-col gap-1 text-xs text-text-secondary">
+      <span>{t(labelKey)}</span>
+      <select
+        aria-label={t(labelKey)}
+        value={(draft.overrides[key] as string | undefined) ?? ""}
+        onChange={(event) =>
+          setOverride(
+            key,
+            event.target.value === ""
+              ? undefined
+              : (event.target.value as AppearanceOverrides[K]),
+          )
+        }
+        className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
+      >
+        <option value="">{t("settings.appearance.values.theme")}</option>
+        {values.map((value) => (
+          <option key={value} value={value}>
+            {t(`settings.appearance.values.${value}`)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
     <Section
@@ -50,7 +159,7 @@ export function ThemeSkinSection() {
             aria-label={t("settings.appearance.modeLabel")}
           >
             {MODE_OPTIONS.map((mode) => {
-              const selected = selection.mode === mode.id;
+              const selected = draft.mode === mode.id;
               return (
                 <label key={mode.id} className={selectionButtonClass(selected)}>
                   <input
@@ -58,13 +167,9 @@ export function ThemeSkinSection() {
                     name="crate-mode"
                     value={mode.id}
                     checked={selected}
-                    onChange={() => {
-                      const applied = applyThemeSkin(mode.id, selection.skin);
-                      setSelection({
-                        mode: applied.mode,
-                        skin: applied.skin,
-                      });
-                    }}
+                    onChange={() =>
+                      setDraft((current) => ({ ...current, mode: mode.id }))
+                    }
                     className="sr-only"
                   />
                   <span className="block text-sm font-semibold">
@@ -74,7 +179,7 @@ export function ThemeSkinSection() {
               );
             })}
           </div>
-          {selection.mode === "system" ? (
+          {draft.mode === "system" ? (
             <p className="mt-2 text-xs text-text-muted">
               {t("settings.appearance.systemPreference")}
             </p>
@@ -91,7 +196,7 @@ export function ThemeSkinSection() {
             aria-label={t("settings.appearance.skinLabel")}
           >
             {SKIN_OPTIONS.map((skin) => {
-              const selected = selection.skin === skin.id;
+              const selected = draft.preset === skin.id;
               return (
                 <label key={skin.id} className={selectionButtonClass(selected)}>
                   <input
@@ -99,7 +204,9 @@ export function ThemeSkinSection() {
                     name="crate-skin"
                     value={skin.id}
                     checked={selected}
-                    onChange={() => selectSkin(skin.id)}
+                    onChange={() =>
+                      setDraft((current) => ({ ...current, preset: skin.id }))
+                    }
                     aria-describedby={`theme-skin-${skin.id}-description`}
                     className="sr-only"
                   />
@@ -116,6 +223,94 @@ export function ThemeSkinSection() {
               );
             })}
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-text-secondary">
+            {t("settings.appearance.overridesLabel")}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {renderOverride("accent", "settings.appearance.accentLabel", [
+              "cyan",
+              "red",
+              "violet",
+            ])}
+            {renderOverride(
+              "surfaceTone",
+              "settings.appearance.surfaceToneLabel",
+              ["neutral", "warm", "tinted"],
+            )}
+            {renderOverride("material", "settings.appearance.materialLabel", [
+              "solid",
+              "glass",
+            ])}
+            {renderOverride("radius", "settings.appearance.radiusLabel", [
+              "subtle",
+              "rounded",
+            ])}
+            {renderOverride(
+              "typography",
+              "settings.appearance.typographyLabel",
+              ["brand", "system"],
+            )}
+            {renderOverride("effects", "settings.appearance.effectsLabel", [
+              "off",
+              "subtle",
+              "expressive",
+            ])}
+          </div>
+        </div>
+
+        <ThemeScope
+          appearance={preview}
+          data-testid="appearance-preview"
+          className="rounded-xl border border-border-quiet/20 bg-surface-container p-4"
+        >
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent-action">
+            {t("settings.appearance.previewLabel")}
+          </p>
+          <p className="mt-2 text-base font-semibold text-text-primary">
+            {t("settings.appearance.previewTitle")}
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            {t("settings.appearance.previewDescription")}
+          </p>
+          <button
+            type="button"
+            className="mt-3 rounded-md bg-accent-action px-3 py-2 text-xs font-semibold text-accent-action-foreground shadow-action"
+          >
+            {t("player.play")}
+          </button>
+        </ThemeScope>
+
+        {saveError ? (
+          <p role="alert" className="text-sm text-state-danger">
+            {t("settings.appearance.saveError")}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-border-quiet/20 px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-control"
+            onClick={resetOverrides}
+          >
+            {t("settings.appearance.actions.reset")}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-border-quiet/20 px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-control"
+            onClick={cancelDraft}
+          >
+            {t("settings.appearance.actions.cancel")}
+          </button>
+          <button
+            type="button"
+            className="rounded-md bg-accent-action px-3 py-2 text-xs font-semibold text-accent-action-foreground shadow-action"
+            onClick={applyDraft}
+          >
+            {t("settings.appearance.actions.apply")}
+          </button>
         </div>
       </div>
     </Section>

@@ -33,6 +33,16 @@ const RAW_COLOR_ALLOWLIST = new Map([
     },
   ],
   [
+    "app/shared/ui/lib/appearance-resolver.ts",
+    {
+      pattern: /#[0-9a-f]{3,8}\b|rgba?\(/gi,
+      owner: "design-system",
+      reason:
+        "Scoped appearance previews need explicit runtime palette values for each preset and mode.",
+      reviewBy: "2026-12-31",
+    },
+  ],
+  [
     "app/listen/src/lib/capacitor-init.ts",
     {
       pattern: /color:\s*"#00000000"/gi,

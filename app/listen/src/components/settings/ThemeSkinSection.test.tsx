@@ -14,7 +14,7 @@ describe("ThemeSkinSection", () => {
     document.documentElement.removeAttribute("data-crate-skin");
   });
 
-  it("shows the stored skin and applies a new skin selection", async () => {
+  it("keeps appearance changes in a draft until Apply", async () => {
     const user = userEvent.setup();
 
     renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
@@ -27,6 +27,11 @@ describe("ThemeSkinSection", () => {
     await user.click(crateRedSkin);
 
     expect(crateRedSkin).toBeChecked();
+    expect(document.documentElement.dataset.crateSkin).toBeUndefined();
+    expect(localStorage.getItem("crate.listen.theme-skin")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
+
     expect(document.documentElement.dataset.crateSkin).toBe("crateRed");
     expect(localStorage.getItem("crate.listen.theme-skin")).toBe(
       JSON.stringify({ mode: "dark", skin: "crateRed" }),
@@ -39,12 +44,16 @@ describe("ThemeSkinSection", () => {
     renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
 
     await user.click(screen.getByRole("radio", { name: /^Light$/i }));
+    expect(document.documentElement.dataset.crateMode).toBeUndefined();
+
+    await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
     expect(document.documentElement.dataset.crateMode).toBe("light");
     expect(document.documentElement.dataset.crateModePreference).toBe("light");
 
     await user.click(screen.getByRole("radio", { name: /^System$/i }));
-    expect(document.documentElement.dataset.crateModePreference).toBe("system");
+    expect(document.documentElement.dataset.crateModePreference).toBe("light");
     expect(screen.getByText(/system preference/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
     expect(localStorage.getItem("crate.listen.theme-skin")).toBe(
       JSON.stringify({ mode: "system", skin: "default" }),
     );
@@ -59,5 +68,20 @@ describe("ThemeSkinSection", () => {
     renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
 
     expect(screen.getByRole("radio", { name: /Crate Red/i })).toBeChecked();
+  });
+
+  it("resets draft overrides without changing the committed skin", async () => {
+    const user = userEvent.setup();
+
+    renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
+    const accentSelect = screen.getByLabelText("Accent", { exact: true });
+    await user.selectOptions(accentSelect, "violet");
+    expect(accentSelect).toHaveValue("violet");
+
+    await user.click(
+      screen.getByRole("button", { name: /Reset customization/i }),
+    );
+    expect(accentSelect).toHaveValue("");
+    expect(document.documentElement.dataset.crateSkin).toBeUndefined();
   });
 });

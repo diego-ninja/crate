@@ -350,3 +350,158 @@ export function resolveAppearance(
       environment.prefersReducedMotion,
   };
 }
+
+const ACCENT_COLORS: Record<
+  PresetId,
+  Record<"dark" | "light", Record<AccentId, string>>
+> = {
+  default: {
+    dark: { cyan: "#06b6d4", red: "#ef4444", violet: "#8b5cf6" },
+    light: { cyan: "#0e7490", red: "#dc2626", violet: "#7c3aed" },
+  },
+  crateRed: {
+    dark: { cyan: "#06b6d4", red: "#ff375f", violet: "#8b5cf6" },
+    light: { cyan: "#0e7490", red: "#d61f45", violet: "#7c3aed" },
+  },
+};
+
+const SURFACE_COLORS: Record<
+  PresetId,
+  Record<"dark" | "light", Record<string, string>>
+> = {
+  default: {
+    dark: {
+      "--crate-token-color-background": "#0a0a0f",
+      "--crate-token-color-foreground": "#f1f5f9",
+      "--crate-token-color-muted-foreground": "#64748b",
+      "--crate-token-surface-app": "#0a0a0f",
+      "--crate-token-surface-card-solid": "#16161e",
+      "--crate-token-surface-card-foreground-solid": "#f1f5f9",
+      "--crate-token-surface-panel-solid": "#0c0c14",
+      "--crate-token-surface-raised-solid": "#12121a",
+      "--crate-token-surface-modal-solid": "rgba(16, 16, 24, 0.95)",
+    },
+    light: {
+      "--crate-token-color-background": "#f8fafc",
+      "--crate-token-color-foreground": "#0f172a",
+      "--crate-token-color-muted-foreground": "#64748b",
+      "--crate-token-surface-app": "#f8fafc",
+      "--crate-token-surface-card-solid": "#ffffff",
+      "--crate-token-surface-card-foreground-solid": "#0f172a",
+      "--crate-token-surface-panel-solid": "#ffffff",
+      "--crate-token-surface-raised-solid": "#f1f5f9",
+      "--crate-token-surface-modal-solid": "rgba(255, 255, 255, 0.96)",
+    },
+  },
+  crateRed: {
+    dark: {
+      "--crate-token-color-background": "#1c1c1e",
+      "--crate-token-color-foreground": "#f5f5f7",
+      "--crate-token-color-muted-foreground": "#a1a1aa",
+      "--crate-token-surface-app": "#1c1c1e",
+      "--crate-token-surface-card-solid": "#242426",
+      "--crate-token-surface-card-foreground-solid": "#f5f5f7",
+      "--crate-token-surface-panel-solid": "#232326",
+      "--crate-token-surface-raised-solid": "#2c2c2e",
+      "--crate-token-surface-modal-solid": "rgba(44, 44, 46, 0.96)",
+    },
+    light: {
+      "--crate-token-color-background": "#f5f5f7",
+      "--crate-token-color-foreground": "#1d1d1f",
+      "--crate-token-color-muted-foreground": "#6e6e73",
+      "--crate-token-surface-app": "#f5f5f7",
+      "--crate-token-surface-card-solid": "#ffffff",
+      "--crate-token-surface-card-foreground-solid": "#1d1d1f",
+      "--crate-token-surface-panel-solid": "#ffffff",
+      "--crate-token-surface-raised-solid": "#f2f2f7",
+      "--crate-token-surface-modal-solid": "rgba(255, 255, 255, 0.96)",
+    },
+  },
+};
+
+const RADIUS_VALUES: Record<Radius, Record<string, string>> = {
+  subtle: {
+    "--crate-token-radius-sm": "0.125rem",
+    "--crate-token-radius-md": "0.25rem",
+    "--crate-token-radius-lg": "0.375rem",
+    "--crate-token-radius-xl": "0.5rem",
+  },
+  rounded: {
+    "--crate-token-radius-sm": "0.25rem",
+    "--crate-token-radius-md": "0.5rem",
+    "--crate-token-radius-lg": "0.75rem",
+    "--crate-token-radius-xl": "1rem",
+  },
+};
+
+function appearanceRuntimeVariables(
+  appearance: AppearanceResolution,
+): Record<string, string> {
+  const accent =
+    ACCENT_COLORS[appearance.preset][appearance.mode][
+      appearance.effective.accent
+    ];
+  const surfaceColors = SURFACE_COLORS[appearance.preset][appearance.mode];
+
+  return {
+    ...surfaceColors,
+    "--crate-token-color-primary": accent,
+    "--crate-token-color-primary-foreground":
+      appearance.mode === "dark" ? "#0a0a0f" : "#ffffff",
+    "--crate-token-color-ring": accent,
+    ...RADIUS_VALUES[appearance.effective.radius],
+    "--font-brand":
+      appearance.effective.typography === "system"
+        ? "system-ui, sans-serif"
+        : "Poppins",
+  };
+}
+
+const SCOPE_ATTRIBUTES = [
+  "crateMode",
+  "crateModePreference",
+  "crateSkin",
+  "crateEffects",
+  "surface",
+] as const;
+
+export function applyAppearanceToRoot(
+  root: HTMLElement,
+  appearance: AppearanceResolution,
+): () => void {
+  const variables = appearanceRuntimeVariables(appearance);
+  const previousVariables = new Map<string, [string, string]>();
+  Object.keys(variables).forEach((name) => {
+    previousVariables.set(name, [
+      root.style.getPropertyValue(name),
+      root.style.getPropertyPriority(name),
+    ]);
+    root.style.setProperty(name, variables[name]!);
+  });
+
+  const previousAttributes = new Map<string, string | null>();
+  SCOPE_ATTRIBUTES.forEach((attribute) => {
+    previousAttributes.set(attribute, root.dataset[attribute] ?? null);
+  });
+  root.dataset.crateMode = appearance.mode;
+  root.dataset.crateModePreference = appearance.preferences.mode;
+  root.dataset.crateSkin = appearance.preset;
+  root.dataset.crateEffects = appearance.effective.effects;
+  root.dataset.surface = appearance.effective.material;
+
+  const previousColorScheme = root.style.colorScheme;
+  root.style.colorScheme = appearance.mode;
+
+  return () => {
+    previousVariables.forEach(([value, priority], name) => {
+      if (value) root.style.setProperty(name, value, priority);
+      else root.style.removeProperty(name);
+    });
+    SCOPE_ATTRIBUTES.forEach((attribute) => {
+      const value = previousAttributes.get(attribute);
+      if (value === null || value === undefined) delete root.dataset[attribute];
+      else root.dataset[attribute] = value;
+    });
+    root.style.colorScheme = previousColorScheme;
+  };
+}
