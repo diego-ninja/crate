@@ -54,6 +54,7 @@ class TestHandlerRegistration:
             "backfill_artist_heroes",
             "migrate_artist_heroes",
             "migrate_artist_hero",
+            "rollback_artist_hero",
             "backfill_artwork_variants",
             "cleanup_artwork_variants",
             "compose_artist_hero",
