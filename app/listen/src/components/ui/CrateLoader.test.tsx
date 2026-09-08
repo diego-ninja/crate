@@ -19,9 +19,9 @@ describe("CrateLoader", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading Music.");
     expect(screen.getByRole("status")).toHaveTextContent("Feeding your soul");
-    expect(container.querySelector("img")).toHaveAttribute(
-      "src",
-      "/icons/logo.svg",
+    expect(container.querySelector("svg")).toHaveAttribute(
+      "data-crate-logo-effects",
+      "off",
     );
     expect(container.innerHTML).toContain("animate-crate-play-aura-pulse");
     expect(container.innerHTML).toContain("animate-crate-play-rim-pulse");

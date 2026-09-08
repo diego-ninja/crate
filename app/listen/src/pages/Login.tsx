@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { CrateLoader } from "@/components/ui/CrateLoader";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { api, ApiError, setAuthTokens } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { isTauriRuntime } from "@/lib/platform";
@@ -101,7 +102,7 @@ export function Login() {
     <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
         <div className="flex flex-col items-center pb-4">
-          <img src="/icons/logo.svg" alt="Crate" className=" size-16 mb-2" />
+          <CrateLogo title="Crate" className="mb-2 size-16" />
           <h1 className="text-2xl font-bold text-text-primary">Crate</h1>
           <p className="text-sm text-text-primary/40 -mt-0.5">
             {t("auth.tagline")}

@@ -8,6 +8,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "@crate/ui/icons";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 
 import {
   addServer,
@@ -128,7 +129,7 @@ export function ServerSetup() {
       >
         <div className="flex flex-col items-center text-center">
           <div className="mb-5 flex size-20 items-center justify-center rounded-xl border border-accent-action/20 bg-accent-action/10 shadow-accent-action-strong">
-            <img src="/icons/logo.svg" alt="Crate" className=" size-14" />
+            <CrateLogo title="Crate" className="size-14" />
           </div>
           <h1 className="text-balance text-3xl font-bold tracking-[-0.04em] text-text-primary sm:text-4xl">
             {t("serverSetup.title")}

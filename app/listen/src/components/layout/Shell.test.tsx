@@ -196,8 +196,12 @@ describe("Shell", () => {
       },
     });
 
-    expect(screen.getByText("Crate")).toHaveClass("text-accent-action");
-    expect(screen.getByText("Crate")).not.toHaveClass("text-text-primary");
+    const brandLabel = screen
+      .getAllByText("Crate")
+      .find((element) => element.tagName === "SPAN");
+
+    expect(brandLabel).toHaveClass("text-accent-action");
+    expect(brandLabel).not.toHaveClass("text-text-primary");
   });
 
   it("keeps the inactive brand label on the primary text token", () => {
@@ -205,7 +209,11 @@ describe("Shell", () => {
 
     renderWithListenProviders(<Shell />);
 
-    expect(screen.getByText("Crate")).toHaveClass("text-text-primary");
+    const brandLabel = screen
+      .getAllByText("Crate")
+      .find((element) => element.tagName === "SPAN");
+
+    expect(brandLabel).toHaveClass("text-text-primary");
   });
 
   it("overlays the mobile Home header on the hero", () => {

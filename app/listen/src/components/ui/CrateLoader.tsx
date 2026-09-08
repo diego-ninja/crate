@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 
 import { cn } from "@/lib/utils";
 
@@ -83,11 +84,9 @@ export function CrateLoader({
         <span className="crate-loader-aura pointer-events-none absolute -inset-[16px] z-0 origin-[46%_57%] animate-crate-play-aura-pulse rounded-[45%_55%_49%_51%/53%_47%_56%_44%] opacity-[0.72]" />
         <span className="crate-loader-rim pointer-events-none absolute inset-0 z-10 animate-crate-play-rim-pulse rounded-full" />
         <span className="crate-loader-core pointer-events-none absolute inset-[2px] z-20 animate-crate-play-core-pulse rounded-full" />
-        <img
-          src="/icons/logo.svg"
-          alt=""
+        <CrateLogo
           aria-hidden="true"
-          draggable={false}
+          effects={false}
           className="crate-loader-logo relative z-30 size-[58%] select-none"
         />
       </div>

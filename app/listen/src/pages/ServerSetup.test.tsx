@@ -34,9 +34,9 @@ describe("ServerSetup", () => {
     expect(screen.getByRole("button", { name: /Continuar/i })).toHaveClass(
       "shadow-action-solid",
     );
-    expect(screen.getByAltText("Crate").parentElement).toHaveClass(
-      "shadow-accent-action-strong",
-    );
+    expect(
+      screen.getByRole("img", { name: "Crate" }).parentElement,
+    ).toHaveClass("shadow-accent-action-strong");
     expect(
       screen.getByRole("button", { name: /Continuar/i }).closest("form"),
     ).toHaveClass("shadow-card");

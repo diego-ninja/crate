@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 
 import { BandcampLogo } from "@crate/ui/domain/brand/BandcampLogo";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { VtNavLink as NavLink } from "@crate/ui/primitives/VtNavLink";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
@@ -327,11 +328,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           {expanded ? (
             <>
               <Link to="/" className="flex items-center gap-3 min-w-0">
-                <img
-                  src="/assets/logo.svg"
-                  alt="Crate"
-                  className="h-8 w-8 shrink-0"
-                />
+                <CrateLogo title="Crate" className="h-8 w-8 shrink-0" />
                 <div className="min-w-0 leading-tight">
                   <div className="text-sm font-bold text-white">Crate</div>
                   <div className="text-[11px] text-white/35">Admin console</div>
@@ -353,7 +350,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               aria-label="Expand sidebar"
               className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 transition-colors hover:bg-white/10"
             >
-              <img src="/assets/logo.svg" alt="Crate" className="h-6 w-6" />
+              <CrateLogo className="h-6 w-6" />
             </button>
           )}
         </div>

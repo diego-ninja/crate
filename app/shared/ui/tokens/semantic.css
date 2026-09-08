@@ -445,6 +445,9 @@
   --state-warning: var(--color-warning);
   --state-info: var(--color-info);
   --genre-tone-default: var(--accent-action);
+  --brand-logo-start: var(--accent-action);
+  --brand-logo-end: var(--accent-action-strong);
+  --brand-logo-glow: var(--accent-action-glow);
   --genre-tone-ink: color-mix(
     in srgb,
     var(--surface-canvas) 80%,
@@ -1232,6 +1235,24 @@
 .crate-loader-mark {
   background: var(--play-button-rim);
   box-shadow: var(--play-button-shadow);
+}
+
+.crate-logo {
+  display: block;
+  flex: none;
+  color: var(--brand-logo-start);
+}
+
+.crate-logo[data-crate-logo-effects="on"] {
+  filter: drop-shadow(0 0 0.5rem var(--brand-logo-glow));
+  transition: filter var(--motion-duration-fast) ease;
+}
+
+[data-crate-effects="off"] .crate-logo[data-crate-logo-effects="on"],
+.crate-logo[data-crate-logo-effects="off"],
+.crate-logo[data-crate-logo-motion="reduced"] {
+  filter: none;
+  transition: none;
 }
 
 .crate-loader-aura {

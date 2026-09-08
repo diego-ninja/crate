@@ -1,4 +1,5 @@
 import { CRATE_ICON_SIZE, PanelLeftClose } from "@crate/ui/icons";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 
 interface SidebarBrandProps {
   discoveryGlowStrength: number;
@@ -38,9 +39,9 @@ export function SidebarBrand({
                 filter: `blur(${12 + discoveryGlowStrength * 8}px)`,
               }}
             />
-            <img
-              src="/icons/logo.svg"
-              alt="Crate"
+            <CrateLogo
+              title="Crate"
+              effects={false}
               className="relative z-10 size-8 shrink-0 transition-[filter] duration-300"
               style={{
                 filter: discoveryRadioActive
@@ -93,9 +94,8 @@ export function SidebarBrand({
               filter: `blur(${10 + discoveryGlowStrength * 7}px)`,
             }}
           />
-          <img
-            src="/icons/logo.svg"
-            alt="Crate"
+          <CrateLogo
+            effects={false}
             className="relative z-10 size-6 transition-[filter] duration-300"
             style={{
               filter: discoveryRadioActive

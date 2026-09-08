@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@crate/ui/shadcn/button";
 import { Input } from "@crate/ui/shadcn/input";
+import { CrateLogo } from "@crate/ui/domain/brand/CrateLogo";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -75,7 +76,7 @@ export function Setup() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-lg">
-        <img src="/assets/logo.svg" alt="Crate" className="w-16 mx-auto mb-6" />
+        <CrateLogo title="Crate" className="mx-auto mb-6 w-16" />
 
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
