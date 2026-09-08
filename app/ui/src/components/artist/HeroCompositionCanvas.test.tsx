@@ -290,14 +290,11 @@ describe("HeroCompositionCanvas", () => {
     );
 
     expect(await screen.findByTestId("konva-stage")).toBeInTheDocument();
-    expect(screen.getByTestId("hero-composition-theme-scope")).toHaveAttribute(
-      "data-crate-skin",
-      "crateRed",
-    );
-    expect(screen.getByTestId("hero-composition-theme-scope")).toHaveAttribute(
-      "data-crate-mode",
-      "light",
-    );
+    const themeScope = screen.getByTestId("hero-composition-theme-scope");
+    expect(themeScope).toHaveAttribute("data-crate-skin", "crateRed");
+    expect(themeScope).toHaveAttribute("data-crate-mode", "light");
+    expect(themeScope).toHaveClass("min-w-0");
+    expect(themeScope).not.toHaveClass("contents");
     expect(screen.getByTestId("hero-composition-canvas")).toHaveClass(
       "bg-transparent",
     );

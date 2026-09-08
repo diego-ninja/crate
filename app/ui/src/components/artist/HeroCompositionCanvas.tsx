@@ -365,7 +365,7 @@ export function HeroCompositionCanvas({
     <ThemeScope
       appearance={appearance}
       data-testid="hero-composition-theme-scope"
-      className="contents"
+      className="min-w-0"
     >
       <div
         ref={containerRef}
