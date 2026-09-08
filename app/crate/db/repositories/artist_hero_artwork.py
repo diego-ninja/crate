@@ -3,11 +3,73 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from collections.abc import Mapping
 
 from sqlalchemy import text
 
 from crate.db.tx import read_scope, transaction_scope
+
+
+def _canonical_manifest(manifest: Mapping[str, object]) -> str:
+    return json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+
+
+def artist_hero_manifest_id(manifest: Mapping[str, object]) -> str:
+    """Return a content address for one complete immutable manifest."""
+
+    if not isinstance(manifest, Mapping):
+        raise ValueError("Artist hero manifest must be a mapping")
+    return (
+        f"sha256:{hashlib.sha256(_canonical_manifest(manifest).encode()).hexdigest()}"
+    )
+
+
+def _manifests_equal(left: object, right: object) -> bool:
+    if left is None or right is None:
+        return left is right
+    if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+        return False
+    return _canonical_manifest(left) == _canonical_manifest(right)
+
+
+def _record_manifest_history(
+    active_session,
+    *,
+    artist_id: int,
+    manifest: Mapping[str, object] | None,
+    previous_manifest: Mapping[str, object] | None,
+) -> None:
+    if not isinstance(manifest, Mapping):
+        return
+    editorial_revision = str(manifest.get("editorial_revision") or "")
+    if not editorial_revision:
+        return
+    active_session.execute(
+        text(
+            """
+            INSERT INTO artist_hero_manifest_history (
+                manifest_id, artist_id, editorial_revision,
+                manifest, previous_manifest
+            ) VALUES (
+                :manifest_id, :artist_id, :editorial_revision,
+                CAST(:manifest AS JSONB), CAST(:previous_manifest AS JSONB)
+            )
+            ON CONFLICT (manifest_id) DO NOTHING
+            """
+        ),
+        {
+            "manifest_id": artist_hero_manifest_id(manifest),
+            "artist_id": artist_id,
+            "editorial_revision": editorial_revision,
+            "manifest": json.dumps(manifest),
+            "previous_manifest": (
+                json.dumps(previous_manifest)
+                if isinstance(previous_manifest, Mapping)
+                else None
+            ),
+        },
+    )
 
 
 def get_artist_hero_artwork(artist_id: int, *, session=None) -> dict | None:
@@ -137,24 +199,25 @@ def upsert_artist_hero_artwork(
             )
 
     def _write(active_session) -> bool:
-        if expected_revision is not None:
-            current = (
-                active_session.execute(
-                    text(
-                        """
-                        SELECT revision
-                        FROM artist_hero_artwork
-                        WHERE artist_id = :artist_id
-                        FOR UPDATE
-                        """
-                    ),
-                    {"artist_id": artist_id},
-                )
-                .mappings()
-                .first()
+        current = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT revision, render_manifest
+                    FROM artist_hero_artwork
+                    WHERE artist_id = :artist_id
+                    FOR UPDATE
+                    """
+                ),
+                {"artist_id": artist_id},
             )
-            if current is None or current["revision"] != expected_revision:
-                return False
+            .mappings()
+            .first()
+        )
+        if expected_revision is not None and (
+            current is None or current["revision"] != expected_revision
+        ):
+            return False
 
         active_session.execute(
             text(
@@ -236,6 +299,17 @@ def upsert_artist_hero_artwork(
                 ),
             },
         )
+        _record_manifest_history(
+            active_session,
+            artist_id=artist_id,
+            manifest=render_manifest,
+            previous_manifest=(
+                current["render_manifest"]
+                if current is not None
+                and isinstance(current["render_manifest"], Mapping)
+                else None
+            ),
+        )
         _record_render_manifest_history(active_session, render_manifest)
         return True
 
@@ -243,6 +317,99 @@ def upsert_artist_hero_artwork(
         return _write(session)
     with transaction_scope() as active_session:
         return _write(active_session)
+
+
+def compare_and_swap_artist_hero_manifest(
+    *,
+    artist_id: int,
+    expected_revision: str,
+    expected_manifest: Mapping[str, object] | None,
+    render_manifest: Mapping[str, object],
+    session=None,
+) -> bool:
+    """Activate a prepared manifest only if the editorial state is unchanged."""
+
+    def _write(active_session) -> bool:
+        current = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT revision, render_manifest
+                    FROM artist_hero_artwork
+                    WHERE artist_id = :artist_id
+                    FOR UPDATE
+                    """
+                ),
+                {"artist_id": artist_id},
+            )
+            .mappings()
+            .first()
+        )
+        if current is None or current["revision"] != expected_revision:
+            return False
+        if not _manifests_equal(current["render_manifest"], expected_manifest):
+            return False
+
+        _record_manifest_history(
+            active_session,
+            artist_id=artist_id,
+            manifest=render_manifest,
+            previous_manifest=(
+                current["render_manifest"]
+                if isinstance(current["render_manifest"], Mapping)
+                else None
+            ),
+        )
+        result = active_session.execute(
+            text(
+                """
+                UPDATE artist_hero_artwork
+                SET render_manifest = CAST(:render_manifest AS JSONB),
+                    updated_at = NOW()
+                WHERE artist_id = :artist_id
+                  AND revision = :expected_revision
+                """
+            ),
+            {
+                "artist_id": artist_id,
+                "expected_revision": expected_revision,
+                "render_manifest": json.dumps(render_manifest),
+            },
+        )
+        return result.rowcount > 0
+
+    if session is not None:
+        return _write(session)
+    with transaction_scope() as active_session:
+        return _write(active_session)
+
+
+def list_artist_hero_manifest_history(artist_id: int, *, session=None) -> list[dict]:
+    """Return complete manifests newest first for rollback and retention."""
+
+    def _read(active_session) -> list[dict]:
+        rows = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT manifest_id, artist_id, editorial_revision,
+                           manifest, previous_manifest, created_at
+                    FROM artist_hero_manifest_history
+                    WHERE artist_id = :artist_id
+                    ORDER BY created_at DESC, manifest_id DESC
+                    """
+                ),
+                {"artist_id": artist_id},
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
+    if session is not None:
+        return _read(session)
+    with read_scope() as active_session:
+        return _read(active_session)
 
 
 def list_artist_hero_render_revisions(

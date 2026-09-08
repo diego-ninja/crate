@@ -39,9 +39,12 @@ The task is restart-safe and deduplicates on `artwork:<kind>:<entity-key>`.
 `cleanup_artwork_variants` retains current plus one previous revision and removes
 only temporary directories older than 24 hours. It also removes stale known
 Artist Hero publication directories while retaining the active and previous
-revision for each composition. Unknown directories are never inferred as safe
-to delete. `repair_artwork_variants` samples or scans manifests and requeues
-corrupt assets; it never edits them in an API process.
+revision for each composition. The migration history is now the source of truth
+for future retention expansion: active manifests and manifests referenced by
+`artist_hero_manifest_history` must remain resolvable before cleanup removes a
+publication. Unknown directories are never inferred as safe to delete.
+`repair_artwork_variants` samples or scans manifests and requeues corrupt assets;
+it never edits them in an API process.
 
 ## Artist Hero publications
 
@@ -50,7 +53,10 @@ Versioned Hero WebPs live below
 are published atomically with a sidecar manifest. The active
 `render_manifest` remains the profile pointer; the
 `artist_hero_render_revisions` table is append-only metadata for every known
-artifact and is intentionally retained after an old WebP is cleaned up.
+artifact. `artist_hero_manifest_history` stores complete manifests and their
+previous pointer before activation. A manifest ID is a SHA-256 of its canonical
+JSON, so retries are idempotent and two technical publications can share one
+editorial revision without overwriting one another.
 
 Hero writers use the profile revision as an optimistic concurrency token. A
 stale worker returns a conflict and cannot replace a newer profile or active
@@ -61,11 +67,13 @@ fallback path.
 
 ## Artist Hero migration canary
 
-`POST /api/artwork/artist-heroes/migration-canary` starts a read-only,
-cursor-based canary. It scans only approved manual profiles, with a bounded
-`batch_size` (1–100), and returns the next `after_artist_id` cursor. A full
-batch queues exactly one deduplicated continuation using the same cursor and
-mode, so retries do not fan out work.
+`POST /api/artwork/artist-heroes/migration-canary` starts a cursor-based canary.
+It scans only approved manual profiles, with a bounded `batch_size` (1–100),
+and returns the next `after_artist_id` cursor. With the default `dry_run: true`
+it is read-only. Once a reviewed canary is ready, `dry_run: false` queues one
+deduplicated `migrate_artist_hero` task per planned artist plus exactly one
+deduplicated continuation for a full page. The target key includes the artist
+and expected editorial revision, so a retry cannot fan out duplicate work.
 
 The canary never renders, publishes, changes provenance/review status, advances
 the editorial revision, or deletes legacy files. It validates every enabled
@@ -73,8 +81,16 @@ composition before considering an artist planned. Missing source, recipe,
 profile, entity identity, or artist directory is reported as a skip reason;
 an existing manifest covering all enabled compositions is reported as
 `already-published`. Planned targets include a deduplication key scoped to the
-artist and expected editorial revision. Publication remains disabled until
-the canary results have been reviewed and the writer/rollback phase is enabled.
+artist and expected editorial revision.
+
+An execution task captures both enabled sources and recipes, renders the bundle
+without touching legacy files, publishes every immutable artifact first, then
+activates the complete manifest with a CAS over the expected editorial revision
+and expected active manifest. A missing source or recipe therefore cannot
+produce a partial publication. CAS failure leaves prepared files inactive and
+returns `artist-hero-profile-changed`; it never changes approval, provenance,
+featured state, or enabled flags. Cache invalidation and snapshot warming happen
+only after a successful activation.
 
 ## Operations
 

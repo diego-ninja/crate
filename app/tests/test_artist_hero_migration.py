@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PIL import Image
+import pytest
+
 from crate.artist_hero_migration import (
     migration_task_dedup_key,
     plan_artist_hero_migration,
@@ -160,3 +163,163 @@ def test_canary_cursor_reports_skips_and_queues_only_the_next_cursor(
             "migrate-artist-heroes:canary:1:43:2",
         )
     ]
+
+
+def test_canary_execution_queues_each_target_only_after_planning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "artist-hero-source.jpg").write_bytes(b"legacy-source")
+    candidate = {"id": 42, "name": "Example Artist", "entity_uid": "artist-42"}
+    queued: list[tuple[str, dict, str]] = []
+
+    monkeypatch.setattr(
+        artwork_handlers,
+        "list_artist_hero_migration_candidates",
+        lambda *, after_id, limit: [candidate],
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_artist_hero_artwork",
+        lambda _artist_id: _profile(),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "resolve_artist_dir",
+        lambda *args, **kwargs: tmp_path,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "create_task_dedup",
+        lambda task_type, params, *, dedup_key: queued.append(
+            (task_type, params, dedup_key)
+        ),
+    )
+
+    result = artwork_handlers._handle_migrate_artist_heroes(
+        "task-1",
+        {"after_artist_id": 0, "batch_size": 1, "dry_run": False},
+        {"library_path": str(tmp_path)},
+    )
+
+    assert result["status"] == "continued"
+    assert result["dry_run"] is False
+    assert result["queued_targets"] == 1
+    assert queued == [
+        (
+            "migrate_artist_hero",
+            {"artist_id": 42, "expected_revision": "editorial-revision-1"},
+            "migrate-artist-hero:42:editorial-revision-1",
+        ),
+        (
+            "migrate_artist_heroes",
+            {"after_artist_id": 42, "batch_size": 1, "dry_run": False},
+            "migrate-artist-heroes:canary:1:42:1",
+        ),
+    ]
+
+
+def test_migration_target_publishes_the_enabled_bundle_with_manifest_cas(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "artist-hero-source.jpg"
+    Image.new("RGB", (1600, 1000), color=(20, 80, 120)).save(source, "JPEG")
+    profile = _profile(render_manifest=None)
+    published: list[dict] = []
+    activated: list[dict] = []
+    queued: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_library_artist_by_id",
+        lambda _name: _artist(),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_artist_hero_artwork",
+        lambda _artist_id: profile,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "resolve_artist_dir",
+        lambda *args, **kwargs: tmp_path,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "_publish_artist_hero_manifest",
+        lambda **kwargs: (
+            published.append(kwargs)
+            or {
+                "manifest_version": 1,
+                "editorial_revision": kwargs["editorial_revision"],
+                "artifacts": {
+                    composition: {"render_revision": "artifact-1"}
+                    for composition in kwargs["enabled"]
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "compare_and_swap_artist_hero_manifest",
+        lambda **kwargs: activated.append(kwargs) or True,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "queue_artwork_materialization",
+        lambda asset, *, reason: queued.append((asset.entity_key, reason)),
+    )
+
+    result = artwork_handlers._handle_migrate_artist_hero(
+        "task-1",
+        {"artist_id": 42, "expected_revision": "editorial-revision-1"},
+        {"library_path": str(tmp_path)},
+    )
+
+    assert result == {
+        "status": "migrated",
+        "artist_id": 42,
+        "editorial_revision": "editorial-revision-1",
+        "enabled": ["desktop", "mobile"],
+    }
+    assert published[0]["enabled"] == ("desktop", "mobile")
+    assert published[0]["editorial_revision"] == "editorial-revision-1"
+    assert published[0]["artifact_revision"]
+    assert activated[0]["expected_revision"] == "editorial-revision-1"
+    assert activated[0]["expected_manifest"] is None
+    assert queued == [
+        ("artist-42:desktop:artifact-1", "renderer-migration"),
+        ("artist-42:mobile:artifact-1", "renderer-migration"),
+    ]
+
+
+def test_migration_target_rejects_a_stale_editorial_revision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    profile = _profile(revision="new-revision")
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_library_artist_by_id",
+        lambda _name: _artist(),
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "get_artist_hero_artwork",
+        lambda _artist_id: profile,
+    )
+    monkeypatch.setattr(
+        artwork_handlers,
+        "_publish_artist_hero_manifest",
+        lambda **_kwargs: pytest.fail("stale migration must not publish"),
+    )
+
+    result = artwork_handlers._handle_migrate_artist_hero(
+        "task-1",
+        {"artist_id": 42, "expected_revision": "old-revision"},
+        {"library_path": str(tmp_path)},
+    )
+
+    assert result == {
+        "status": "conflict",
+        "reason": "artist-hero-profile-changed",
+        "artist_id": 42,
+    }

@@ -1037,7 +1037,7 @@ def api_migrate_artist_heroes(
         {
             "after_artist_id": payload.after_artist_id,
             "batch_size": payload.batch_size,
-            "dry_run": True,
+            "dry_run": payload.dry_run,
         },
     )
     return {"status": "queued", "task_id": task_id}

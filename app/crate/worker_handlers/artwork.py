@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Literal, cast
 
-from PIL import ImageOps
+from PIL import Image, ImageOps
 from PIL.Image import Image as PILImage
 
 from crate.artwork_materializer import materialize_artwork
@@ -59,8 +59,10 @@ from crate.db.repositories.library import (
     get_library_album,
     get_library_album_by_id,
     get_library_artist,
+    get_library_artist_by_id,
 )
 from crate.db.repositories.artist_hero_artwork import (
+    compare_and_swap_artist_hero_manifest,
     delete_artist_hero_composition,
     get_artist_hero_artwork,
     list_artist_hero_backfill_candidates,
@@ -134,12 +136,16 @@ def _publish_artist_hero_manifest(
     recipes: dict[str, dict],
     existing: dict,
     enabled: tuple[str, ...],
+    editorial_revision: str | None = None,
+    artifact_revision: str | None = None,
 ) -> dict | None:
     """Publish immutable renders before exposing their active manifest."""
 
     entity_uid = str(artist_row.get("entity_uid") or "")
     if not entity_uid:
         return None
+    editorial_revision = editorial_revision or revision
+    artifact_revision = artifact_revision or revision
 
     artifacts: dict[str, dict] = {}
     existing_manifest = existing.get("render_manifest")
@@ -162,7 +168,7 @@ def _publish_artist_hero_manifest(
         identity = ArtistHeroArtifactIdentity(
             artist_entity_uid=entity_uid,
             composition=composition,
-            render_revision=revision,
+            render_revision=artifact_revision,
         )
         publication = publish_artist_hero_artifact(
             identity,
@@ -186,7 +192,7 @@ def _publish_artist_hero_manifest(
         return None
     return {
         "manifest_version": ARTIST_HERO_PUBLICATION_VERSION,
-        "editorial_revision": revision,
+        "editorial_revision": editorial_revision,
         "artifacts": artifacts,
     }
 
@@ -1997,14 +2003,10 @@ def _handle_backfill_artist_heroes(task_id: str, params: dict, config: dict) -> 
 
 
 def _handle_migrate_artist_heroes(task_id: str, params: dict, config: dict) -> dict:
-    """Run a read-only, resumable canary over approved manual hero profiles."""
+    """Plan or queue a resumable canary over approved manual hero profiles."""
 
     del task_id
-    if params.get("dry_run", True) is not True:
-        return {
-            "status": "blocked",
-            "reason": "artist-hero-migration-publication-not-enabled",
-        }
+    dry_run = params.get("dry_run", True) is not False
 
     after_id = max(0, int(params.get("after_artist_id") or 0))
     batch_size = max(1, min(int(params.get("batch_size") or 25), 100))
@@ -2046,6 +2048,17 @@ def _handle_migrate_artist_heroes(task_id: str, params: dict, config: dict) -> d
                             ),
                         }
                     )
+                    if not dry_run:
+                        create_task_dedup(
+                            "migrate_artist_hero",
+                            {
+                                "artist_id": int(plan.artist_id),
+                                "expected_revision": plan.expected_revision,
+                            },
+                            dedup_key=migration_task_dedup_key(
+                                int(plan.artist_id), plan.expected_revision
+                            ),
+                        )
                     continue
         skipped[reason] = skipped.get(reason, 0) + 1
 
@@ -2057,20 +2070,161 @@ def _handle_migrate_artist_heroes(task_id: str, params: dict, config: dict) -> d
             {
                 "after_artist_id": next_after_id,
                 "batch_size": batch_size,
-                "dry_run": True,
+                "dry_run": dry_run,
             },
             dedup_key=(f"migrate-artist-heroes:canary:1:{next_after_id}:{batch_size}"),
         )
 
     return {
         "status": "continued" if next_queued else "completed",
-        "dry_run": True,
+        "dry_run": dry_run,
         "scanned": len(candidates),
         "planned": planned,
         "targets": targets,
         "skipped": skipped,
         "after_artist_id": next_after_id,
         "next_queued": next_queued,
+        **({"queued_targets": planned} if not dry_run else {}),
+    }
+
+
+def _handle_migrate_artist_hero(task_id: str, params: dict, config: dict) -> dict:
+    """Publish every enabled legacy composition as one revision-scoped bundle."""
+
+    del task_id
+    try:
+        artist_id = int(params.get("artist_id") or 0)
+    except (TypeError, ValueError):
+        return {"status": "skipped", "reason": "invalid-artist-id"}
+    expected_revision = str(params.get("expected_revision") or "")
+    if artist_id <= 0 or not expected_revision:
+        return {"status": "skipped", "reason": "invalid-migration-target"}
+
+    artist_row = get_library_artist_by_id(artist_id)
+    profile = get_artist_hero_artwork(artist_id)
+    if artist_row is None or profile is None:
+        return {
+            "status": "skipped",
+            "reason": "missing-profile",
+            "artist_id": artist_id,
+        }
+    if str(profile.get("revision") or "") != expected_revision:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+
+    artist_dir = resolve_artist_dir(
+        Path(config["library_path"]).resolve(),
+        artist_row,
+        fallback_name=str(artist_row.get("name") or ""),
+        existing_only=True,
+    )
+    if not artist_dir or not artist_dir.is_dir():
+        return {
+            "status": "skipped",
+            "reason": "missing-artist-directory",
+            "artist_id": artist_id,
+        }
+
+    plan = plan_artist_hero_migration(
+        artist_row=artist_row,
+        profile=profile,
+        artist_dir=artist_dir.resolve(),
+    )
+    if plan.skip_reason:
+        return {
+            "status": "skipped",
+            "reason": plan.skip_reason,
+            "artist_id": artist_id,
+        }
+
+    loaded_sources: dict[str, tuple[bytes, PILImage]] = {}
+    try:
+        for composition in plan.enabled:
+            raw = plan.source_paths[composition].read_bytes()
+            with Image.open(_io.BytesIO(raw)) as opened:
+                opened.load()
+                loaded_sources[composition] = (
+                    raw,
+                    ImageOps.exif_transpose(opened).convert("RGB"),
+                )
+    except (KeyError, OSError, ValueError):
+        return {
+            "status": "skipped",
+            "reason": "invalid-hero-source",
+            "artist_id": artist_id,
+        }
+
+    revision_parts: list[bytes] = []
+    rendered: dict[str, PILImage] = {}
+    render_sizes = {
+        "desktop": DESKTOP_HERO_RENDER_SIZE,
+        "mobile": MOBILE_HERO_RENDER_SIZE,
+    }
+    for composition in plan.enabled:
+        raw, image = loaded_sources[composition]
+        recipe = plan.recipes[composition]
+        revision_parts.extend((raw, repr(sorted(recipe.items())).encode()))
+        rendered[composition] = render_artist_hero_composition(
+            image, recipe, render_sizes[composition]
+        )
+    artifact_revision = artist_hero_revision(*revision_parts)
+    manifest = _publish_artist_hero_manifest(
+        artist_row=artist_row,
+        revision=expected_revision,
+        editorial_revision=expected_revision,
+        artifact_revision=artifact_revision,
+        rendered=rendered,
+        raw_sources={
+            composition: raw for composition, (raw, _image) in loaded_sources.items()
+        },
+        recipes=plan.recipes,
+        existing=profile,
+        enabled=plan.enabled,
+    )
+    if manifest is None:
+        return {
+            "status": "skipped",
+            "reason": "missing-artist-entity-uid",
+            "artist_id": artist_id,
+        }
+
+    if not compare_and_swap_artist_hero_manifest(
+        artist_id=artist_id,
+        expected_revision=expected_revision,
+        expected_manifest=profile.get("render_manifest"),
+        render_manifest=manifest,
+    ):
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
+
+    entity_uid = str(artist_row.get("entity_uid") or "")
+    for composition in plan.enabled:
+        artifact = manifest["artifacts"].get(composition)
+        render_revision = (
+            str(artifact.get("render_revision") or "")
+            if isinstance(artifact, dict)
+            else ""
+        )
+        if entity_uid and render_revision:
+            queue_artwork_materialization(
+                ArtworkAsset(
+                    "artist-hero", f"{entity_uid}:{composition}:{render_revision}"
+                ),
+                reason="renderer-migration",
+            )
+    _broadcast_artwork_invalidation(f"artist:{artist_id}", "library", "home")
+    _warm_recent_home_discovery_snapshots()
+    return {
+        "status": "migrated",
+        "artist_id": artist_id,
+        "editorial_revision": expected_revision,
+        "enabled": list(plan.enabled),
     }
 
 
@@ -2172,6 +2326,7 @@ ARTWORK_TASK_HANDLERS: dict[str, TaskHandler] = {
     "backfill_artwork_variants": _handle_backfill_artwork_variants,
     "backfill_artist_heroes": _handle_backfill_artist_heroes,
     "migrate_artist_heroes": _handle_migrate_artist_heroes,
+    "migrate_artist_hero": _handle_migrate_artist_hero,
     "compose_artist_hero": _handle_compose_artist_hero,
     "preview_artist_hero": _handle_preview_artist_hero,
     "recompose_artist_hero": _handle_recompose_artist_hero,

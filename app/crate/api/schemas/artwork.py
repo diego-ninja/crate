@@ -51,6 +51,7 @@ class ArtworkQueuedResponse(TaskEnqueueResponse):
 class ArtistHeroMigrationRequest(BaseModel):
     after_artist_id: int = Field(default=0, ge=0)
     batch_size: int = Field(default=25, ge=1, le=100)
+    dry_run: bool = True
 
 
 class ArtworkExtractResponse(BaseModel):
