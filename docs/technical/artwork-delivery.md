@@ -5,11 +5,14 @@ section: operations
 audience: [operator, developer]
 status: canonical
 order: 140
-verified: 2026-07-21
+verified: 2026-09-08
 sources:
   [
     app/crate/artwork_variants.py,
     app/crate/artwork_materializer.py,
+    app/crate/artist_hero_publication.py,
+    app/crate/artist_hero_retention.py,
+    app/crate/artwork_maintenance.py,
     app/crate/api/artwork_delivery.py,
   ]
 ---
@@ -32,9 +35,27 @@ covers. Release and external-artist assets materialize on demand.
 
 The task is restart-safe and deduplicates on `artwork:<kind>:<entity-key>`.
 `cleanup_artwork_variants` retains current plus one previous revision and removes
-only temporary directories older than 24 hours. `repair_artwork_variants` samples
-or scans manifests and requeues corrupt assets; it never edits them in an API
-process.
+only temporary directories older than 24 hours. It also removes stale known
+Artist Hero publication directories while retaining the active and previous
+revision for each composition. Unknown directories are never inferred as safe
+to delete. `repair_artwork_variants` samples or scans manifests and requeues
+corrupt assets; it never edits them in an API process.
+
+## Artist Hero publications
+
+Versioned Hero WebPs live below
+`artist-hero-publications/v1/<entity-uid>/<composition>/<render-revision>` and
+are published atomically with a sidecar manifest. The active
+`render_manifest` remains the profile pointer; the
+`artist_hero_render_revisions` table is append-only metadata for every known
+artifact and is intentionally retained after an old WebP is cleaned up.
+
+Hero writers use the profile revision as an optimistic concurrency token. A
+stale worker returns a conflict and cannot replace a newer profile or active
+manifest. Retried writes with the same artifact identity and metadata are
+idempotent. Delivery can resolve an explicit `v` revision only while its known
+artifact directory is retained; legacy profiles continue through the existing
+fallback path.
 
 ## Operations
 

@@ -171,3 +171,15 @@ def test_artist_hero_manifest_migration_is_the_next_revision() -> None:
     assert 'down_revision = "090"' in migration
     assert '"render_manifest"' in migration
     assert "JSONB" in migration
+
+
+def test_artist_hero_render_history_migration_creates_append_only_revision_table():
+    migration = (
+        ROOT / "app/crate/db/migrations/versions/092_artist_hero_render_history.py"
+    ).read_text()
+
+    assert 'revision = "092"' in migration
+    assert 'down_revision = "091"' in migration
+    assert '"artist_hero_render_revisions"' in migration
+    assert "artist_id" in migration
+    assert "render_revision" in migration

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from sqlalchemy import text
 
@@ -58,9 +59,103 @@ def upsert_artist_hero_artwork(
     desktop_enabled: bool | None = None,
     mobile_enabled: bool | None = None,
     render_manifest: dict | None = None,
+    expected_revision: str | None = None,
     session=None,
-) -> None:
-    def _write(active_session) -> None:
+) -> bool:
+    def _record_render_manifest_history(
+        active_session, manifest: Mapping[str, object] | None
+    ) -> None:
+        if not isinstance(manifest, Mapping):
+            return
+        artifacts = manifest.get("artifacts")
+        if not isinstance(artifacts, Mapping):
+            return
+        editorial_revision = str(manifest.get("editorial_revision") or "")
+        for composition in ("desktop", "mobile"):
+            artifact = artifacts.get(composition)
+            if not isinstance(artifact, Mapping):
+                continue
+            render_revision = str(artifact.get("render_revision") or "")
+            if not render_revision:
+                continue
+            metadata = {
+                "editorial_revision": editorial_revision,
+                "renderer_version": str(artifact.get("renderer_version") or ""),
+                "source_fingerprint": str(artifact.get("source_fingerprint") or ""),
+                "recipe_hash": str(artifact.get("recipe_hash") or ""),
+                "relative_path": str(artifact.get("relative_path") or ""),
+            }
+            existing = (
+                active_session.execute(
+                    text(
+                        """
+                        SELECT editorial_revision, renderer_version,
+                               source_fingerprint, recipe_hash, relative_path
+                        FROM artist_hero_render_revisions
+                        WHERE artist_id = :artist_id
+                          AND composition = :composition
+                          AND render_revision = :render_revision
+                        FOR UPDATE
+                        """
+                    ),
+                    {
+                        "artist_id": artist_id,
+                        "composition": composition,
+                        "render_revision": render_revision,
+                    },
+                )
+                .mappings()
+                .first()
+            )
+            if existing is not None:
+                if any(existing[key] != value for key, value in metadata.items()):
+                    raise ValueError(
+                        "Artist hero render revision metadata conflict: "
+                        f"{artist_id}:{composition}:{render_revision}"
+                    )
+                continue
+            active_session.execute(
+                text(
+                    """
+                    INSERT INTO artist_hero_render_revisions (
+                        artist_id, composition, render_revision,
+                        editorial_revision, renderer_version,
+                        source_fingerprint, recipe_hash, relative_path
+                    ) VALUES (
+                        :artist_id, :composition, :render_revision,
+                        :editorial_revision, :renderer_version,
+                        :source_fingerprint, :recipe_hash, :relative_path
+                    )
+                    """
+                ),
+                {
+                    "artist_id": artist_id,
+                    "composition": composition,
+                    "render_revision": render_revision,
+                    **metadata,
+                },
+            )
+
+    def _write(active_session) -> bool:
+        if expected_revision is not None:
+            current = (
+                active_session.execute(
+                    text(
+                        """
+                        SELECT revision
+                        FROM artist_hero_artwork
+                        WHERE artist_id = :artist_id
+                        FOR UPDATE
+                        """
+                    ),
+                    {"artist_id": artist_id},
+                )
+                .mappings()
+                .first()
+            )
+            if current is None or current["revision"] != expected_revision:
+                return False
+
         active_session.execute(
             text(
                 """
@@ -141,12 +236,70 @@ def upsert_artist_hero_artwork(
                 ),
             },
         )
+        _record_render_manifest_history(active_session, render_manifest)
+        return True
 
     if session is not None:
-        _write(session)
-    else:
-        with transaction_scope() as active_session:
-            _write(active_session)
+        return _write(session)
+    with transaction_scope() as active_session:
+        return _write(active_session)
+
+
+def list_artist_hero_render_revisions(
+    artist_id: int, *, composition: str | None = None, session=None
+) -> list[dict]:
+    if composition is not None and composition not in {"desktop", "mobile"}:
+        raise ValueError("Invalid artist hero composition")
+
+    def _read(active_session) -> list[dict]:
+        rows = (
+            active_session.execute(
+                text(
+                    """
+                    SELECT artist_id, composition, render_revision,
+                           editorial_revision, renderer_version,
+                           source_fingerprint, recipe_hash, relative_path,
+                           created_at
+                    FROM artist_hero_render_revisions
+                    WHERE artist_id = :artist_id
+                      AND (:composition IS NULL OR composition = :composition)
+                    ORDER BY composition, created_at DESC, render_revision DESC
+                    """
+                ),
+                {"artist_id": artist_id, "composition": composition},
+            )
+            .mappings()
+            .all()
+        )
+        return [dict(row) for row in rows]
+
+    if session is not None:
+        return _read(session)
+    with read_scope() as active_session:
+        return _read(active_session)
+
+
+def list_artist_hero_render_revision_artists(*, limit: int = 1000) -> list[dict]:
+    capped_limit = max(1, min(int(limit), 10_000))
+    with read_scope() as session:
+        rows = (
+            session.execute(
+                text(
+                    """
+                    SELECT DISTINCT artist.id AS artist_id, artist.entity_uid
+                    FROM artist_hero_render_revisions history
+                    JOIN library_artists artist ON artist.id = history.artist_id
+                    WHERE artist.entity_uid IS NOT NULL
+                    ORDER BY artist.id
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": capped_limit},
+            )
+            .mappings()
+            .all()
+        )
+    return [dict(row) for row in rows]
 
 
 def update_artist_hero_review_status(

@@ -1367,7 +1367,7 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
                 if is_enabled
             ),
         )
-        upsert_artist_hero_artwork(
+        applied = upsert_artist_hero_artwork(
             artist_id=int(artist_row["id"]),
             provenance="manual",
             review_status="approved",
@@ -1385,7 +1385,14 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             desktop_enabled=desktop_enabled,
             mobile_enabled=mobile_enabled,
             render_manifest=render_manifest,
+            expected_revision=existing.get("revision"),
         )
+        if applied is False:
+            return {
+                "status": "conflict",
+                "reason": "artist-hero-profile-changed",
+                "artist_id": int(artist_row["id"]),
+            }
         entity_uid = str(artist_row.get("entity_uid") or "")
         if entity_uid:
             materialization_assets.extend(
@@ -1581,7 +1588,7 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
             if is_enabled
         ),
     )
-    upsert_artist_hero_artwork(
+    applied = upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance="manual",
         review_status="approved",
@@ -1599,7 +1606,14 @@ def _handle_compose_artist_hero(task_id: str, params: dict, config: dict) -> dic
         desktop_enabled=desktop_enabled,
         mobile_enabled=mobile_enabled,
         render_manifest=render_manifest,
+        expected_revision=existing.get("revision"),
     )
+    if applied is False:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
         for target in targets:
@@ -1815,7 +1829,7 @@ def _handle_recompose_artist_hero(task_id: str, params: dict, config: dict) -> d
             if is_enabled
         ),
     )
-    upsert_artist_hero_artwork(
+    applied = upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance=str(existing["provenance"]),
         review_status=str(existing["review_status"]),
@@ -1831,7 +1845,14 @@ def _handle_recompose_artist_hero(task_id: str, params: dict, config: dict) -> d
         mobile_source_height=mobile_source_height,
         mobile_source_origin=existing.get("mobile_source_origin"),
         render_manifest=render_manifest,
+        expected_revision=existing.get("revision"),
     )
+    if applied is False:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
         for composition in loaded_sources:
@@ -1905,7 +1926,7 @@ def _handle_derive_artist_hero(task_id: str, params: dict, config: dict) -> dict
         existing=existing or {},
         enabled=("desktop", "mobile"),
     )
-    upsert_artist_hero_artwork(
+    applied = upsert_artist_hero_artwork(
         artist_id=artist_id,
         provenance="derived_background",
         review_status="unreviewed",
@@ -1917,7 +1938,14 @@ def _handle_derive_artist_hero(task_id: str, params: dict, config: dict) -> dict
         desktop_enabled=True,
         mobile_enabled=True,
         render_manifest=render_manifest,
+        expected_revision=(existing or {}).get("revision"),
     )
+    if applied is False:
+        return {
+            "status": "conflict",
+            "reason": "artist-hero-profile-changed",
+            "artist_id": artist_id,
+        }
     entity_uid = str(artist_row.get("entity_uid") or "")
     if entity_uid:
         for composition in ("desktop", "mobile"):

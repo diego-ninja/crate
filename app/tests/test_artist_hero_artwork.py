@@ -358,6 +358,7 @@ def test_artist_hero_profile_round_trip(pg_db):
     from crate.db.repositories.artist_hero_artwork import (
         get_artist_hero_artwork,
         list_artist_hero_backfill_candidates,
+        list_artist_hero_render_revisions,
         update_artist_hero_review_status,
         upsert_artist_hero_artwork,
     )
@@ -409,6 +410,10 @@ def test_artist_hero_profile_round_trip(pg_db):
     assert profile["desktop_recipe"]["mode"] == "crop"
     assert profile["revision"] == "revision-1"
     assert profile["render_manifest"]["manifest_version"] == 1
+    history = list_artist_hero_render_revisions(artist_id)
+    assert len(history) == 1
+    assert history[0]["composition"] == "desktop"
+    assert history[0]["render_revision"] == "artifact-desktop-1"
     assert artist_id not in {
         row["id"]
         for row in list_artist_hero_backfill_candidates(
@@ -421,6 +426,49 @@ def test_artist_hero_profile_round_trip(pg_db):
     assert reviewed_profile is not None
     assert reviewed_profile["review_status"] == "rejected"
     assert reviewed_profile["revision"] != "revision-1"
+
+
+@pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
+def test_artist_hero_profile_update_uses_expected_revision_as_cas(pg_db):
+    from crate.db.repositories.artist_hero_artwork import (
+        get_artist_hero_artwork,
+        upsert_artist_hero_artwork,
+    )
+    from crate.db.tx import read_scope
+    from sqlalchemy import text
+
+    pg_db.upsert_artist({"name": "CAS Artwork Profile Artist"})
+    with read_scope() as session:
+        artist_id = session.execute(
+            text(
+                "SELECT id FROM library_artists "
+                "WHERE name = 'CAS Artwork Profile Artist'"
+            )
+        ).scalar_one()
+
+    common = {
+        "artist_id": artist_id,
+        "provenance": "manual",
+        "review_status": "approved",
+        "source_width": 1600,
+        "source_height": 1000,
+        "desktop_recipe": _crop_recipe(1400, 600),
+        "mobile_recipe": _crop_recipe(800, 1000),
+        "desktop_enabled": True,
+        "mobile_enabled": True,
+    }
+    assert upsert_artist_hero_artwork(**common, revision="revision-1") is True
+    assert (
+        upsert_artist_hero_artwork(
+            **common,
+            revision="revision-2",
+            expected_revision="stale-revision",
+        )
+        is False
+    )
+    profile = get_artist_hero_artwork(artist_id)
+    assert profile is not None
+    assert profile["revision"] == "revision-1"
 
 
 def test_artist_hero_upload_endpoint_enqueues_original_and_both_recipes(test_app):
