@@ -80,7 +80,7 @@ function renderWithI18n(ui: ReactNode, locale: "en" | "es" = "en") {
 
 describe("ArtistHeroSection", () => {
   it("keeps artist genres out of the hero surface", () => {
-    const { container } = renderWithI18n(
+    renderWithI18n(
       <MemoryRouter>
         <ArtistHeroSection
           artist={{
@@ -119,12 +119,12 @@ describe("ArtistHeroSection", () => {
     );
 
     expect(screen.queryByText("hardcore")).not.toBeInTheDocument();
-    expect(
-      container.querySelector('[data-testid="artist-hero-mobile-gradient"]'),
-    ).toHaveStyle({ background: "var(--hero-artwork-gradient-mobile)" });
-    expect(
-      container.querySelector('[data-testid="artist-hero-desktop-gradient"]'),
-    ).toHaveStyle({ background: "var(--hero-artwork-gradient-desktop)" });
+    expect(screen.getByTestId("mobile-artist-hero-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("desktop-artist-hero-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-hero-scrim")).toBeInTheDocument();
+    expect(screen.getByTestId("desktop-hero-bottom-scrim")).toBeInTheDocument();
+    expect(screen.queryByTestId("artist-hero-mobile-gradient")).toBeNull();
+    expect(screen.queryByTestId("artist-hero-desktop-gradient")).toBeNull();
   });
 
   it("groups desktop hero actions into primary pills and secondary icon labels", () => {
@@ -309,12 +309,7 @@ describe("ArtistHeroSection", () => {
 
     const picture = screen.getByAltText("Crossed");
     expect(picture).toHaveAttribute("src", "/artist.jpg");
-    expect(picture.parentElement).toHaveClass(
-      "hidden",
-      "sm:block",
-      "rounded-full",
-      "size-40",
-    );
+    expect(picture.parentElement).toHaveClass("rounded-full", "size-40");
   });
 
   it("renders the desktop more menu outside the horizontally scrolling action row", async () => {

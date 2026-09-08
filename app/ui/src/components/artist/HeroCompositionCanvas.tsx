@@ -29,6 +29,7 @@ import {
 import {
   ARTIST_HERO_DESKTOP_SIZE,
   ArtistHeroFrame,
+  artistHeroArtworkFitClassName,
   type ArtistHeroArtworkBounds,
 } from "@crate/ui/domain/ArtistHeroFrame";
 
@@ -383,12 +384,6 @@ export function HeroCompositionCanvas({
                   }
                 >
                   <Layer listening={!previewOnly}>
-                    <Rect
-                      width={canvas.width}
-                      height={canvas.height}
-                      fill="#0a0a0f"
-                      listening={false}
-                    />
                     {recipe.mode === "crop" && cropFrame ? (
                       <KonvaImage
                         ref={subjectRef}
@@ -509,7 +504,10 @@ export function HeroCompositionCanvas({
                 <img
                   src={previewUrl}
                   alt={`${artistName} ${composition} hero`}
-                  className="h-full w-full object-cover"
+                  className={cn(
+                    "h-full w-full",
+                    artistHeroArtworkFitClassName(previewArtworkBounds),
+                  )}
                 />
               ) : (
                 <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-white/40">
@@ -535,7 +533,7 @@ export function HeroCompositionCanvas({
           ) : null}
         </ArtistHeroFrame>
         {!previewOnly ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-30 rounded-md border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70 backdrop-blur-md">
+          <div className="pointer-events-none absolute right-3 top-3 z-30 rounded-md border border-border-quiet bg-surface-overlay px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted backdrop-blur-md">
             {recipe.mode === "crop" ? "Crop" : "Fill preview"} · {composition}
           </div>
         ) : null}

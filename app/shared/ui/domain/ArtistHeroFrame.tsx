@@ -16,6 +16,19 @@ export interface ArtistHeroArtworkBounds {
   bottom: number;
 }
 
+export function artistHeroArtworkFitClassName(
+  artworkBounds?: ArtistHeroArtworkBounds,
+) {
+  const usesExtendedCanvas =
+    artworkBounds &&
+    (artworkBounds.left !== 0 ||
+      artworkBounds.top !== 0 ||
+      artworkBounds.right !== 1 ||
+      artworkBounds.bottom !== 1);
+
+  return usesExtendedCanvas ? "object-fill" : "object-cover object-center";
+}
+
 const LEFT_EDGE_FADE = `linear-gradient(
   to right,
   var(--surface-app) 0%,
@@ -57,6 +70,7 @@ interface ArtistHeroFrameProps extends ComponentPropsWithoutRef<"div"> {
   composition: ArtistHeroComposition;
   artwork: ReactNode;
   artworkBounds?: ArtistHeroArtworkBounds;
+  aspectRatio?: string | number;
   contentClassName?: string;
 }
 
@@ -72,6 +86,7 @@ export function ArtistHeroFrame({
   composition,
   artwork,
   artworkBounds,
+  aspectRatio,
   children,
   contentClassName,
   className,
@@ -101,7 +116,7 @@ export function ArtistHeroFrame({
       )}
       style={{
         ...style,
-        aspectRatio: mobile ? "4 / 5" : "1480 / 600",
+        aspectRatio: aspectRatio ?? (mobile ? "4 / 5" : "1480 / 600"),
       }}
     >
       <div

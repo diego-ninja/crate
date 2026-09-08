@@ -3,6 +3,7 @@ import { Play } from "@crate/ui/icons";
 
 import { GenrePill } from "@crate/ui/domain/genres/GenrePill";
 import { FollowHeartButton } from "@crate/ui/primitives/FollowHeartButton";
+import { artistHeroArtworkFitClassName } from "@crate/ui/domain/ArtistHeroFrame";
 import { CrateImage } from "@/components/artwork/CrateImage";
 import { cn } from "@/lib/utils";
 import type { ArtistHeroArtworkBounds } from "@crate/ui/domain/ArtistHeroFrame";
@@ -22,13 +23,6 @@ export function HeroBackdrop({
 }) {
   const grayscale =
     !hero.artwork_revision && hero.artwork_provenance !== "specific";
-  const usesExtendedCanvas =
-    artworkBounds &&
-    (artworkBounds.left !== 0 ||
-      artworkBounds.top !== 0 ||
-      artworkBounds.right !== 1 ||
-      artworkBounds.bottom !== 1);
-
   if (!backgroundSrc) return null;
 
   return (
@@ -41,7 +35,7 @@ export function HeroBackdrop({
       decoding="async"
       className={cn(
         "absolute inset-0 h-full w-full transition-opacity duration-500",
-        usesExtendedCanvas ? "object-fill" : "object-cover object-center",
+        artistHeroArtworkFitClassName(artworkBounds),
         grayscale ? "grayscale" : "",
       )}
     />

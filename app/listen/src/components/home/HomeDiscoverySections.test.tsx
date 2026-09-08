@@ -235,8 +235,9 @@ describe("HomeTasteHero", () => {
     expect(screen.queryByTestId("desktop-hero-artwork")).toBeNull();
     expect(container.querySelector(".home-legacy-hero")).toBeInTheDocument();
     expect(
-      container.querySelector(".home-hero-scrim-horizontal"),
+      screen.getByTestId("desktop-hero-left-edge-scrim"),
     ).toBeInTheDocument();
+    expect(container.querySelector(".home-hero-scrim-horizontal")).toBeNull();
   });
 
   it("renders the editorial Just Landed content without recommendation controls", () => {

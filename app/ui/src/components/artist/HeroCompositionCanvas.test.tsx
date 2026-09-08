@@ -263,6 +263,12 @@ describe("HeroCompositionCanvas", () => {
       <HeroCompositionCanvas
         sourceUrl="data:image/jpeg;base64,source"
         previewUrl="/api/artwork/artists/7/hero-preview/preview-1"
+        previewArtworkBounds={{
+          left: 0.18,
+          top: 0,
+          right: 0.92,
+          bottom: 0.84,
+        }}
         artistName="Converge"
         composition="desktop"
         aspect={21 / 9}
@@ -277,6 +283,8 @@ describe("HeroCompositionCanvas", () => {
       "src",
       "/api/artwork/artists/7/hero-preview/preview-1",
     );
+    expect(screen.getByRole("img")).toHaveClass("object-fill");
+    expect(screen.getByRole("img")).not.toHaveClass("object-cover");
   });
 
   it("renders the final shared edge fades and presentation over the editable artboard", async () => {

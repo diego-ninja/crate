@@ -1,5 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "@crate/ui/icons";
+import {
+  ArtistHeroFrame,
+  artistHeroArtworkFitClassName,
+} from "@crate/ui/domain/ArtistHeroFrame";
 
 import { CrateImage } from "@/components/artwork/CrateImage";
 import { cn } from "@/lib/utils";
@@ -104,21 +108,27 @@ function LegacyHeroArtwork({
   composition: "desktop" | "mobile";
 }) {
   return (
-    <>
-      {backgroundSrc ? (
-        <CrateImage
-          data-testid={`${composition}-legacy-hero-artwork`}
-          src={backgroundSrc}
-          retryPolicy="eventual"
-          alt=""
-          aria-hidden="true"
-          decoding="async"
-          className="pointer-events-none absolute inset-0 size-full object-cover object-top"
-        />
-      ) : null}
-      <div className="home-hero-scrim-horizontal pointer-events-none absolute inset-0" />
-      <div className="home-hero-scrim-vertical pointer-events-none absolute inset-0" />
-    </>
+    <ArtistHeroFrame
+      composition={composition}
+      aspectRatio="auto"
+      className="absolute inset-0 h-full"
+      artwork={
+        backgroundSrc ? (
+          <CrateImage
+            data-testid={`${composition}-legacy-hero-artwork`}
+            src={backgroundSrc}
+            retryPolicy="eventual"
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            className={cn(
+              "pointer-events-none absolute inset-0 size-full object-top",
+              artistHeroArtworkFitClassName(),
+            )}
+          />
+        ) : null
+      }
+    />
   );
 }
 

@@ -1026,7 +1026,7 @@ function HeroPresentationOverlay({
     <div className="mt-6 flex items-center gap-2.5">
       <span
         aria-label="Play artist"
-        className={`inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary font-semibold text-primary-foreground shadow-[0_10px_28px_rgba(6,182,212,0.2)] ${
+        className={`inline-flex h-11 items-center justify-center gap-2 rounded-md bg-accent-action font-semibold text-accent-action-foreground shadow-action-solid ${
           mobile ? "w-11 px-0" : "px-5"
         }`}
       >
@@ -1035,9 +1035,9 @@ function HeroPresentationOverlay({
       </span>
       <span
         aria-label="Follow artist"
-        className={`inline-flex h-11 w-11 items-center justify-center rounded-md text-white/80 ${
+        className={`inline-flex h-11 w-11 items-center justify-center rounded-md text-text-primary/80 ${
           mobile
-            ? "border border-white/15 bg-black/30 backdrop-blur-md"
+            ? "border border-border-control bg-surface-canvas-control backdrop-blur-md"
             : "border-0 bg-transparent backdrop-blur-0"
         }`}
       >
@@ -1049,7 +1049,7 @@ function HeroPresentationOverlay({
   return (
     <div
       data-testid={`${composition}-hero-live-presentation`}
-      className="pointer-events-none absolute inset-0 text-white"
+      className="pointer-events-none absolute inset-0 text-text-primary"
     >
       <ArtistHeroPresentation
         composition={composition}
@@ -1062,7 +1062,7 @@ function HeroPresentationOverlay({
                 <GenrePill
                   key={name}
                   item={{ name }}
-                  className="max-w-[42vw] border-white/10 bg-black/30 text-white/80 backdrop-blur-sm sm:max-w-none"
+                  className="max-w-[42vw] backdrop-blur-sm sm:max-w-none"
                 />
               ))}
             </div>
@@ -1070,8 +1070,10 @@ function HeroPresentationOverlay({
         }
         intro={
           <div>
-            <p className="text-3xl font-bold text-white">Good afternoon</p>
-            <p className="mt-1 text-sm text-white/45">
+            <p className="text-3xl font-bold text-text-primary">
+              Good afternoon
+            </p>
+            <p className="mt-1 text-sm text-text-muted">
               Your music, ready to explore
             </p>
           </div>
