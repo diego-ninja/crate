@@ -5,6 +5,13 @@ import { Section } from "@/components/settings/SettingsPrimitives";
 import { setMotionPreference } from "@/lib/motion-availability";
 import { ThemeScope } from "@crate/ui/primitives/ThemeScope";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@crate/ui/shadcn/select";
+import {
   applyThemeSkin,
   MODE_REGISTRY,
   type ColorModePreference,
@@ -27,6 +34,7 @@ const MODE_OPTIONS = Object.values(MODE_REGISTRY).map((mode) => ({
 const SKIN_OPTIONS = Object.values(SKIN_REGISTRY).map((skin) => ({
   id: skin.id as SkinId,
 }));
+const DEFAULT_OVERRIDE_VALUE = "__from_skin__";
 
 const selectionButtonClass = (selected: boolean) =>
   `rounded-lg border px-3 py-3 text-left transition-colors focus-within:ring-2 focus-within:ring-focus-ring/50 ${
@@ -128,26 +136,36 @@ export function ThemeSkinSection() {
   ) => (
     <label className="flex min-w-0 flex-col gap-1 text-xs text-text-secondary">
       <span>{t(labelKey)}</span>
-      <select
-        aria-label={t(labelKey)}
-        value={(draft.overrides[key] as string | undefined) ?? ""}
-        onChange={(event) =>
+      <Select
+        value={
+          (draft.overrides[key] as string | undefined) ?? DEFAULT_OVERRIDE_VALUE
+        }
+        onValueChange={(value) =>
           setOverride(
             key,
-            event.target.value === ""
+            value === DEFAULT_OVERRIDE_VALUE
               ? undefined
-              : (event.target.value as AppearanceOverrides[K]),
+              : (value as AppearanceOverrides[K]),
           )
         }
-        className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
       >
-        <option value="">{t("settings.appearance.values.theme")}</option>
-        {values.map((value) => (
-          <option key={value} value={value}>
-            {t(`settings.appearance.values.${value}`)}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          aria-label={t(labelKey)}
+          className="h-9 min-w-0 w-full text-xs"
+        >
+          <SelectValue placeholder={t("settings.appearance.values.theme")} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={DEFAULT_OVERRIDE_VALUE}>
+            {t("settings.appearance.values.theme")}
+          </SelectItem>
+          {values.map((value) => (
+            <SelectItem key={value} value={value}>
+              {t(`settings.appearance.values.${value}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </label>
   );
 
@@ -271,54 +289,66 @@ export function ThemeSkinSection() {
 
         <label className="flex max-w-sm flex-col gap-1 text-xs text-text-secondary">
           <span>{t("settings.appearance.motionLabel")}</span>
-          <select
-            aria-label={t("settings.appearance.motionLabel")}
+          <Select
             value={draft.accessibility.motion}
-            onChange={(event) =>
+            onValueChange={(value) =>
               setDraft((current) => ({
                 ...current,
                 accessibility: {
                   ...current.accessibility,
-                  motion: event.target
-                    .value as AppearancePreferencesV2["accessibility"]["motion"],
+                  motion:
+                    value as AppearancePreferencesV2["accessibility"]["motion"],
                 },
               }))
             }
-            className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
           >
-            <option value="system">
-              {t("settings.appearance.values.system")}
-            </option>
-            <option value="reduced">
-              {t("settings.appearance.values.reduced")}
-            </option>
-          </select>
+            <SelectTrigger
+              aria-label={t("settings.appearance.motionLabel")}
+              className="h-9 min-w-0 w-full text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">
+                {t("settings.appearance.values.system")}
+              </SelectItem>
+              <SelectItem value="reduced">
+                {t("settings.appearance.values.reduced")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </label>
 
         <label className="flex max-w-sm flex-col gap-1 text-xs text-text-secondary">
           <span>{t("settings.appearance.densityLabel")}</span>
-          <select
-            aria-label={t("settings.appearance.densityLabel")}
+          <Select
             value={draft.presentation.density}
-            onChange={(event) =>
+            onValueChange={(value) =>
               setDraft((current) => ({
                 ...current,
                 presentation: {
                   ...current.presentation,
-                  density: event.target
-                    .value as AppearancePreferencesV2["presentation"]["density"],
+                  density:
+                    value as AppearancePreferencesV2["presentation"]["density"],
                 },
               }))
             }
-            className="min-h-9 rounded-md border border-border-quiet/20 bg-surface-control px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-focus-ring/50"
           >
-            <option value="comfortable">
-              {t("settings.appearance.values.comfortable")}
-            </option>
-            <option value="compact">
-              {t("settings.appearance.values.compact")}
-            </option>
-          </select>
+            <SelectTrigger
+              aria-label={t("settings.appearance.densityLabel")}
+              className="h-9 min-w-0 w-full text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="comfortable">
+                {t("settings.appearance.values.comfortable")}
+              </SelectItem>
+              <SelectItem value="compact">
+                {t("settings.appearance.values.compact")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </label>
 
         <ThemeScope

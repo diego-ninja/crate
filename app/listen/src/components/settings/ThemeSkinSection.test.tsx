@@ -15,6 +15,15 @@ describe("ThemeSkinSection", () => {
     document.documentElement.removeAttribute("data-crate-density");
   });
 
+  it("uses the shared themed select for appearance controls", () => {
+    renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
+
+    expect(document.querySelectorAll("select")).toHaveLength(0);
+    expect(
+      document.querySelectorAll('[data-slot="select-trigger"]'),
+    ).toHaveLength(8);
+  });
+
   it("keeps appearance changes in a draft until Apply", async () => {
     const user = userEvent.setup();
 
@@ -76,14 +85,29 @@ describe("ThemeSkinSection", () => {
 
     renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
     const accentSelect = screen.getByLabelText("Accent", { exact: true });
-    await user.selectOptions(accentSelect, "violet");
-    expect(accentSelect).toHaveValue("violet");
+    await user.click(accentSelect);
+    await user.click(await screen.findByRole("option", { name: "Violet" }));
+    expect(accentSelect).toHaveTextContent("Violet");
 
     await user.click(
       screen.getByRole("button", { name: /Reset customization/i }),
     );
-    expect(accentSelect).toHaveValue("");
+    expect(accentSelect).toHaveTextContent("From skin");
     expect(document.documentElement.dataset.crateSkin).toBeUndefined();
+  });
+
+  it("can clear an individual override from its shared select", async () => {
+    const user = userEvent.setup();
+
+    renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
+    const accentSelect = screen.getByLabelText("Accent", { exact: true });
+
+    await user.click(accentSelect);
+    await user.click(await screen.findByRole("option", { name: "Violet" }));
+    await user.click(accentSelect);
+    await user.click(await screen.findByRole("option", { name: "From skin" }));
+
+    expect(accentSelect).toHaveTextContent("From skin");
   });
 
   it("persists the explicit reduced-motion preference on Apply", async () => {
@@ -91,7 +115,10 @@ describe("ThemeSkinSection", () => {
 
     renderWithListenProviders(<ThemeSkinSection />, { locale: "en" });
     const motionSelect = screen.getByLabelText("Motion", { exact: true });
-    await user.selectOptions(motionSelect, "reduced");
+    await user.click(motionSelect);
+    await user.click(
+      await screen.findByRole("option", { name: "Reduce motion" }),
+    );
 
     expect(
       JSON.parse(localStorage.getItem("crate.listen.appearance.v2") ?? "null"),
@@ -116,7 +143,8 @@ describe("ThemeSkinSection", () => {
       exact: true,
     });
 
-    await user.selectOptions(densitySelect, "compact");
+    await user.click(densitySelect);
+    await user.click(await screen.findByRole("option", { name: "Compact" }));
     expect(document.documentElement.dataset.crateDensity).toBeUndefined();
 
     await user.click(screen.getByRole("button", { name: /Apply appearance/i }));
